@@ -1,29 +1,33 @@
 {
   "expo": {
-    "name": "fundora-app",
-    "slug": "fundora-app",
+    "name": "Fundora App",
+    "slug": "Fundora App",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/fundora_Logo.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/fundora_Logo-removebg-preview.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#f5efe1"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/fundora_Logo.jpg",
+        "backgroundColor": "#f5efe1"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.anonymous.FundoraApp"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/fundora_Logo-removebg-preview.png"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
   }
 }
