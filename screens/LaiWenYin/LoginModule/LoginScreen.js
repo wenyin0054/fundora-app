@@ -1,157 +1,534 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+  ActivityIndicator,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Alert } from 'react-native';
 import SimpleHeader from "../../reuseComponet/simpleheader.js";
-import { ScrollView } from 'react-native';
-import { loginUser, initUserDB } from '../../../database/userAuth.js';
-import { useEffect } from 'react';
-import { ActivityIndicator } from 'react-native';
+import {
+  loginUser,
+  initUserDB,
+  logUserTable,
+  getUserById,
+  getTodayQuizStatus,
+  resetUserDB,
+  checkOnboardingStatus,
+  hasRegisteredFace
+} from '../../../database/userAuth.js';
 import { BlurView } from "expo-blur";
 import { MotiView } from "moti";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen({ navigation }) {
+  // form fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
+  // UI state
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false); // for login button
+  const [faceLoginLoading, setFaceLoginLoading] = useState(false);
+  const [navigationLoading, setNavigationLoading] = useState(false);
+  const [autoFaceLoginAvailable, setAutoFaceLoginAvailable] = useState(false);
+
+  // validation state
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isFormValid, setIsFormValid] = useState(false);
+
+  // toast
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+  const toastTimeoutRef = useRef(null);
+
+  // animation - shake for the invalid form
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  // prevent multiple auto-face-login attempts
+  const autoFaceLoginTriggeredRef = useRef(false);
+
+  // component mount
   useEffect(() => {
-    initUserDB(); // Create table if not exists
+    initUserDB();
+    logUserTable();
+    checkAutoFaceLoginAndNavigate();
+
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
   }, []);
 
-  const [loading, setLoading] = useState(false);
+  // validate when fields change
+  useEffect(() => {
+    const eErr = validateEmail(email);
+    const pErr = validatePassword(password);
+    setEmailError(eErr);
+    setPasswordError(pErr);
+    setIsFormValid(!eErr && !pErr);
+  }, [email, password]);
 
+  // --------------- Validation helpers ---------------
+  const validateEmail = (value) => {
+    const v = (value || '').trim();
+    if (!v) return 'Email is required';
+    // simple email regex
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!regex.test(v)) return 'Please enter a valid email address';
+    return '';
+  };
+
+  const validatePassword = (value) => {
+    const v = value || '';
+    if (!v) return 'Password is required';
+    if (v.length < 6) return 'Password must be at least 6 characters';
+    if (v.length > 20) return 'Password must be less than 20 characters';
+    return '';
+  };
+
+  // --------------- Toast ---------------
+  const showToast = (message, type = 'error', duration = 3000) => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastTimeoutRef.current = null;
+    }, duration);
+  };
+
+  // --------------- Shake animation ---------------
+  const runShake = () => {
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // --------------- Auto-face login check ---------------
+  // If recentUsersWithFaceAuth exists, auto navigate to FaceLoginScreen once.
+  const checkAutoFaceLoginAndNavigate = async () => {
+    try {
+      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
+      if (!recentUsers) return;
+      const users = JSON.parse(recentUsers);
+      if (!Array.isArray(users) || users.length === 0) return;
+
+      // Avoid repeating auto navigation if already triggered
+      if (autoFaceLoginTriggeredRef.current) return;
+
+      // set flag so we don't re-trigger
+      autoFaceLoginTriggeredRef.current = true;
+      setAutoFaceLoginAvailable(true);
+
+      // Small delay to let the UI render, then navigate
+      setTimeout(() => {
+        handleAutoFaceLogin();
+      }, 300);
+    } catch (err) {
+      console.error('Error checking auto face login:', err);
+    }
+  };
+
+  // --------------- Auto face login flow ---------------
+  const handleAutoFaceLogin = async () => {
+    setFaceLoginLoading(true);
+
+    try {
+      navigation.navigate('FaceLoginScreen', {
+        onSuccess: async (userData) => {
+          setFaceLoginLoading(false);
+          await handleLoginSuccess(userData);
+        },
+        onCancel: async () => {
+          setFaceLoginLoading(false);
+          setAutoFaceLoginAvailable(false);
+          await removeAllUsersFromFaceAuth();
+          showToast('Face not recognized — please login manually.', 'error');
+        },
+      });
+    } catch (err) {
+      console.error('Auto face login error:', err);
+      setFaceLoginLoading(false);
+      showToast('Face login failed. Please login manually.', 'error');
+    }
+  };
+
+  // --------------- Manage recentUsersWithFaceAuth ---------------
+  const storeRecentUserWithFaceAuth = async (user) => {
+    try {
+      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
+      let usersArray = recentUsers ? JSON.parse(recentUsers) : [];
+
+      usersArray = usersArray.filter(u => u.userId !== user.userId);
+      usersArray.unshift({
+        userId: user.userId,
+        username: user.username,
+        email: user.email,
+        timestamp: new Date().toISOString()
+      });
+
+      usersArray = usersArray.slice(0, 5);
+      await AsyncStorage.setItem('recentUsersWithFaceAuth', JSON.stringify(usersArray));
+      setAutoFaceLoginAvailable(true);
+    } catch (err) {
+      console.error('Error storing recent user:', err);
+    }
+  };
+
+  const removeAllUsersFromFaceAuth = async () => {
+    try {
+      await AsyncStorage.removeItem('recentUsersWithFaceAuth');
+      setAutoFaceLoginAvailable(false);
+    } catch (err) {
+      console.error('Error removing face auth users:', err);
+    }
+  };
+
+  const removeUserFromFaceAuth = async (userId) => {
+    try {
+      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
+      if (!recentUsers) return;
+      let usersArray = JSON.parse(recentUsers);
+      usersArray = usersArray.filter(u => u.userId !== userId);
+      await AsyncStorage.setItem('recentUsersWithFaceAuth', JSON.stringify(usersArray));
+      setAutoFaceLoginAvailable(usersArray.length > 0);
+    } catch (err) {
+      console.error('Error removing user from face auth:', err);
+    }
+  };
+
+  // --------------- Login flow ---------------
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Error", "Please enter email and password");
+    // final validation
+    const eErr = validateEmail(email);
+    const pErr = validatePassword(password);
+
+    setEmailError(eErr);
+    setPasswordError(pErr);
+
+    if (eErr || pErr) {
+      runShake();
+      showToast('Please fix the highlighted errors', 'error');
       return;
     }
 
     setLoading(true);
-  
-    const user = await loginUser(email, password); // ✅ await async result
-    setLoading(false);
 
-    if (user) {
-      Alert.alert("Success", `Welcome ${user.username}!`);
-      navigation.replace("MainTabs"); // replace = faster transition
-    } else {
-      Alert.alert("Error", "Invalid email or password");
+    try {
+      const user = await loginUser(email.trim(), password);
+
+      if (!user) {
+        runShake();
+        showToast('Invalid email or password', 'error');
+        setLoading(false);
+        return;
+      }
+
+      // success
+      await handleLoginSuccess(user);
+    } catch (err) {
+      console.error('Login error:', err);
+      showToast('Login failed. Please try again.', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleLoginSuccess = async (user) => {
+    setNavigationLoading(true);
+    showToast(`Welcome back, ${user.username}!`, 'success');
 
+    try {
+      // store session
+      await AsyncStorage.setItem('currentUser', JSON.stringify({
+        userId: user.userId,
+        username: user.username,
+        email: user.email,
+      }));
 
+      // store for face auth
+      const hasFace = await hasRegisteredFace(user.userId);
+      if (hasFace) {
+        await storeRecentUserWithFaceAuth(user);
+      }
 
-  const handleFaceAuth = () => {
-    console.log('Face Authentication activated');
-    navigation.navigate('FaceRegistration')
+      // route determination
+      const next = await determineNextScreen(user.userId);
+      // small delay to show toast + loading UI
+      setTimeout(() => {
+        // use replace to clear history
+        navigation.replace(next.screen, next.params || {});
+      }, 250);
+
+    } catch (err) {
+      console.error('Error during post-login:', err);
+      // fallback
+      navigation.replace('MainTabs');
+    } finally {
+      setNavigationLoading(false);
+    }
   };
+
+  const determineNextScreen = async (userId) => {
+    try {
+      const onboardingDone = await checkOnboardingStatus(userId);
+      const userData = await getUserById(userId);
+      const hasFace = await hasRegisteredFace(userId);
+      const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
+
+      // not done onboarding
+      if (!onboardingDone) {
+        return { screen: 'OnboardingScreen' };
+      }
+
+      // no face registered
+      if (!hasFace) {
+        return {
+          screen: 'FaceRegistration',
+          params: { showSkipOption: true, fromLogin: true }
+        };
+      }
+
+      if (dailyQuizEnabled) {
+        const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
+        const todayDone = await getTodayQuizStatus(userId);
+        if (!hasSeenQuizIntro) {
+          return { screen: 'QuizIntroductionScreen', params: { userId } };
+        } else if (!todayDone) {
+          return { screen: 'DailyQuiz', params: { userId } };
+        }
+      }
+
+      return { screen: 'MainTabs' };
+    } catch (err) {
+      console.error('determineNextScreen error:', err);
+      return { screen: 'MainTabs' };
+    }
+  };
+
+  // --------------- Render ---------------
   return (
-    <ScrollView
-      contentContainerStyle={styles.scrollContainer}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.mainContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.container}>
+          <SimpleHeader title="Login" showBackButton={false} />
 
-      <View style={styles.container}>
-        <SimpleHeader title="Login" showBackButton={false} />
+          <Text style={styles.title}>Fundora</Text>
+          <Text style={styles.welcome}>Welcome Back</Text>
+          <Text style={styles.subtitle}>
+            Sign in to continue managing your finances.
+          </Text>
 
-        <Text style={styles.title}>Fundora</Text>
-        <Text style={styles.welcome}>Welcome Back</Text>
-        <Text style={styles.subtitle}>
-          Sign in to continue managing your finances.
-        </Text>
-
-        <Text style={styles.label}>Email Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="user@fundora.com"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-        />
-
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.passwordContainer}>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="password123"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            editable={!loading}
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons
-              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-              size={20}
-              color="#6b7280"
+          <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+            <Text style={styles.label}>Email Address</Text>
+            <TextInput
+              style={[styles.input, emailError ? styles.inputError : null]}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                // inline validation feedback
+                if (emailError) setEmailError('');
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholder="Enter your email"
+              editable={!loading && !navigationLoading}
+              returnKeyType="next"
             />
+            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+
+            <Text style={styles.label}>Password</Text>
+            <View style={[styles.passwordContainer, passwordError ? styles.inputError : null]}>
+              <TextInput
+                style={styles.passwordInput}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (passwordError) setPasswordError('');
+                }}
+                secureTextEntry={!showPassword}
+                placeholder="Enter your password"
+                maxLength={20}
+                editable={!loading && !navigationLoading}
+                returnKeyType="done"
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={loading}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
+            </View>
+            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+            <Text style={styles.charCount}>{password.length}/20 characters</Text>
+          </Animated.View>
+
+          <TouchableOpacity>
+            <Text style={styles.forgot} onPress={() => navigation.navigate('ForgotPassword')}>
+              Forgot password?
+            </Text>
           </TouchableOpacity>
-        </View>
 
-        <TouchableOpacity>
-          <Text style={styles.forgot} onPress={() => navigation.navigate('ForgotPassword')}>
-            Forgot password?
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.loginButton, loading && { opacity: 0.7 }]}
-          onPress={!loading ? handleLogin : null}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />) : (
-            <Text style={styles.loginText}>Login</Text>)}
-        </TouchableOpacity>
-
-
-        <Text style={styles.registerText}>
-          Don't have an account?{' '}
-          <Text style={styles.registerLink} onPress={() => navigation.navigate('Register')}>
-            Register
-          </Text>
-        </Text>
-
-        <View style={styles.faceContainer}>
-          <Text style={styles.faceTitle}>Face Authentication</Text>
-          <Text style={styles.faceSubtitle}>Login securely with just a glance.</Text>
-          <View style={styles.faceRow}>
-            <Image
-              source={require('../../../assets/Selection.png')}
-              style={styles.icon}
-            />
-            <TouchableOpacity style={styles.faceButton} onPress={handleFaceAuth}>
-              <Text style={styles.faceButtonText}>Enable Face Authentication</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-      {loading && (
-        <BlurView intensity={50} tint="light" style={styles.loadingOverlay}>
-          <MotiView
-            from={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: "timing", duration: 400 }}
-            style={styles.loadingCard}
+          <TouchableOpacity
+            style={[styles.loginButton, !isFormValid && styles.loginButtonDisabled]}
+            onPress={handleLogin}
+            disabled={!isFormValid || loading || navigationLoading}
           >
-            <ActivityIndicator size="large" color="#57C0A1" />
-            <Text style={styles.loadingText}>Logging in...</Text>
-          </MotiView>
-        </BlurView>
-      )}
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.loginText}>Login</Text>
+            )}
+          </TouchableOpacity>
 
-    </ScrollView>
+          <Text style={styles.registerText}>
+            Don't have an account?{' '}
+            <Text style={styles.registerLink} onPress={() => navigation.navigate('Register')}>
+              Register
+            </Text>
+          </Text>
+        </View>
+
+        {/* overlays */}
+        {(loading || navigationLoading) && (
+          <BlurView intensity={50} tint="light" style={styles.loadingOverlay}>
+            <MotiView
+              from={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "timing", duration: 300 }}
+              style={styles.loadingCard}
+            >
+              <ActivityIndicator size="large" color="#57C0A1" />
+              <Text style={styles.loadingText}>{loading ? 'Logging in...' : 'Preparing your experience...'}</Text>
+            </MotiView>
+          </BlurView>
+        )}
+
+        {faceLoginLoading && (
+          <BlurView intensity={50} tint="light" style={styles.loadingOverlay}>
+            <MotiView
+              from={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "timing", duration: 300 }}
+              style={styles.loadingCard}
+            >
+              <ActivityIndicator size="large" color="#57C0A1" />
+              <Text style={styles.loadingText}>Face Recognition...</Text>
+            </MotiView>
+          </BlurView>
+        )}
+      </ScrollView>
+
+      {/* Toast */}
+      {toastVisible && (
+        <MotiView
+          from={{ opacity: 0, translateY: 80 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          exit={{ opacity: 0, translateY: 80 }}
+          style={[
+            styles.toastContainer,
+            toastType === 'error' ? styles.toastError : styles.toastSuccess
+          ]}
+        >
+          <Ionicons
+            name={toastType === 'error' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            size={20}
+            color="#fff"
+          />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+          <TouchableOpacity onPress={() => setToastVisible(false)}>
+            <Ionicons name="close-outline" size={20} color="#fff" />
+          </TouchableOpacity>
+        </MotiView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  mainContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   scrollContainer: {
     flexGrow: 1,
     backgroundColor: '#fff',
     padding: 15,
   },
+  container: {
+    flex: 1,
+  },
 
+  // Toast Styles
+  toastContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  toastError: {
+    backgroundColor: '#EF4444',
+  },
+  toastSuccess: {
+    backgroundColor: '#10B981',
+  },
+  toastText: {
+    flex: 1,
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 10,
+    marginRight: 10,
+  },
+
+  // Validation Styles
+  inputError: {
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    backgroundColor: '#FEF3F2',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  charCount: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+
+  // Loading Overlays
   loadingOverlay: {
     position: "absolute",
     top: 0,
@@ -163,12 +540,12 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   loadingCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
     borderRadius: 20,
     padding: 25,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 6,
     elevation: 5,
@@ -185,7 +562,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#57C0A1',
     textAlign: 'center',
-    marginTop: 40,
+    marginTop: Platform.OS === 'ios' ? 40 : 24,
   },
   welcome: {
     fontSize: 30,
@@ -197,7 +574,7 @@ const styles = StyleSheet.create({
   subtitle: {
     textAlign: 'center',
     color: '#6b7280',
-    marginVertical: 30,
+    marginVertical: 18,
   },
   label: {
     fontWeight: '500',
@@ -209,6 +586,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
   },
+  inputError: {
+    // duplicate key intentionally merged earlier - this keeps consistent style
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    backgroundColor: '#FEF3F2',
+  },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -219,9 +602,10 @@ const styles = StyleSheet.create({
   passwordInput: {
     flex: 1,
     paddingVertical: 12,
+    paddingRight: 8,
   },
   forgot: {
-    color: '#8AD0ABFF',
+    color: '#57C0A1',
     textAlign: 'right',
     marginTop: 8,
   },
@@ -231,8 +615,12 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 20,
   },
+  loginButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.6,
+  },
   loginText: {
-    color: '#112A1DFF',
+    color: '#fff',
     textAlign: 'center',
     fontWeight: '600',
     fontSize: 18,
@@ -243,45 +631,6 @@ const styles = StyleSheet.create({
     color: '#565D6DFF',
   },
   registerLink: {
-    color: '#57C0A1',
-    fontWeight: '600',
-  },
-  faceContainer: {
-    backgroundColor: '#F4FBF7FF',
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 30,
-  },
-  faceTitle: {
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  faceSubtitle: {
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  faceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 12,
-  },
-  icon: {
-    width: 45,
-    height: 85,
-    marginRight: 10,
-  },
-  faceButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#89D0AAFF",
-    borderRadius: 9999,
-    paddingVertical: 12,
-    justifyContent: "center",
-  },
-  faceButtonText: {
-    color: "#215339FF",
-    fontWeight: "600",
-    textAlign: "center",
+    color: '#57C0A1'
   },
 });

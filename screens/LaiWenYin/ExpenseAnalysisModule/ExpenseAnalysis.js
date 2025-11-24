@@ -1,314 +1,979 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    ActivityIndicator,
+    TouchableOpacity,
+} from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { PieChart, BarChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import AppHeader from "../../reuseComponet/header.js";
-import { getExpensesLocal } from "../../../database/SQLite .js";
+import { getExpensesLocal } from "../../../database/SQLite.js";
 
 const screenWidth = Dimensions.get("window").width;
+
+// Helper function to round to 2 decimals
+const roundToTwo = (num) => {
+    return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
+// Function to check if category is income-related
+const isIncomeCategory = (category) => {
+    if (!category) return false;
+    const incomeKeywords = ['income', 'salary', 'revenue', 'earnings', 'paycheck', 'wage'];
+    return incomeKeywords.some(keyword => 
+        category.toLowerCase().includes(keyword.toLowerCase())
+    );
+};
+
+// Enhanced groupExpensesByMonth with date sorting
 const groupExpensesByMonth = (expenses) => {
     const result = {};
 
-    expenses.forEach(exp => {
-        if (exp.typeLabel === "income") return; // only expenses
+    expenses.forEach((exp) => {
+        if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) return;
 
         const dateObj = new Date(exp.date);
-        const month = dateObj.toLocaleString("default", { month: "short" }); // e.g. 'Jan'
+        const month = dateObj.toLocaleString("default", { month: "short" });
+        const year = dateObj.getFullYear();
+        const monthYear = `${month} ${year}`;
 
-        if (!result[month]) result[month] = {};
+        if (!result[monthYear]) result[monthYear] = { 
+            month: month,
+            year: year,
+            date: dateObj,
+            data: {} 
+        };
 
-        if (!result[month][exp.tag]) result[month][exp.tag] = 0;
-        result[month][exp.tag] += exp.amount;
+        const tag = exp.tag || 'Other';
+        if (isIncomeCategory(tag)) return;
+        
+        if (!result[monthYear].data[tag]) result[monthYear].data[tag] = 0;
+        result[monthYear].data[tag] += exp.amount;
     });
 
     return result;
 };
+
+// Get category-specific financial data
+const getCategoryFinancialData = (expenses, selectedCategory) => {
+    if (selectedCategory === "All") return getIncomeExpenseData(expenses);
+    
+    let categoryExpenses = 0;
+    let totalExpenses = 0;
+    let totalIncome = 0;
+
+    expenses.forEach((exp) => {
+        if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) {
+            totalIncome += exp.amount;
+        } else {
+            totalExpenses += exp.amount;
+            if (exp.tag === selectedCategory) {
+                categoryExpenses += exp.amount;
+            }
+        }
+    });
+
+    const otherExpenses = totalExpenses - categoryExpenses;
+
+    return [
+        {
+            name: "Income",
+            population: roundToTwo(totalIncome),
+            color: "#57C0A1",
+            legendFontColor: "#7C3AED",
+            legendFontSize: 12,
+        },
+        {
+            name: selectedCategory.length > 12 ? selectedCategory.substring(0, 12) + '...' : selectedCategory,
+            population: roundToTwo(categoryExpenses),
+            color: "#C084FC",
+            legendFontColor: "#7C3AED",
+            legendFontSize: 12,
+        },
+        {
+            name: "Other Exp",
+            population: roundToTwo(otherExpenses),
+            color: "#E5E7EB",
+            legendFontColor: "#7C3AED",
+            legendFontSize: 12,
+        },
+    ];
+};
+
+const getIncomeExpenseData = (expenses) => {
+    let totalIncome = 0;
+    let totalExpenses = 0;
+
+    expenses.forEach((exp) => {
+        if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) {
+            totalIncome += exp.amount;
+        } else {
+            totalExpenses += exp.amount;
+        }
+    });
+
+    return [
+        {
+            name: "Income",
+            population: roundToTwo(totalIncome),
+            color: "#57C0A1",
+            legendFontColor: "#7C3AED",
+            legendFontSize: 12,
+        },
+        {
+            name: "Expenses",
+            population: roundToTwo(totalExpenses),
+            color: "#E5E7EB",
+            legendFontColor: "#7C3AED",
+            legendFontSize: 12,
+        },
+    ];
+};
+
+const getRecentTransactions = (expenses) => {
+    const sortedExpenses = expenses
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 6);
+
+    return sortedExpenses.map(exp => ({
+        name: exp.payee,
+        amount: exp.typeLabel === "income" || isIncomeCategory(exp.tag)
+            ? `+RM${roundToTwo(exp.amount).toFixed(2)}` 
+            : `-RM${roundToTwo(exp.amount).toFixed(2)}`,
+        date: new Date(exp.date).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric' 
+        }),
+        type: (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) ? "income" : "expense",
+        category: exp.tag || 'Other'
+    }));
+};
+
+const getAvailableMonths = (expenses) => {
+    const monthsSet = new Set();
+    
+    expenses.forEach(exp => {
+        const dateObj = new Date(exp.date);
+        const month = dateObj.toLocaleString("default", { month: "long" });
+        monthsSet.add(month);
+    });
+    
+    return Array.from(monthsSet).sort((a, b) => {
+        const months = ["January", "February", "March", "April", "May", "June", 
+                       "July", "August", "September", "October", "November", "December"];
+        return months.indexOf(a) - months.indexOf(b);
+    });
+};
+
+// Get filtered expenses
+const getFilteredExpenses = (expenses, selectedCategory, selectedMonth) => {
+    return expenses.filter(exp => {
+        if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) {
+            return false;
+        }
+        
+        const expenseMonth = new Date(exp.date).toLocaleString("default", { month: "long" });
+        const monthMatch = selectedMonth === "All" || expenseMonth === selectedMonth;
+        const categoryMatch = selectedCategory === "All" || exp.tag === selectedCategory;
+        return monthMatch && categoryMatch;
+    });
+};
+
+// Get category insights
+const getCategoryInsights = (expenses, selectedCategory) => {
+    if (selectedCategory === "All") return null;
+
+    const categoryExpenses = expenses.filter(exp => 
+        exp.typeLabel !== "income" && !isIncomeCategory(exp.tag) && exp.tag === selectedCategory
+    );
+    
+    const totalSpent = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const transactionCount = categoryExpenses.length;
+    const averageTransaction = transactionCount > 0 ? totalSpent / transactionCount : 0;
+    
+    const topTransactions = categoryExpenses
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 3);
+
+    return {
+        totalSpent: roundToTwo(totalSpent),
+        transactionCount,
+        averageTransaction: roundToTwo(averageTransaction),
+        topTransactions: topTransactions.map(t => ({
+            ...t,
+            amount: roundToTwo(t.amount)
+        }))
+    };
+};
+
+// Calculate spending insights
+const calculateSpendingInsights = (barData, totalPerMonth) => {
+    if (!barData || !totalPerMonth || totalPerMonth.length === 0) return null;
+
+    const categoryTotals = barData.datasets.map((dataset, index) => ({
+        category: barData.legend[index],
+        total: roundToTwo(dataset.data.reduce((sum, val) => sum + val, 0)),
+        color: dataset.color ? dataset.color(1) : '#CCCCCC'
+    })).sort((a, b) => b.total - a.total);
+
+    const topCategory = categoryTotals[0];
+    const totalSpending = roundToTwo(categoryTotals.reduce((sum, item) => sum + item.total, 0));
+
+    let trendInsight = null;
+    if (totalPerMonth.length > 1) {
+        const latestMonth = totalPerMonth[totalPerMonth.length - 1];
+        const previousMonth = totalPerMonth[totalPerMonth.length - 2];
+        const change = roundToTwo(((latestMonth - previousMonth) / previousMonth * 100));
+        
+        if (Math.abs(change) > 1) {
+            trendInsight = {
+                change: change,
+                isIncrease: change > 0,
+                latestMonth: barData.labels[barData.labels.length - 1],
+                previousMonth: barData.labels[barData.labels.length - 2]
+            };
+        }
+    }
+
+    return {
+        topCategory,
+        totalSpending,
+        trendInsight,
+        categoryTotals
+    };
+};
+
+// Generate colors for dynamic categories
+const generateCategoryColors = (categories) => {
+    const baseColors = [
+        '#57C0A1', '#C084FC', '#0F172A', '#FACC15', '#3B82F6', 
+        '#EF4444', '#8B5CF6', '#06B6D4', '#F97316', '#84CC16'
+    ];
+    
+    const colorMap = {};
+    categories.forEach((category, index) => {
+        if (!isIncomeCategory(category)) {
+            colorMap[category] = baseColors[index % baseColors.length];
+        }
+    });
+    
+    return colorMap;
+};
+
 export default function AnalysisDashboard() {
     const [selectedCategory, setSelectedCategory] = useState("All");
-    const [selectedMonth, setSelectedMonth] = useState("April");
-
-    const incomeExpenseData = [
-        { name: "Income", population: 3200, color: "#57C0A1", legendFontColor: "#333", legendFontSize: 14 },
-        { name: "Expenses", population: 2400, color: "#E5E7EB", legendFontColor: "#333", legendFontSize: 14 },
-    ];
-
-    // Replace this old barData
+    const [selectedMonth, setSelectedMonth] = useState("All");
     const [barData, setBarData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [allCategories, setAllCategories] = useState([]);
+    const [availableMonths, setAvailableMonths] = useState([]);
+    const [incomeExpenseData, setIncomeExpenseData] = useState([]);
+    const [recentTransactions, setRecentTransactions] = useState([]);
+    const [allExpenses, setAllExpenses] = useState([]);
+    const [categoryColors, setCategoryColors] = useState({});
+    const [categoryInsights, setCategoryInsights] = useState(null);
 
     useEffect(() => {
         const loadExpenses = async () => {
-            const allExpenses = await getExpensesLocal();
-            const grouped = groupExpensesByMonth(allExpenses);
+            try {
+                const expenses = await getExpensesLocal();
+                setAllExpenses(expenses);
 
-            // Extract latest 4 months
-            const months = Object.keys(grouped).slice(-4);
+                if (!expenses || expenses.length === 0) {
+                    setBarData(null);
+                    setIncomeExpenseData([]);
+                    setRecentTransactions([]);
+                    setLoading(false);
+                    return;
+                }
 
-            // Fixed color mapping
-            const colorMap = {
-                Groceries: "#57C0A1",
-                Transport: "#C084FC",
-                Entertainment: "#0F172A",
-                Utilities: "#FACC15"
-            };
+                const allTags = [...new Set(expenses
+                    .map(exp => exp.tag || 'Other')
+                    .filter(tag => !isIncomeCategory(tag))
+                )];
+                setAllCategories(allTags);
 
-            // Collect totals by tag across months
-            const categories = Object.keys(colorMap);
+                const months = getAvailableMonths(expenses);
+                setAvailableMonths(months);
 
-            const datasets = categories.map(tag => ({
-                data: months.map(m => grouped[m]?.[tag] || 0),
-                barColors: months.map(() => colorMap[tag])
-            }));
-
-            setBarData({
-                labels: months,
-                datasets,
-                legend: categories,
-            });
+                processData(expenses, "All", "All");
+                
+            } catch (error) {
+                console.error("Error loading expenses:", error);
+                setBarData(null);
+                setIncomeExpenseData([]);
+                setRecentTransactions([]);
+            } finally {
+                setLoading(false);
+            }
         };
 
         loadExpenses();
     }, []);
 
+    useEffect(() => {
+        if (allExpenses.length > 0) {
+            processData(allExpenses, selectedCategory, selectedMonth);
+        }
+    }, [selectedCategory, selectedMonth]);
 
+    const processData = (expenses, category, month) => {
+        const filtered = getFilteredExpenses(expenses, category, month);
+        
+        const financialData = category === "All" 
+            ? getIncomeExpenseData(expenses)
+            : getCategoryFinancialData(expenses, category);
+        setIncomeExpenseData(financialData);
 
-    {
-        barData ? (
-            <BarChart
-                data={barData}
-                width={screenWidth * 0.82}
-                height={250}
-                fromZero={true}
-                yAxisLabel="RM"
-                chartConfig={{
-                    backgroundGradientFrom: "#fff",
-                    backgroundGradientTo: "#fff",
-                    decimalPlaces: 2,
-                    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                    fillShadowGradientOpacity: 1,
-                }}
-                style={{ marginVertical: 8 }}
-                withCustomBarColorFromData={true}
-                flatColor={true}
-            />
-        ) : (
-            <Text style={{ textAlign: "center", color: "#9CA3AF" }}>Loading data...</Text>
+        const transactions = getRecentTransactions(expenses);
+        setRecentTransactions(transactions);
+
+        if (category !== "All") {
+            const insights = getCategoryInsights(expenses, category);
+            setCategoryInsights(insights);
+        } else {
+            setCategoryInsights(null);
+        }
+
+        const grouped = groupExpensesByMonth(filtered);
+        const sortedMonthKeys = Object.keys(grouped).sort((a, b) => 
+            new Date(grouped[a].date) - new Date(grouped[b].date)
+        );
+        
+        const monthsForChart = sortedMonthKeys.slice(-4);
+        
+        if (monthsForChart.length === 0) {
+            setBarData(null);
+            return;
+        }
+
+        const allTags = new Set();
+        monthsForChart.forEach(monthKey => {
+            const monthData = grouped[monthKey];
+            Object.keys(monthData.data).forEach(tag => {
+                if (!isIncomeCategory(tag)) {
+                    allTags.add(tag);
+                }
+            });
+        });
+        
+        const uniqueCategories = Array.from(allTags);
+        const colorMap = generateCategoryColors(uniqueCategories);
+        setCategoryColors(colorMap);
+
+        const data = {
+            labels: monthsForChart.map(monthKey => grouped[monthKey].month),
+            datasets: uniqueCategories.map(category => ({
+                data: monthsForChart.map(monthKey => roundToTwo(grouped[monthKey].data[category] || 0)),
+                color: () => colorMap[category],
+            })),
+            legend: uniqueCategories
+        };
+
+        setBarData(data);
+    };
+
+    const totalPerMonth = barData?.labels
+        ? barData.labels.map((m, i) =>
+            roundToTwo(barData.datasets.reduce((sum, ds) => sum + ds.data[i], 0))
         )
-    }
+        : [];
 
-
-    const recentTransactions = [
-        { name: "Received salary from employer", amount: "+3,200.00", date: "Apr 28", type: "income" },
-        { name: "Dinner with friends at Bistro", amount: "-85.50", date: "Apr 27", type: "expense" },
-        { name: "Paid credit card statement", amount: "-1,500.00", date: "Apr 26", type: "expense" },
-        { name: "Fuel for weekly commute", amount: "-80.00", date: "Apr 25", type: "expense" },
-        { name: "Monthly rent payment", amount: "-1,200.00", date: "Apr 24", type: "expense" },
-        { name: "Tuition fee installment", amount: "-750.00", date: "Apr 23", type: "expense" },
-    ];
-
-    const categories = [
-        { name: "Groceries", color: "#57C0A1" },
-        { name: "Transport", color: "#C084FC" },
-        { name: "Entertainment", color: "#0F172A" },
-        { name: "Utilities", color: "#FACC15" },
-    ];
-    const totalPerMonth = barData?.labels.map((m, i) =>
-        barData.datasets.reduce((sum, ds) => sum + ds.data[i], 0)
-    );
+    const spendingInsights = calculateSpendingInsights(barData, totalPerMonth);
+    
+    const categoriesForLegend = allCategories.length > 0 
+        ? allCategories.filter(cat => !isIncomeCategory(cat))
+        : ['Groceries', 'Transport', 'Entertainment', 'Utilities'];
 
     return (
-        <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-            <AppHeader title="Analysis Dashboard" />
-
-            {/* ✅ Dropdown Row */}
-            <View style={styles.filterRow}>
-                <View style={styles.dropdownContainer}>
-                    <Picker
-                        selectedValue={selectedCategory}
-                        onValueChange={(itemValue) => setSelectedCategory(itemValue)}
-                        style={styles.dropdown}
-                    >
-                        <Picker.Item label="All Categories" value="All" />
-                        <Picker.Item label="Groceries" value="Groceries" />
-                        <Picker.Item label="Transport" value="Transport" />
-                        <Picker.Item label="Entertainment" value="Entertainment" />
-                        <Picker.Item label="Utilities" value="Utilities" />
-                    </Picker>
-                </View>
-
-                <View style={styles.dropdownContainer}>
-                    <Picker
-                        selectedValue={selectedMonth}
-                        onValueChange={(itemValue) => setSelectedMonth(itemValue)}
-                        style={styles.dropdown}
-                    >
-                        <Picker.Item label="January" value="January" />
-                        <Picker.Item label="February" value="February" />
-                        <Picker.Item label="March" value="March" />
-                        <Picker.Item label="April" value="April" />
-                    </Picker>
-                </View>
-            </View>
-
-            {/* ✅ Financial Overview */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Financial Overview</Text>
-                <Text style={styles.cardSubtitle}>
-                    Income vs. Expenses for {selectedMonth}
-                </Text>
-
-                <PieChart
-                    data={incomeExpenseData}
-                    width={screenWidth * 0.82}
-                    height={180}
-                    chartConfig={{
-                        color: (opacity = 1) => `rgba(87, 192, 161, ${opacity})`,
-                    }}
-                    accessor={"population"}
-                    backgroundColor={"transparent"}
-                    paddingLeft={"10"}
-                    center={[10, 0]}
-                    hasLegend={true}
-                />
-            </View>
-
-            {/* ✅ Monthly Spend Analysis */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Monthly Spend Analysis</Text>
-                <Text style={styles.cardSubtitle}>
-                    Breakdown of expenses over the last few months
-                </Text>
-                <View style={{ alignItems: "center", marginBottom: 6 }}>
-                    {barData?.labels.map((m, i) => (
-                        <Text key={i} style={{ color: "#374151", fontSize: 13 }}>
-                            {m}: RM {totalPerMonth[i].toFixed(2)}
-                        </Text>
-                    ))}
-                </View>
-
-                <BarChart
-                    data={barData}
-                    width={screenWidth * 0.82}
-                    height={250}
-                    fromZero={true}
-                    yAxisLabel="$"
-                    chartConfig={{
-                        backgroundGradientFrom: "#fff",
-                        backgroundGradientTo: "#fff",
-                        decimalPlaces: 2,
-                        color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                        labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                        fillShadowGradientOpacity: 1,
-                    }}
-                    style={{ marginVertical: 8 }}
-                    withCustomBarColorFromData={true}
-                    flatColor={true}
-                />
-
-                <View style={styles.legendContainer}>
-                    {categories.map((item, index) => (
-                        <View key={index} style={styles.legendItem}>
-                            <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                            <Text style={styles.legendText}>{item.name}</Text>
-                        </View>
-                    ))}
-                </View>
-            </View>
-
-            {/* ✅ Recent Financial Activity */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Recent Financial Activity</Text>
-                <Text style={styles.cardSubtitle}>
-                    A chronological view of your latest transactions
-                </Text>
-
-                {recentTransactions.map((item, index) => (
-                    <View key={index} style={styles.transactionRow}>
-                        <View style={styles.transactionLeft}>
-                            <Text
-                                style={styles.transactionName}
-                                numberOfLines={2}
-                                ellipsizeMode="tail"
-                            >
-                                {item.name}
-                            </Text>
-                            <Text style={styles.transactionDate}>{item.date}</Text>
+        <View style={styles.container}>
+            <AppHeader title="Financial Analysis" />
+            
+            <ScrollView 
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+            >
+                {/* Filter Section */}
+                <View style={styles.filterSection}>
+                    <Text style={styles.sectionTitle}>Filter View</Text>
+                    <View style={styles.filterRow}>
+                        <View style={styles.filterGroup}>
+                            <Text style={styles.filterLabel}>Category</Text>
+                            <View style={styles.dropdownContainer}>
+                                <Picker
+                                    selectedValue={selectedCategory}
+                                    onValueChange={setSelectedCategory}
+                                    style={styles.dropdown}
+                                >
+                                    <Picker.Item label="All Categories" value="All" />
+                                    {categoriesForLegend.map((category, index) => (
+                                        <Picker.Item 
+                                            key={index} 
+                                            label={category} 
+                                            value={category} 
+                                        />
+                                    ))}
+                                </Picker>
+                            </View>
                         </View>
 
-                        <Text
-                            style={[
-                                styles.transactionAmount,
-                                { color: item.type === "income" ? "#10B981" : "#EF4444" },
-                            ]}
+                        <View style={styles.filterGroup}>
+                            <Text style={styles.filterLabel}>Time Period</Text>
+                            <View style={styles.dropdownContainer}>
+                                <Picker
+                                    selectedValue={selectedMonth}
+                                    onValueChange={setSelectedMonth}
+                                    style={styles.dropdown}
+                                >
+                                    <Picker.Item label="All Months" value="All" />
+                                    {availableMonths.map((month, index) => (
+                                        <Picker.Item key={index} label={month} value={month} />
+                                    ))}
+                                </Picker>
+                            </View>
+                        </View>
+                    </View>
+                    
+                    {(selectedCategory !== "All" || selectedMonth !== "All") && (
+                        <TouchableOpacity 
+                            style={styles.clearFilterButton}
+                            onPress={() => {
+                                setSelectedCategory("All");
+                                setSelectedMonth("All");
+                            }}
                         >
-                            {item.amount}
+                            <Text style={styles.clearFilterText}>Clear Filters</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+                {/* Financial Overview - FIXED */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>
+                            {selectedCategory === "All" ? "Financial Overview" : `${selectedCategory} Analysis`}
                         </Text>
-                    </View>))}
-            </View>
-        </ScrollView>
+                        <Text style={styles.cardSubtitle} numberOfLines={1}>
+                            {selectedCategory === "All" 
+                                ? selectedMonth === "All" ? "All Time Period" : `${selectedMonth}`
+                                : `Deep dive into ${selectedCategory}`
+                            }
+                        </Text>
+                    </View>
+
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#57C0A1" style={styles.loader} />
+                    ) : incomeExpenseData.length > 0 ? (
+                        <View style={styles.chartContainer}>
+                            <PieChart
+                                data={incomeExpenseData}
+                                width={Math.min(screenWidth - 60, 320)}
+                                height={160}
+                                chartConfig={{
+                                    color: (opacity = 1) => `rgba(87, 192, 161, ${opacity})`,
+                                }}
+                                accessor={"population"}
+                                backgroundColor={"transparent"}
+                                paddingLeft={"0"}
+                                center={[0, 0]}
+                                hasLegend={true}
+                                absolute
+                            />
+                        </View>
+                    ) : (
+                        <Text style={styles.noDataText}>No financial data available</Text>
+                    )}
+
+                    {selectedCategory !== "All" && categoryInsights && (
+                        <View style={styles.categoryStats}>
+                            <View style={styles.statRow}>
+                                <View style={styles.statItem}>
+                                    <Text style={styles.statValue}>RM{categoryInsights.totalSpent.toFixed(2)}</Text>
+                                    <Text style={styles.statLabel}>Total Spent</Text>
+                                </View>
+                                <View style={styles.statItem}>
+                                    <Text style={styles.statValue}>{categoryInsights.transactionCount}</Text>
+                                    <Text style={styles.statLabel}>Transactions</Text>
+                                </View>
+                                <View style={styles.statItem}>
+                                    <Text style={styles.statValue}>RM{categoryInsights.averageTransaction.toFixed(2)}</Text>
+                                    <Text style={styles.statLabel}>Avg/Transaction</Text>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+                </View>
+
+                {/* Monthly Spend Analysis - FIXED */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>
+                            {selectedCategory === "All" ? "Monthly Spending" : `${selectedCategory} Trend`}
+                        </Text>
+                        <Text style={styles.cardSubtitle} numberOfLines={1}>
+                            {selectedCategory === "All" ? "Last 4 months" : `${selectedCategory} monthly trend`}
+                        </Text>
+                    </View>
+
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#57C0A1" style={styles.loader} />
+                    ) : barData && barData.datasets.length > 0 ? (
+                        <>
+                            {/* Monthly Summary - IMPROVED */}
+                            <View style={styles.monthlySummary}>
+                                {barData.labels.map((m, i) => {
+                                    const currentTotal = totalPerMonth[i];
+                                    const prevTotal = i > 0 ? totalPerMonth[i-1] : null;
+                                    const trend = prevTotal ? roundToTwo(((currentTotal - prevTotal) / prevTotal * 100)) : 0;
+                                    
+                                    return (
+                                        <View key={i} style={styles.monthSummaryItem}>
+                                            <Text style={styles.monthLabel}>{m}</Text>
+                                            <Text style={styles.monthTotal}>RM{currentTotal?.toFixed(0)}</Text>
+                                            {prevTotal && Math.abs(trend) > 1 && (
+                                                <Text style={[
+                                                    styles.trendText,
+                                                    { color: trend >= 0 ? '#EF4444' : '#10B981' }
+                                                ]}>
+                                                    {trend >= 0 ? '↑' : '↓'}{Math.abs(trend).toFixed(0)}%
+                                                </Text>
+                                            )}
+                                        </View>
+                                    );
+                                })}
+                            </View>
+
+                            {/* Bar Chart - IMPROVED */}
+
+                                <View style={styles.chartContainer}>
+                                    <BarChart
+                                        data={barData}
+                                        width={Math.min(screenWidth - 40, 350)}
+                                        height={200}
+                                        fromZero={true}
+                                        showValuesOnTopOfBars={true}
+                                        yAxisLabel="RM"
+                                        withInnerLines={true}
+                                        withHorizontalLabels={true}
+                                        withVerticalLabels={true}
+                                        segments={4}
+                                        showBarTops={false}
+                                        // REMOVE this line to show individual bars instead of stacked:
+                                        // showBarTops={false}
+                                        withCustomBarColorFromData={true}
+                                        flatColor={true}
+                                        chartConfig={{
+                                            backgroundColor: "#ffffff",
+                                            backgroundGradientFrom: "#ffffff",
+                                            backgroundGradientTo: "#ffffff",
+                                            decimalPlaces: 0,
+                                            color: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
+                                            labelColor: (opacity = 1) => `rgba(75, 85, 99, ${opacity})`,
+                                            propsForBackgroundLines: {
+                                                stroke: "#E5E7EB",
+                                                strokeWidth: 1,
+                                            },
+                                            barPercentage: 0.7,
+                                            propsForLabels: {
+                                                fontSize: 10,
+                                            },
+                                        }}
+                                        style={styles.barChart}
+                                    />
+                                </View>
+
+                            {/* Insights */}
+                            {spendingInsights && (
+                                <View style={styles.insightsContainer}>
+                                    <Text style={styles.insightsTitle}>💡 Quick Insights</Text>
+                                    
+                                    {selectedCategory === "All" ? (
+                                        <>
+                                            <View style={styles.insightItem}>
+                                                <Text style={styles.insightText} numberOfLines={2}>
+                                                    Top category: <Text style={styles.highlightText}>{spendingInsights.topCategory.category}</Text>
+                                                </Text>
+                                            </View>
+                                            {spendingInsights.trendInsight && (
+                                                <View style={styles.insightItem}>
+                                                    <Text style={styles.insightText} numberOfLines={2}>
+                                                        Spending {spendingInsights.trendInsight.isIncrease ? 'increased' : 'decreased'} by{' '}
+                                                        <Text style={[styles.highlightText, { 
+                                                            color: spendingInsights.trendInsight.isIncrease ? '#EF4444' : '#10B981'
+                                                        }]}>
+                                                            {Math.abs(spendingInsights.trendInsight.change).toFixed(0)}%
+                                                        </Text>
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <View style={styles.insightItem}>
+                                            <Text style={styles.insightText} numberOfLines={2}>
+                                                <Text style={styles.highlightText}>{categoryInsights?.transactionCount} transactions</Text> • Avg: <Text style={styles.highlightText}>RM{categoryInsights?.averageTransaction.toFixed(2)}</Text>
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* Legend - IMPROVED */}
+                            <View style={styles.legendContainer}>
+                                {categoriesForLegend.slice(0, 5).map((category, index) => (
+                                    <View key={index} style={styles.legendItem}>
+                                        <View style={[styles.legendDot, { backgroundColor: categoryColors[category] }]} />
+                                        <Text style={styles.legendText} numberOfLines={1}>
+                                            {category.length > 10 ? category.substring(0, 10) + '...' : category}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </>
+                    ) : (
+                        <Text style={styles.noDataText}>No spending data available yet</Text>
+                    )}
+                </View>
+
+                {/* Top Category Transactions */}
+                {selectedCategory !== "All" && categoryInsights && categoryInsights.topTransactions.length > 0 && (
+                    <View style={styles.card}>
+                        <View style={styles.cardHeader}>
+                            <Text style={styles.cardTitle}>Largest Expenses</Text>
+                            <Text style={styles.cardSubtitle} numberOfLines={1}>Top {selectedCategory} spending</Text>
+                        </View>
+                        
+                        {categoryInsights.topTransactions.map((transaction, index) => (
+                            <View key={index} style={styles.largeTransactionRow}>
+                                <View style={styles.transactionLeft}>
+                                    <Text style={styles.transactionName} numberOfLines={1}>
+                                        {transaction.payee}
+                                    </Text>
+                                    <Text style={styles.transactionDate}>
+                                        {new Date(transaction.date).toLocaleDateString('en-US', { 
+                                            month: 'short', 
+                                            day: 'numeric' 
+                                        })}
+                                    </Text>
+                                </View>
+                                <Text style={styles.largeTransactionAmount}>
+                                    RM{transaction.amount.toFixed(2)}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
+                {/* Recent Transactions */}
+                <View style={styles.card}>
+                    <View style={styles.cardHeader}>
+                        <Text style={styles.cardTitle}>
+                            {selectedCategory === "All" ? "Recent Activity" : `Recent ${selectedCategory}`}
+                        </Text>
+                        <Text style={styles.cardSubtitle} numberOfLines={1}>
+                            {selectedCategory === "All" ? "Latest transactions" : `Latest transactions`}
+                        </Text>
+                    </View>
+
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#57C0A1" style={styles.loader} />
+                    ) : recentTransactions.length > 0 ? (
+                        recentTransactions.map((item, index) => (
+                            <View key={index} style={styles.transactionRow}>
+                                <View style={styles.transactionLeft}>
+                                    <Text style={styles.transactionName} numberOfLines={1}>
+                                        {item.name}
+                                    </Text>
+                                    <Text style={styles.transactionDate}>{item.date}</Text>
+                                </View>
+                                <Text style={[
+                                    styles.transactionAmount,
+                                    { color: item.type === "income" ? "#10B981" : "#EF4444" }
+                                ]}>
+                                    {item.amount}
+                                </Text>
+                            </View>
+                        ))
+                    ) : (
+                        <Text style={styles.noDataText}>No recent transactions</Text>
+                    )}
+                </View>
+            </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#F9FAFB", paddingHorizontal: 20, paddingTop: 40 },
-    filterRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15 },
-    dropdownContainer: {
-        backgroundColor: "#fff",
-        borderRadius: 8,
-        width: "47%",
-        elevation: 2,
+    container: {
+        flex: 1,
+        backgroundColor: "#F8FAFC",
     },
-    dropdown: { height: 50, color: "#374151" },
-    card: {
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        paddingHorizontal: 16,
+        paddingTop: 20,
+        paddingBottom: 40,
+    },
+    // Filter Section
+    filterSection: {
         backgroundColor: "#fff",
-        borderRadius: 14,
-        padding: 16,
+        borderRadius: 16,
+        padding: 20,
         marginBottom: 16,
         shadowColor: "#000",
-        shadowOpacity: 0.08,
+        shadowOpacity: 0.05,
         shadowOffset: { width: 0, height: 2 },
-        elevation: 3,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: "#1F2937",
+        marginBottom: 16,
+    },
+    filterRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    filterGroup: {
+        flex: 1,
+    },
+    filterLabel: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#4B5563",
+        marginBottom: 8,
+    },
+    dropdownContainer: {
+        backgroundColor: "#F9FAFB",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
         overflow: "hidden",
     },
-    cardTitle: { fontSize: 16, fontWeight: "600", color: "#111827" },
-    cardSubtitle: { color: "#6B7280", fontSize: 12, marginBottom: 10, flexWrap: "wrap" },
-    legendContainer: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", marginTop: 6 },
-    legendItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 10, marginTop: 4 },
-    legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-    legendText: { fontSize: 13, color: "#374151" },
-
+    dropdown: { 
+        height: 48, 
+        color: "#1F2937",
+        fontSize: 14,
+    },
+    clearFilterButton: {
+        backgroundColor: "#EF4444",
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        alignSelf: 'flex-start',
+        marginTop: 12,
+    },
+    clearFilterText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    // Cards
+    card: {
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 16,
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    cardHeader: {
+        marginBottom: 16,
+    },
+    cardTitle: { 
+        fontSize: 18, 
+        fontWeight: "700", 
+        color: "#1F2937",
+        marginBottom: 4,
+    },
+    cardSubtitle: { 
+        color: "#6B7280", 
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    loader: {
+        marginVertical: 20,
+    },
+    chartContainer: {
+        alignItems: 'center',
+        marginVertical: 8,
+    },
+    barChart: {
+        borderRadius: 12,
+    },
+    // Category Stats
+    categoryStats: {
+        marginTop: 16,
+        padding: 16,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 12,
+    },
+    statRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    statItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statValue: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1F2937',
+        marginBottom: 4,
+    },
+    statLabel: {
+        fontSize: 11,
+        color: '#6B7280',
+        fontWeight: '500',
+    },
+    // Monthly Summary - IMPROVED
+    monthlySummary: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        backgroundColor: '#F8FAFC',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+    },
+    monthSummaryItem: {
+        alignItems: 'center',
+        flex: 1,
+        paddingHorizontal: 4,
+    },
+    monthLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#4B5563',
+        marginBottom: 6,
+    },
+    monthTotal: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1F2937',
+        marginBottom: 2,
+    },
+    trendText: {
+        fontSize: 10,
+        fontWeight: '700',
+    },
+    // Insights
+    insightsContainer: {
+        backgroundColor: '#F0F9FF',
+        borderRadius: 12,
+        padding: 14,
+        marginTop: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#0EA5E9',
+    },
+    insightsTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#0369A1',
+        marginBottom: 6,
+    },
+    insightItem: {
+        marginBottom: 4,
+    },
+    insightText: {
+        fontSize: 13,
+        color: '#374151',
+        lineHeight: 18,
+    },
+    highlightText: {
+        fontWeight: '700',
+        color: '#1F2937',
+    },
+    // Legend - IMPROVED
+    legendContainer: {
+        flexDirection: "row",
+        justifyContent: "center",
+        flexWrap: "wrap",
+        marginTop: 14,
+        paddingTop: 14,
+        borderTopWidth: 1,
+        borderTopColor: "#F3F4F6",
+        gap: 10,
+    },
+    legendItem: {
+        flexDirection: "row",
+        alignItems: "center",
+        maxWidth: 100,
+    },
+    legendDot: { 
+        width: 10, 
+        height: 10, 
+        borderRadius: 5, 
+        marginRight: 4,
+        flexShrink: 0,
+    },
+    legendText: { 
+        fontSize: 11, 
+        color: "#4B5563",
+        fontWeight: '500',
+        flexShrink: 1,
+    },
+    // Transactions
     transactionRow: {
         flexDirection: "row",
         justifyContent: "space-between",
-        alignItems: "flex-start",
-        borderBottomWidth: 0.5,
-        borderBottomColor: "#E5E7EB",
-        paddingVertical: 10,
-        gap: 10,
+        alignItems: "center",
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F3F4F6",
     },
-    transactionLeft: {
-        flex: 1,
-        flexShrink: 1,
-        marginRight: 10,
+    largeTransactionRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F3F4F6",
+    },
+    transactionLeft: { 
+        flex: 1, 
+        marginRight: 12,
     },
     transactionName: {
-        fontSize: 15,
-        fontWeight: "500",
-        color: "#111827",
-        flexShrink: 1,
-        flexWrap: "wrap",
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#1F2937",
+        marginBottom: 2,
     },
-    transactionDate: {
-        fontSize: 12,
-        color: "#9CA3AF",
-        marginTop: 2,
+    transactionDate: { 
+        fontSize: 12, 
+        color: "#6B7280",
     },
     transactionAmount: {
-        fontSize: 15,
-        fontWeight: "600",
-        textAlign: "right",
-        minWidth: 80, // keeps it aligned nicely
+        fontSize: 14,
+        fontWeight: "700",
+        minWidth: 85,
+        textAlign: 'right',
     },
-
+    largeTransactionAmount: {
+        fontSize: 15,
+        fontWeight: "700",
+        color: "#EF4444",
+        minWidth: 85,
+        textAlign: 'right',
+    },
+    noDataText: {
+        textAlign: "center",
+        color: "#9CA3AF",
+        fontSize: 14,
+        paddingVertical: 24,
+        fontStyle: "italic",
+    },
 });

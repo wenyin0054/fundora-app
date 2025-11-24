@@ -9,19 +9,20 @@ import CustomDrawerContent from "./DrawerComponent";
 
 
 // Screens
-import DashboardScreen from "../LoyYingZheng/dashboard";
-import ExpensesOrganizer from "../LoyYingZheng/ExpensesOrganizer/ExpensesOrganizer";
-import SavingScreen from "../LoyYingZheng/Goal/SavingScreen";
-import BillTracker from "../LoyYingZheng/Bill";
-import AddExpenseScreen from "../LoyYingZheng/ExpensesOrganizer/AddExpensesOrIncome";
-import ReceiptScannerScreen from "../LoyYingZheng/ExpensesOrganizer/ScanReceipt";
-import ExpenseDetail from "../LoyYingZheng/ExpensesOrganizer/ExpensesDetail";
-import SetGoal from "../LoyYingZheng/Goal/AddGoal";
-import AddTag from "../LoyYingZheng/Tag/addTag";
-import TagManager from "../LoyYingZheng/Tag/tagManager";
-import PeriodicExpenses from "../LoyYingZheng/EventTag/PeriodicExpenses";
-import AddEventTag from "../LoyYingZheng/EventTag/AddEventTag";
-import EventTagManager from "../LoyYingZheng/EventTag/EventTagManager";
+import DashboardScreen from "../dashboard";
+import ExpensesOrganizer from "../ExpensesOrganizer/ExpensesOrganizer";
+import SavingScreen from "../Goal/SavingScreen";
+import BillTracker from "../Bill";
+import AddExpenseScreen from "../ExpensesOrganizer/AddExpensesOrIncome";
+import ReceiptScannerScreen from "../ExpensesOrganizer/ScanReceipt";
+import ExpenseDetail from "../ExpensesOrganizer/ExpensesDetail";
+import SetGoal from "../Goal/AddGoal";
+import AddTag from "../Tag/addTag";
+import TagManagerScreen from "../Tag/tagManager";
+import PeriodicExpenses from "../EventTag/PeriodicExpenses";
+import TagManager from "../Tag/tagManager";
+import AddEventTag from "../EventTag/AddEventTag";
+import EventTagManager from "../EventTag/EventTagManager";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();

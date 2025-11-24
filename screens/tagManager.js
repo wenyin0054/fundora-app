@@ -9,30 +9,24 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  deleteEventTagLocal,
-  getEventTagsLocal,
-  addEventTagLocal,
-  createEventTagTable,
-  updateEventTagLocal,
-} from "../../../database/SQLite ";
-import AppHeader from "../../reuseComponet/header";
-import db from "../../../database/SQLite ";
+import { getTagsLocal, addTagLocal, createTagTable, deleteTagLocal } from "../database/SQLite";
+import AppHeader from "./reuseComponet/header";
+import db from "../database/SQLite";
 
-export default function EventTagManager({ route, navigation }) {
+export default function TagManager({ route, navigation }) {
   const [tags, setTags] = useState([]);
   const [newTag, setNewTag] = useState("");
-  const [description, setDescription] = useState("");
+  const [isEssential, setIsEssential] = useState(true);
   const [editingTag, setEditingTag] = useState(null);
 
-  const userId = "U000001"; // Replace with actual login user ID
+  const userId = "U000001";
   const { tag } = route.params || {};
 
   // 🧠 Load Tags
   const loadTags = async () => {
     try {
-      await createEventTagTable();
-      const data = await getEventTagsLocal();
+      await createTagTable();
+      const data = await getTagsLocal();
       setTags(data);
     } catch (error) {
       console.error("❌ loadTags error:", error);
@@ -44,7 +38,7 @@ export default function EventTagManager({ route, navigation }) {
     if (tag) {
       setEditingTag(tag);
       setNewTag(tag.name);
-      setDescription(tag.description || "");
+      setIsEssential(tag.essentialityLabel === 1);
     }
   }, [tag]);
 
@@ -54,30 +48,39 @@ export default function EventTagManager({ route, navigation }) {
 
   // ➕ Add or Update Tag
   const handleSaveTag = async () => {
-    const trimmedName = newTag.trim();
-
-    if (!trimmedName) {
+    const trimmed = newTag.trim();
+    if (!trimmed) {
       Alert.alert("⚠️ Empty Name", "Please enter a tag name.");
       return;
     }
 
     try {
       if (editingTag) {
-        await updateEventTagLocal(editingTag.id, trimmedName, description.trim());
+        await db.runAsync(
+          `UPDATE tags SET name = ?, essentialityLabel = ? WHERE id = ?`,
+          [trimmed, isEssential ? 1 : 0, editingTag.id]
+        );
         Alert.alert("✅ Updated", "Tag updated successfully!");
       } else {
-        await addEventTagLocal(userId, trimmedName, description.trim());
+        await addTagLocal(userId, trimmed, isEssential ? 1 : 0);
         Alert.alert("✅ Added", "New tag added successfully!");
       }
 
       setNewTag("");
-      setDescription("");
+      setIsEssential(true);
       setEditingTag(null);
       loadTags();
     } catch (error) {
       Alert.alert("❌ Error", "Failed to save tag.");
       console.error("handleSaveTag error:", error);
     }
+  };
+
+  // ❌ Cancel edit
+  const handleCancelEdit = () => {
+    setEditingTag(null);
+    setNewTag("");
+    setIsEssential(true);
   };
 
   // 🗑️ Delete Tag
@@ -88,31 +91,24 @@ export default function EventTagManager({ route, navigation }) {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          await deleteEventTagLocal(id);
+          await deleteTagLocal(id);
           await loadTags();
         },
       },
     ]);
   };
 
-  // ✏️ Edit Tag
+  // ✏️ Edit Mode
   const handleEdit = (tag) => {
     setEditingTag(tag);
     setNewTag(tag.name);
-    setDescription(tag.description || "");
-  };
-
-  // ❌ Cancel Edit
-  const handleCancelEdit = () => {
-    setEditingTag(null);
-    setNewTag("");
-    setDescription("");
+    setIsEssential(tag.essentialityLabel === 1);
   };
 
   return (
     <View style={styles.container}>
       <AppHeader
-        title="Manage Event Tags"
+        title="Manage Tags"
         showLeftButton={true}
         onLeftPress={() => navigation.goBack()}
         showBell={false}
@@ -128,14 +124,43 @@ export default function EventTagManager({ route, navigation }) {
           style={styles.input}
         />
 
-        <TextInput
-          placeholder="Enter description (optional)"
-          value={description}
-          onChangeText={setDescription}
-          style={[styles.input, { height: 80, textAlignVertical: "top" }]}
-          multiline
-        />
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              isEssential && styles.toggleButtonActive,
+            ]}
+            onPress={() => setIsEssential(true)}
+          >
+            <Text
+              style={[
+                styles.toggleText,
+                isEssential && styles.toggleTextActive,
+              ]}
+            >
+              Essential
+            </Text>
+          </TouchableOpacity>
 
+          <TouchableOpacity
+            style={[
+              styles.toggleButton,
+              !isEssential && styles.toggleButtonActive,
+            ]}
+            onPress={() => setIsEssential(false)}
+          >
+            <Text
+              style={[
+                styles.toggleText,
+                !isEssential && styles.toggleTextActive,
+              ]}
+            >
+              Non-Essential
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Buttons Row */}
         <View style={styles.buttonRow}>
           <TouchableOpacity
             style={[styles.saveButton, { flex: editingTag ? 0.7 : 1 }]}
@@ -166,22 +191,20 @@ export default function EventTagManager({ route, navigation }) {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.tagCard}
-            onPress={() => handleEdit(item)} // 👈 Tap entire card to edit
+            onPress={() => handleEdit(item)} // 👈 tap card to edit
           >
+            <View style={styles.leftBar(item.essentialityLabel)} />
             <View style={styles.tagInfo}>
               <Text style={styles.tagName}>{item.name}</Text>
-              {item.description ? (
-                <Text style={styles.tagDesc}>{item.description}</Text>
-              ) : (
-                <Text style={styles.tagDescEmpty}>No description</Text>
-              )}
+              <Text style={styles.tagType}>
+                {item.essentialityLabel === 1 ? "Essential" : "Non-Essential"}
+              </Text>
             </View>
             <View style={styles.actionButtons}>
               <TouchableOpacity
                 onPress={() => handleEdit(item)}
                 style={styles.iconButton}
               >
-                <Ionicons name="pencil-outline" size={18} color="#236a3b" />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => handleDeleteTag(item.id)}
@@ -193,7 +216,7 @@ export default function EventTagManager({ route, navigation }) {
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No event tags yet. Add your first one!</Text>
+          <Text style={styles.emptyText}>No tags yet. Add your first one!</Text>
         }
         contentContainerStyle={{ paddingBottom: 30 }}
       />
@@ -218,6 +241,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 10,
   },
+  toggleContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  toggleButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#8AD0AB",
+    borderRadius: 20,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    alignItems: "center",
+  },
+  toggleButtonActive: { backgroundColor: "#8AD0AB" },
+  toggleText: { color: "#2E5E4E", fontSize: 14 },
+  toggleTextActive: { color: "#fff", fontWeight: "600" },
   buttonRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -243,22 +283,22 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: "#333", fontWeight: "500", marginLeft: 6 },
   tagCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     backgroundColor: "#fff",
     borderRadius: 10,
     marginBottom: 10,
     elevation: 2,
-    padding: 10,
+    overflow: "hidden",
   },
-  tagInfo: { flex: 1, paddingHorizontal: 5 },
+  leftBar: (essentialityLabel) => ({
+    width: 8,
+    height: "100%",
+    backgroundColor: essentialityLabel === 1 ? "#4CAF50" : "#E53935",
+  }),
+  tagInfo: { flex: 1, padding: 10 },
   tagName: { fontSize: 15, fontWeight: "600", color: "#333" },
-  tagDesc: { fontSize: 13, color: "#555", marginTop: 4 },
-  tagDescEmpty: { fontSize: 13, color: "#aaa", fontStyle: "italic", marginTop: 4 },
-  actionButtons: {
-    flexDirection: "row",
-    alignSelf: "center",
-    paddingHorizontal: 8,
-  },
+  tagType: { fontSize: 13, color: "#777" },
+  actionButtons: { flexDirection: "row", paddingHorizontal: 8 },
   iconButton: { marginHorizontal: 6 },
   emptyText: { textAlign: "center", color: "#888", marginTop: 20 },
 });

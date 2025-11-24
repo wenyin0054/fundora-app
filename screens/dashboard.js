@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,21 +7,129 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { AntDesign, MaterialIcons, MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import AppHeader from "../reuseComponet/header.js";
+import AppHeader from "./reuseComponet/header";
+import { useFocusEffect } from "@react-navigation/native";
+import { initDB, getUserSummary } from "../database/SQLite";
+import {getExperienceLevel} from "../database/userAuth";
+import { useTipManager } from "./LaiWenYin/TutorialModule/TipManager";
+import FinancialTipBanner from "./LaiWenYin/TutorialModule/FinancialTipBanner";
+import tipData from '../assets/financialTipsData.json';
 
 export default function DashboardScreen({ navigation }) {
+  const [userSummary, setUserSummary] = useState({
+    total_income: 0,
+    total_expense: 0,
+    total_balance: 0,
+  });
+  const getTip = (module, context, userLevel) => {
+  return (
+    tipData?.[module]?.[context]?.[userLevel] ||
+    tipData?.[module]?.default?.[userLevel] ||
+    "No tips available."
+  );
+};
+
+  const [userLevel, setUserLevel] = useState('beginner'); 
+  const [isLoadingLevel, setIsLoadingLevel] = useState(true);
+
+  const userId = "U000001"; // or however you store your current user
+   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
+   const loadUserLevel = async () => {
+    try {
+      const level = await getExperienceLevel(userId);
+      if (level) {
+        setUserLevel(level);
+      }
+    } catch (error) {
+      console.error("Error loading user level:", error);
+      setUserLevel('beginner');
+    } finally {
+      setIsLoadingLevel(false);
+    }
+  };
+  useEffect(() => {
+    loadUserLevel();
+  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadSummary = async () => {
+        const summary = await getUserSummary(userId);
+        if (summary) setUserSummary(summary);
+      };
+      loadSummary();
+    }, [userId])
+  );
+
+const showBalanceTip = () => {
+    if (userSummary.total_balance < 0) {
+      showTip('dashboard', 'balance');
+    } else if (userSummary.total_balance > userSummary.total_income * 3) {
+      showTip('dashboard', 'savings');
+    } else {
+      showTip('dashboard', 'balance');
+    }
+  };
+  useEffect(() => {
+    const loadSummary = async () => {
+      await initDB();
+       // For testing purposes, reset DB on load
+      const summary = await getUserSummary(userId);
+      if (summary) setUserSummary(summary);
+    };
+    loadSummary();
+  }, []);
+  
+ const showSavingsTip = () => {
+    showTip('dashboard', 'savings');
+  };
+
+  const showBillsTip = () => {
+    showTip('dashboard', 'bills');
+  };
+
+  const showPredictionTip = () => {
+    showTip('dashboard', 'prediction');
+  };if (isLoadingLevel) {
+    
+    return (
+      <View style={styles.container}>
+        <AppHeader title="Dashboard" />
+        <View style={styles.loadingContainer}>
+          <Text>Loading your financial insights...</Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <View style={styles.container}>
       <AppHeader title="Dashboard" />
+
+      <FinancialTipBanner
+        message={currentTip}
+        isVisible={isTipVisible}
+        onClose={hideTip}
+        userLevel={userLevel}
+      />
+
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Balance Card */}
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceAmount}>RM 7,890.50</Text>
+          <Text style={styles.balanceLabel}>Current Balance
+            <TouchableOpacity onPress={showBalanceTip}>
+              <Ionicons name="information-circle-outline" size={18} color="#fff" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </Text>
+          <Text style={styles.balanceAmount}>
+            RM {userSummary.total_balance.toFixed(2)}
+          </Text>
 
           <View style={styles.incomeExpenseRow}>
-            <Text style={styles.incomeText}>🟢 Income: RM 3,200.00</Text>
-            <Text style={styles.expenseText}>🔴 Expenses: RM 1,450.75</Text>
+            <Text style={styles.incomeText}>
+              🟢 Income: RM {userSummary.total_income.toFixed(2)}
+            </Text>
+            <Text style={styles.expenseText}>
+              🔴 Expenses: RM {userSummary.total_expense.toFixed(2)}
+            </Text>
           </View>
         </View>
 
@@ -66,6 +174,38 @@ export default function DashboardScreen({ navigation }) {
           ))}
         </View>
 
+        {/* Future Prediction Card */}
+        <View style={styles.sectionCard}>
+          <View style={styles.billsHeader}>
+            <Text style={styles.sectionTitle}>Future Financial Outlook</Text>
+         
+          </View>
+
+          <View style={styles.predictionItem}>
+            <View style={styles.predictionIcon}>
+              <Ionicons name="analytics-outline" size={20} color="#8AD0AB" />
+            </View>
+            <View style={styles.predictionContent}>
+              <Text style={styles.predictionTitle}>Inflation Impact Analysis</Text>
+              <Text style={styles.predictionSubtitle}>See how inflation affects your savings goals</Text>
+            </View>
+            <AntDesign name="right" size={16} color="#999" 
+            onPress={() => { navigation.navigate('FuturePredictionScreen') }} />
+          </View>
+
+          <View style={styles.predictionItem}>
+            <View style={styles.predictionIcon}>
+              <MaterialCommunityIcons name="chart-timeline" size={20} color="#8AD0AB" />
+            </View>
+            <View style={styles.predictionContent}>
+              <Text style={styles.predictionTitle}>Goal Projection</Text>
+              <Text style={styles.predictionSubtitle}>Track progress towards your financial targets</Text>
+            </View>
+            <AntDesign name="right" size={16} color="#999"
+            onPress={() => { navigation.navigate('GoalProjectionScreen') }} />
+          </View>
+        </View>
+
         {/* Quick Actions Grid */}
         <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Quick Actions</Text>
         <View style={styles.buttonGrid}>
@@ -77,11 +217,11 @@ export default function DashboardScreen({ navigation }) {
             <MaterialIcons name="attach-money" size={24} color="#8AD0AB" />
             <Text style={styles.gridLabel}>Add Expense</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('SetGoal') }}>
+          <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('AddGoal') }}>
             <MaterialCommunityIcons name="pig-variant-outline" size={24} color="#8AD0AB" />
             <Text style={styles.gridLabel}>Set Goal</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.gridButton}>
+          <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('ExpenseAnalysis') }}>
             <Ionicons name="analytics-outline" size={24} color="#8AD0AB" />
             <Text style={styles.gridLabel}>View Analysis</Text>
           </TouchableOpacity>
@@ -238,5 +378,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 5,
+  },
+  predictionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  predictionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#e8f5e9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  predictionContent: {
+    flex: 1,
+  },
+  predictionTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    color: '#333',
+    fontSize: 14,
+  },
+  predictionSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    color: '#666',
+    fontSize: 12,
+    marginTop: 2,
   },
 });

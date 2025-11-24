@@ -1,0 +1,46 @@
+{
+  "expenseOrganizer": {
+    "default": {
+      "beginner": "💡 Track your daily spending to see where your money goes. Small expenses can add up quickly!",
+      "experienced": "📊 Pro tip: Use category tagging to analyze spending patterns over time and identify optimization opportunities."
+    },
+    "highSpending": {
+      "beginner": "⚠️ Noticed high spending? Try setting weekly limits for categories that tend to overflow.",
+      "experienced": "📈 Consider implementing a rolling 30-day average to smooth out spending fluctuations in your analysis."
+    }
+  },
+
+  "savingPlanner": {
+    "newGoal": {
+      "beginner": "🎯 Start with small, achievable goals to build your savings habit gradually.",
+      "experienced": "⚡ For long-term goals, explore compound growth calculators to understand the power of consistent investing."
+    },
+    "progress": {
+      "beginner": "🎉 Great progress! Consistency is key.",
+      "experienced": "📊 You're on track! Increase your monthly target by 10% to accelerate your goal timeline."
+    }
+  },
+
+  "dashboard": {
+    "balance": {
+      "beginner": "💰 Your balance looks good! Keep tracking your spending to maintain healthy finances.",
+      "experienced": "📈 Your cash flow is stable. Consider reallocating excess funds into savings or investments."
+    },
+    "savings": {
+      "beginner": "🏦 Great savings! Even small monthly contributions make a big difference over time.",
+      "experienced": "🔍 You’re building a strong savings habit. Evaluate higher-yield accounts to boost returns."
+    },
+    "bills": {
+      "beginner": "📅 Stay on track! Paying bills on time helps you avoid late fees and protects your credit score.",
+      "experienced": "⚙️ Consider automating recurring bills to streamline your financial management."
+    },
+    "prediction": {
+      "beginner": "📊 Predictions help you plan ahead. Use them to adjust spending before issues arise.",
+      "experienced": "🔮 Use predicted cash flow trends to optimize budgeting and plan investments strategically."
+    },
+    "default": {
+      "beginner": "💡 Keep building strong financial habits one step at a time!",
+      "experienced": "📘 Continue optimizing your financial decisions with consistent tracking and analysis."
+    }
+  }
+}

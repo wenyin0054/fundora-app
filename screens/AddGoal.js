@@ -10,8 +10,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import AppHeader from "../../reuseComponet/header";
-import { addGoalLocal, initDB } from "../../../database/SQLite ";
+import AppHeader from "./reuseComponet/header";
+import { addGoalLocal, initDB } from "../database/SQLite";
 
 export default function AddGoalScreen({ navigation }) {
   const [projectName, setProjectName] = useState("");

@@ -4,8 +4,8 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import { initDB, addExpenseLocal, getExpensesLocal, getTagsLocal } from "../../../database/SQLite " ;
-import AppHeader from "../../reuseComponet/header";
+import { initDB, addExpenseLocal, getExpensesLocal, getTagsLocal } from "../database/SQLite" ;
+import AppHeader from "./reuseComponet/header"
 
 export default function AddExpenseScreen({ navigation }) {
   const [payee, setPayee] = useState("");

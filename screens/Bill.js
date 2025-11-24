@@ -8,7 +8,7 @@ import {
   ScrollView,
   Alert,
 } from "react-native";
-import AppHeader from "../reuseComponet/header.js";
+import AppHeader from "./reuseComponet/header";
 
 export default function BillTracker() {
   const [income, setIncome] = useState("5000");

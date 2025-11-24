@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AppHeader from "../../reuseComponet/header";
-import { addTagLocal, getTagsLocal } from "../../../database/SQLite "; // Assume getTagsLocal fetches all existing tags
+import AppHeader from "./reuseComponet/header";
+import { addTagLocal, getTagsLocal } from "../database/SQLite"; // Assume getTagsLocal fetches all existing tags
 
 export default function AddTag({ navigation }) {
   const [tagName, setTagName] = useState("");

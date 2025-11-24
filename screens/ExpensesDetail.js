@@ -12,8 +12,8 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import { updateExpenseLocal, deleteExpenseLocal } from "../../../database/SQLite ";
-import AppHeader from "../reuseComponet/header";
+import { updateExpenseLocal, deleteExpenseLocal } from "../database/SQLite";
+import AppHeader from "./reuseComponet/header";
 
 
 export default function ExpenseDetail({ route, navigation }) {

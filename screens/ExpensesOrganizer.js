@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { initDB, getExpensesLocal } from "../../../database/SQLite .js";
+import { initDB, getExpensesLocal } from "../database/SQLite.js";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from "react-native";
 import { PieChart } from "react-native-chart-kit";
-import AppHeader from "../../reuseComponet/header.js";
+import AppHeader from "./reuseComponet/header.js";
 
 export default function ExpensesOrganizer({ navigation }) {
   const [expenses, setExpenses] = useState([]);

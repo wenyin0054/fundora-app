@@ -8,8 +8,9 @@ import {
   Platform,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import AppHeader from "../../reuseComponet/header";
-import { getGoalsLocal } from "../../../database/SQLite ";
+import AppHeader from "./reuseComponet/header";
+import { getGoalsLocal } from "../database/SQLite"
+import MotivationBanner from "./MotivationBar";
 
 // ------------------ Savings Planner Screen ------------------
 
@@ -88,21 +89,9 @@ export default function SavingsPlanner() {
         )}
 
         {/* Motivational Message */}
-        <View style={styles.messageCard}>
-          <Text style={styles.messageTitle}>💡 Motivational Message</Text>
-          <Text style={styles.messageText}>
-            Every penny saved is a step closer to your dreams.
-          </Text>
-          <Text style={styles.messageText}>
-            Keep up the great work, your future self will thank you!
-          </Text>
-        </View>
-
         {/* Reminders */}
-        <View style={styles.reminderCard}>
-          <Text style={styles.reminderText}>
-            🔔 Recommended: Check if you’ve skipped your goals yet.
-          </Text>
+        <View>
+          <MotivationBanner/>
         </View>
 
         {/* Add New Goal */}

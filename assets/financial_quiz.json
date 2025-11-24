@@ -1,0 +1,398 @@
+{
+  "levels": {
+    "beginner": [
+      {
+        "level": "Beginner",
+        "category": "Savings",
+        "question": "What does EPF stand for in Malaysia?",
+        "options": [
+          "Employee Provident Fund",
+          "Earning Protection Fund",
+          "Essential Payment Fund",
+          "Employer Pension Fund"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "EPF stands for Employees Provident Fund, a mandatory retirement savings scheme for Malaysian workers."
+      },
+      {
+        "level": "Beginner",
+        "category": "Budgeting",
+        "question": "Why is it important to create a monthly budget?",
+        "options": [
+          "To spend all your salary",
+          "To track income and expenses",
+          "To increase your debt",
+          "To avoid paying bills"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "A monthly budget helps you plan and control your spending, ensuring you save for important goals."
+      },
+      {
+        "level": "Beginner",
+        "category": "Savings",
+        "question": "Which of the following is considered a 'need' rather than a 'want'?",
+        "options": [
+          "New smartphone",
+          "Daily meals",
+          "Luxury handbag",
+          "Streaming subscription"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Needs are essential for living, such as food, water, and shelter."
+      },
+      {
+        "level": "Beginner",
+        "category": "Debt",
+        "question": "What happens if you miss your credit card payment due date?",
+        "options": [
+          "You earn reward points",
+          "You get a discount",
+          "You are charged late fees",
+          "Nothing happens"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "Missing your payment leads to late fees and can affect your credit score."
+      },
+      {
+        "level": "Beginner",
+        "category": "Investment",
+        "question": "What is the safest place to keep emergency savings?",
+        "options": [
+          "In stocks",
+          "In a savings account",
+          "Under your pillow",
+          "In cryptocurrencies"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Savings accounts are low-risk and allow easy access during emergencies."
+      },
+      {
+        "level": "Beginner",
+        "category": "Banking",
+        "question": "What is a fixed deposit (FD)?",
+        "options": [
+          "A loan from the bank",
+          "A type of insurance",
+          "A savings account with fixed interest for a set period",
+          "A credit card feature"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "A fixed deposit locks your money for a set term and pays higher interest than regular savings."
+      },
+      {
+        "level": "Beginner",
+        "category": "Credit",
+        "question": "What does a credit score represent?",
+        "options": [
+          "Your bank balance",
+          "Your ability to repay debts",
+          "Your salary",
+          "Your total savings"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Credit score reflects your reliability in repaying borrowed money."
+      },
+      {
+        "level": "Beginner",
+        "category": "Inflation",
+        "question": "If inflation increases, what happens to your purchasing power?",
+        "options": [
+          "It increases",
+          "It decreases",
+          "It stays the same",
+          "It doubles"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Inflation reduces the value of money, meaning you can buy less with the same amount."
+      },
+      {
+        "level": "Beginner",
+        "category": "Savings",
+        "question": "How can you make your savings grow faster?",
+        "options": [
+          "Keep it in cash",
+          "Invest or use high-interest accounts",
+          "Spend more often",
+          "Avoid budgeting"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Investing or saving in interest-bearing accounts helps your money grow over time."
+      },
+      {
+        "level": "Beginner",
+        "category": "Budgeting",
+        "question": "What should you do before making a large purchase?",
+        "options": [
+          "Check your budget",
+          "Use all your savings",
+          "Borrow immediately",
+          "Ignore your expenses"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "Always ensure your purchase fits your budget to avoid unnecessary debt."
+      },
+      {
+        "level": "Beginner",
+        "category": "Loan",
+        "question": "What is the main disadvantage of borrowing too much money?",
+        "options": [
+          "Higher savings",
+          "Lower interest",
+          "Debt stress and repayment burden",
+          "More income"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "Too much borrowing can lead to financial stress and difficulty repaying debts."
+      },
+      {
+        "level": "Beginner",
+        "category": "Financial Literacy",
+        "question": "Which agency in Malaysia helps educate people about financial literacy?",
+        "options": [
+          "Bank Negara Malaysia",
+          "Tourism Malaysia",
+          "Tenaga Nasional",
+          "Pos Malaysia"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "Bank Negara Malaysia runs programs to improve financial literacy and awareness among Malaysians."
+      },
+      {
+        "level": "Beginner",
+        "category": "Spending",
+        "question": "Why should you compare prices before buying a product?",
+        "options": [
+          "To waste time",
+          "To get better value for money",
+          "To spend more",
+          "To confuse the seller"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Comparing prices helps you find the best deal and save money."
+      },
+      {
+        "level": "Beginner",
+        "category": "Insurance",
+        "question": "What is the purpose of insurance?",
+        "options": [
+          "To increase expenses",
+          "To protect against financial loss",
+          "To reduce income",
+          "To pay higher taxes"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Insurance helps protect you financially against unexpected events such as illness or accidents."
+      },
+      {
+        "level": "Beginner",
+        "category": "Investment",
+        "question": "Which investment option is considered low risk?",
+        "options": [
+          "Unit trust",
+          "Savings account",
+          "Cryptocurrency",
+          "Stock market"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Savings accounts offer low risk but lower returns compared to other investments."
+      }
+    ],
+    "experienced": [
+      {
+        "level": "Experienced",
+        "category": "Investment",
+        "question": "What does diversification in investment mean?",
+        "options": [
+          "Investing in one company",
+          "Spreading investments across various assets",
+          "Keeping all money in savings",
+          "Avoiding risky assets completely"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Diversification reduces risk by investing in a mix of asset types and sectors."
+      },
+      {
+        "level": "Experienced",
+        "category": "Inflation",
+        "question": "If your investment return is 3% but inflation is 4%, what happens to your real return?",
+        "options": [
+          "You gain 7%",
+          "You lose 1% in real value",
+          "You break even",
+          "You double your return"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Your purchasing power decreases because inflation outpaces your investment growth."
+      },
+      {
+        "level": "Experienced",
+        "category": "Loan",
+        "question": "Which loan usually has the lowest interest rate?",
+        "options": [
+          "Credit card loan",
+          "Personal loan",
+          "Home mortgage",
+          "Payday loan"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "Home loans are secured by property, hence they often have lower interest rates."
+      },
+      {
+        "level": "Experienced",
+        "category": "Investment",
+        "question": "What is the main advantage of investing in unit trusts in Malaysia?",
+        "options": [
+          "Guaranteed profit",
+          "Professional management and diversification",
+          "Tax-free returns always",
+          "No risk involved"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Unit trusts pool funds managed by professionals to diversify investment and reduce risk."
+      },
+      {
+        "level": "Experienced",
+        "category": "Retirement",
+        "question": "At what age can Malaysians fully withdraw their EPF savings?",
+        "options": [
+          "50",
+          "55",
+          "58",
+          "60"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Full EPF withdrawal is allowed at age 55 in Malaysia."
+      },
+      {
+        "level": "Experienced",
+        "category": "Credit",
+        "question": "What is the effect of having too many credit inquiries in a short time?",
+        "options": [
+          "Improves your credit score",
+          "Lowers your credit score",
+          "Has no effect",
+          "Doubles your credit limit"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Frequent credit checks can signal financial distress and lower your credit score."
+      },
+      {
+        "level": "Experienced",
+        "category": "Risk",
+        "question": "What type of risk cannot be diversified away?",
+        "options": [
+          "Systematic risk",
+          "Company-specific risk",
+          "Industry risk",
+          "Liquidity risk"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "Systematic risk affects the whole market and cannot be eliminated through diversification."
+      },
+      {
+        "level": "Experienced",
+        "category": "Insurance",
+        "question": "Why is it important to review your insurance coverage annually?",
+        "options": [
+          "To cancel it",
+          "To ensure it still fits your needs",
+          "To increase the premium",
+          "To avoid tax"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Life changes such as marriage, children, or new assets require updated insurance coverage."
+      },
+      {
+        "level": "Experienced",
+        "category": "Taxes",
+        "question": "Which of the following is tax-deductible for Malaysian individuals?",
+        "options": [
+          "Entertainment expenses",
+          "EPF contributions",
+          "Luxury purchases",
+          "Lottery tickets"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Contributions to EPF and approved insurance plans are eligible for tax relief in Malaysia."
+      },
+      {
+        "level": "Experienced",
+        "category": "Investment",
+        "question": "What does ROI stand for in financial analysis?",
+        "options": [
+          "Return on Income",
+          "Rate of Inflation",
+          "Return on Investment",
+          "Ratio of Interest"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "ROI measures the profitability of an investment relative to its cost."
+      },
+      {
+        "level": "Experienced",
+        "category": "Credit",
+        "question": "How can a low credit score affect you?",
+        "options": [
+          "Easier loan approval",
+          "Lower interest rates",
+          "Difficulty obtaining loans",
+          "Higher salary"
+        ],
+        "correct_answer_index": 2,
+        "explanation": "Lenders may reject applications or charge higher interest for those with low credit scores."
+      },
+      {
+        "level": "Experienced",
+        "category": "Financial Planning",
+        "question": "What is the '50/30/20 rule' in budgeting?",
+        "options": [
+          "50% savings, 30% spending, 20% debt",
+          "50% needs, 30% wants, 20% savings",
+          "50% investment, 30% tax, 20% leisure",
+          "50% food, 30% rent, 20% bills"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "The 50/30/20 rule suggests using 50% of income for needs, 30% for wants, and 20% for savings."
+      },
+      {
+        "level": "Experienced",
+        "category": "Economy",
+        "question": "When Bank Negara Malaysia increases the Overnight Policy Rate (OPR), what usually happens?",
+        "options": [
+          "Loan rates increase",
+          "Loan rates decrease",
+          "Inflation increases",
+          "Currency value drops"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "Higher OPR leads banks to raise lending rates, making borrowing more expensive."
+      },
+      {
+        "level": "Experienced",
+        "category": "Investment",
+        "question": "Which of the following best describes the risk-return tradeoff?",
+        "options": [
+          "Higher risk, higher potential return",
+          "Lower risk, higher return",
+          "No relationship",
+          "Higher risk, guaranteed loss"
+        ],
+        "correct_answer_index": 0,
+        "explanation": "Investors generally need to take higher risk to achieve higher potential returns."
+      },
+      {
+        "level": "Experienced",
+        "category": "Retirement",
+        "question": "Why should you start retirement planning early?",
+        "options": [
+          "To delay savings",
+          "To benefit from compound growth over time",
+          "To avoid investment",
+          "To spend more money now"
+        ],
+        "correct_answer_index": 1,
+        "explanation": "Starting early allows your investments to grow through compounding and reduces future stress."
+      }
+    ]
+  }
+}
