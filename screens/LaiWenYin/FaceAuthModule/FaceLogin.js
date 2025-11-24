@@ -8,8 +8,9 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { checkOnboardingStatus, hasRegisteredFace, getUserById } from '../../../database/userAuth';
+import { getApiBase } from './apiConfig';
 
-const API_URL = 'http://192.168.1.33:5000/';
+const API_URL = getApiBase;
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function FaceLoginScreen({ navigation, route }) {

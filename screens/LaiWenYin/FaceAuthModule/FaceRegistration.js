@@ -13,8 +13,9 @@ import {
   deleteUserFaceData, 
   getUserFaceData 
 } from '../../../database/userAuth';
+import { getApiBase } from './apiConfig';
 
-const API_URL = 'http://192.168.1.33:5000/';
+const API_URL = getApiBase;
 
 export default function FaceRegistrations({ navigation, route }) {
   const [isEnabled, setIsEnabled] = useState(true);
