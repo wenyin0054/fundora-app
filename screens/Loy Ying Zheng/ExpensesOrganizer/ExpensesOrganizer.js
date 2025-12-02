@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { AntDesign } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { initDB, getExpensesLocal } from "../database/SQLite.js";
+import { initDB, getExpensesLocal, getExpensesByTypeLabelLocal } from "../../../database/SQLite.js";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
@@ -11,9 +12,12 @@ import {
   FlatList,
   Dimensions,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { PieChart } from "react-native-chart-kit";
-import AppHeader from "./reuseComponet/header.js";
+import AppHeader from "../../reuseComponet/header.js";
+import { useUser } from "../../reuseComponet/UserContext.js"; 
+
 
 export default function ExpensesOrganizer({ navigation }) {
   const [expenses, setExpenses] = useState([]);
@@ -21,39 +25,83 @@ export default function ExpensesOrganizer({ navigation }) {
   const [essentialFilter, setEssentialFilter] = useState("Mix");
   const [selectedDate, setSelectedDate] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState("All");
+  const [filteredTransaction, setFilteredTransaction] = useState([]);
+  const [dataForChart, setDataForChart] = useState([]); 
+  const [isLoading, setIsLoading] = useState(false);
+
+  const { userId, isLoading: userLoading } = useUser(); 
+
+  const handleFilterChange = async (filterType) => {
+    if (!userId) return;
+    
+    setSelectedFilter(filterType);
+    
+    let data;
+    if (filterType === "All") {
+      data = await getExpensesLocal(userId);
+      console.log(data);
+    } else {
+      const label = filterType.toLowerCase();
+      data = await getExpensesByTypeLabelLocal(userId, label.toLowerCase());
+    }
+    
+    setFilteredTransaction(data);
+    setDataForChart(data); 
+  };
+
+  useEffect(() => {
+    if (userId) {
+      const loadData = async () => {
+        await initDB();
+        const all = await getExpensesLocal(userId);
+        setFilteredTransaction(all);
+        setDataForChart(all); 
+      };
+      loadData();
+    }
+  }, [userId]);
 
   useFocusEffect(
     React.useCallback(() => {
       const fetchExpenses = async () => {
+        if (!userId) return;
+        
         try {
+          setIsLoading(true);
           await initDB();
-          const data = await getExpensesLocal();
+          const data = await getExpensesLocal(userId);
           setExpenses(data);
+          setFilteredTransaction(data);
+          setDataForChart(data); 
         } catch (error) {
           console.error("❌ Failed to fetch expenses:", error);
+        } finally {
+          setIsLoading(false);
         }
       };
       fetchExpenses();
-    }, [])
+    }, [userId])
   );
 
-  // ✅ Combined filtering
-  const filteredExpenses = expenses.filter((item) => {
-    if (essentialFilter === "Essential" && item.essentialityLabel !== 1)
-      return false;
-    if (essentialFilter === "Non-Essential" && item.essentialityLabel !== 0)
-      return false;
+  const filteredExpenses = Array.isArray(dataForChart)
+    ? dataForChart.filter((item) => {
+        if (essentialFilter === "Essential" && item.essentialityLabel !== 1)
+          return false;
+        if (essentialFilter === "Non-Essential" && item.essentialityLabel !== 0)
+          return false;
 
-    if (filter === "All") return true;
-    if (filter === "Date" && selectedDate) {
-      const expenseDate = item.date?.split("T")[0];
-      const selectedDateFormatted = selectedDate.toISOString().split("T")[0];
-      return expenseDate === selectedDateFormatted;
-    }
-    return item.tag === filter;
-  });
+        if (filter === "All") return true;
+        if (filter === "Date" && selectedDate) {
+          const expenseDate = item.date?.split("T")[0];
+          const selectedDateFormatted = selectedDate.toISOString().split("T")[0];
+          return expenseDate === selectedDateFormatted;
+        }
+        return item.tag === filter;
+      })
+    : [];
 
-  // 🧠 Pie Chart Logic
+
   let pieData = [];
 
   if (filter === "All") {
@@ -99,17 +147,55 @@ export default function ExpensesOrganizer({ navigation }) {
 
   const totalAmount = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
+  //top filter button
+  const handleTopFilterChange = async (newFilter) => {
+    setFilter(newFilter);
+    if (newFilter !== filter && userId) {
+      const allData = await getExpensesLocal(userId);
+      setFilteredTransaction(allData);
+      setDataForChart(allData);
+      setSelectedFilter("All");
+    }
+  };
+
+  
+  if (userLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#8AD0AB" />
+        <Text>Loading user data...</Text>
+      </View>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <View style={styles.container}>
+        <AppHeader
+          title="Expenses Organizer"
+          showLeftButton={true}
+          leftIcon="menu"
+          onLeftPress={() => navigation.openDrawer()}
+        />
+        <View style={styles.errorContainer}>
+          <Ionicons name="person-circle-outline" size={64} color="#6B7280" />
+          <Text style={styles.errorTitle}>Please Log In</Text>
+          <Text style={styles.errorMessage}>You need to be logged in to view expenses</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <AppHeader
         title="Expenses Organizer"
         showLeftButton={true}
-        leftIcon="menu" 
+        leftIcon="menu"
         onLeftPress={() => navigation.openDrawer()}
       />
 
-
-      {/* 🔹 Filter Bar */}
+      {/* 🔹 Filter Bar - 修改 onPress */}
       <View style={styles.topFilterWrapper}>
         <ScrollView
           horizontal
@@ -121,7 +207,7 @@ export default function ExpensesOrganizer({ navigation }) {
               styles.filterBtn,
               filter === "All" ? styles.activeFilter : styles.inactiveFilter,
             ]}
-            onPress={() => setFilter("All")}
+            onPress={() => handleTopFilterChange("All")}
           >
             <Ionicons
               name="filter-outline"
@@ -146,7 +232,7 @@ export default function ExpensesOrganizer({ navigation }) {
               styles.filterBtn,
               filter === "Date" ? styles.activeFilter : styles.inactiveFilter,
             ]}
-            onPress={() => setFilter("Date")}
+            onPress={() => handleTopFilterChange("Date")}
           >
             <Ionicons
               name="calendar-outline"
@@ -168,14 +254,14 @@ export default function ExpensesOrganizer({ navigation }) {
 
           {[...new Set(expenses.map((item) => item.tag))]
             .filter((tag) => tag && !/^\d{4}-\d{2}-\d{2}$/.test(tag))
-            .map((tag) => (
+            .map((tag, index) => (
               <TouchableOpacity
-                key={tag}
+                key={tag || index}
                 style={[
                   styles.filterBtn,
                   filter === tag ? styles.activeFilter : styles.inactiveFilter,
                 ]}
-                onPress={() => setFilter(tag)}
+                onPress={() => handleTopFilterChange(tag)}
               >
                 <Text
                   style={[
@@ -220,37 +306,6 @@ export default function ExpensesOrganizer({ navigation }) {
         contentContainerStyle={styles.mainScroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* 🥧 Pie Chart */}
-        {filter !== "Date" && pieData.length > 0 && (
-          <View style={styles.chartContainer}>
-            <Text style={styles.sectionTitle}>
-              {filter === "All"
-                ? `Spending Breakdown by Tag (RM ${totalAmount.toFixed(2)})`
-                : `${filter} — Essential vs Non-Essential`}
-            </Text>
-            <PieChart
-              data={pieData.map((d) => ({
-                name: d.name,
-                population: d.amount,
-                color: d.color,
-                legendFontColor: d.legendFontColor,
-                legendFontSize: d.legendFontSize,
-              }))}
-              width={Dimensions.get("window").width - 40}
-              height={220}
-              chartConfig={{
-                backgroundColor: "#fff",
-                backgroundGradientFrom: "#fff",
-                backgroundGradientTo: "#fff",
-                color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-              }}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              absolute
-            />
-          </View>
-        )}
 
         {/* 📅 Date Picker */}
         {filter === "Date" && (
@@ -279,50 +334,114 @@ export default function ExpensesOrganizer({ navigation }) {
           </View>
         )}
 
-        {/* 💰 Expense List with Rounded Left Color Bar */}
+        {/* 💰 Expense List with Filter */}
         <View style={styles.expenseListCard}>
-          <Text style={styles.sectionTitle}>Recent Expenses</Text>
-          <FlatList
-            data={filteredExpenses}
-            keyExtractor={(item) => item.id?.toString()}
-            scrollEnabled={false}
-            renderItem={({ item }) => {
-              const isExpense = item.typeLabel === "expenses";
-              const isIncome = item.typeLabel === "income";
-              const color = isExpense ? "#E53935" : isIncome ? "#4CAF50" : "#2196F3";
-              const sign = isExpense ? "-RM" : isIncome ? "+RM" : "RM";
+          <Text style={styles.sectionTitle}>Transactions</Text>
 
-              return (
-                <TouchableOpacity
-                  style={[styles.expenseCard]}
-                  onPress={() =>
-                    navigation.navigate("ExpenseDetail", { expense: item })
-                  }
+          {/* ✅ Filter Buttons */}
+          <View style={styles.filterRow}>
+            {["All", "Income", "Expenses", "Transaction"].map((filter) => (
+              <TouchableOpacity
+                key={filter}
+                style={[
+                  styles.filterButton,
+                  selectedFilter === filter && styles.filterButtonActive,
+                ]}
+                onPress={() => handleFilterChange(filter)}
+              >
+                <Text
+                  style={[
+                    styles.filterText,
+                    selectedFilter === filter && styles.filterTextActive,
+                  ]}
                 >
-                  {/* Left color bar */}
-                  <View style={[styles.colorBar, { backgroundColor: color }]} />
-                  <View style={styles.expenseContent}>
-                    <View>
-                      <Text style={styles.expenseTitle}>{item.payee}</Text>
-                      <Text style={styles.expenseDate}>{item.date}</Text>
+                  {filter}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#8AD0AB" style={{ marginVertical: 20 }} />
+          ) : (
+            <FlatList
+              data={filteredTransaction}
+              keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+              scrollEnabled={false}
+              ListEmptyComponent={
+                <Text style={{ textAlign: "center", color: "#888", marginTop: 20 }}>
+                  No transactions available
+                </Text>
+              }
+              renderItem={({ item }) => {
+                
+                const isExpense = item.typeLabel.toLowerCase() === "expenses";
+                const isIncome = item.typeLabel.toLowerCase() === "income";
+                const color = isExpense ? "#E53935" : isIncome ? "#4CAF50" : "#2196F3";
+                const sign = isExpense ? "-RM" : isIncome ? "+RM" : "RM";
+                return (
+                  <TouchableOpacity
+                    style={styles.expenseCard}
+                    onPress={() => {
+                      console.log(item);
+                      navigation.navigate("ExpenseDetail", { expense: item })
+                    }
+
+                    }
+                  >
+                    <View style={[styles.colorBar, { backgroundColor: color }]} />
+                    <View style={styles.expenseContent}>
+                      <View>
+                        <Text style={styles.expenseTitle}>{item.payee}</Text>
+                        <Text style={styles.expenseDate}>{item.date}</Text>
+                      </View>
+                      <Text style={[styles.expenseAmount, { color }]}>
+                        {sign} {(parseFloat(item.amount) || 0).toFixed(2)}
+                      </Text>
                     </View>
-                    <Text style={[styles.expenseAmount, { color }]}>
-                      {sign} {item.amount.toFixed(2)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+
         </View>
       </ScrollView>
+      {/* Floating Action Button */}
+      <TouchableOpacity style={styles.floatButton} onPress={() => { navigation.navigate('AddExpense') }}>
+        <AntDesign name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
 
-// 🎨 STYLES
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f9f9fb" },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f9f9fb',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+  },
   topFilterWrapper: { marginTop: 10, marginBottom: 5 },
   filterContainer: { paddingHorizontal: 10, alignItems: "center" },
   mainScroll: { paddingHorizontal: 16, paddingVertical: 10, flexGrow: 1 },
@@ -416,4 +535,47 @@ const styles = StyleSheet.create({
   expenseTitle: { fontSize: 15, color: "#333", fontWeight: "500" },
   expenseDate: { fontSize: 12, color: "#888" },
   expenseAmount: { fontSize: 15, fontWeight: "700" },
+  filterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 10,
+  },
+
+  filterButton: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  filterButtonActive: {
+    backgroundColor: "#2E5E4E",
+  },
+
+  filterText: {
+    color: "#333",
+    fontWeight: "500",
+  },
+
+  filterTextActive: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  floatButton: {
+    position: "absolute",
+    bottom: 23,
+    right: 20,
+    backgroundColor: "#8AD0AB",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
 });

@@ -10,13 +10,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import AppHeader from "./reuseComponet/header";
-import { addGoalLocal, initDB } from "../database/SQLite";
+import AppHeader from "../../reuseComponet/header";
+import { addGoalLocal, initDB } from "../../../database/SQLite";
+import { useUser } from "../../reuseComponet/UserContext";
 
 export default function AddGoalScreen({ navigation }) {
   const [projectName, setProjectName] = useState("");
   const [savingAmount, setSavingAmount] = useState("");
-  const [currentSaved, setCurrentSaved] = useState("");
+  const [currentSaved, setCurrentSaved] = useState("0");
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [remark, setRemark] = useState("");
@@ -24,36 +25,89 @@ export default function AddGoalScreen({ navigation }) {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const userId = "U0000001"; // placeholder for your logged-in user
+  const { userId } = useUser(); 
 
-  const handleSave = async () => {
-    // basic validation
-    if (!projectName || !savingAmount || !endDate) {
-      Alert.alert("Missing Info", "Please fill in all required fields.");
-      return;
-    }
+    const validateAmount = (value, fieldName = "Amount") => {
+      if (!value || value === "") {
+        triggerShake();
+        Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
+        return false;
+      }
+    
+      if (isNaN(value)) {
+        triggerShake();
+        Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
+        return false;
+      }
+    
+      const num = parseFloat(value);
+      if (num <= 0) {
+        triggerShake();
+        Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
+        return false;
+      }
+    
+      if (num > 9999999999999999) {
+        triggerShake();
+        Alert.alert(
+          `Invalid ${fieldName}`,
+          `${fieldName} cannot exceed 9,999,999,999,999,999.`
+        );
+        return false;
+      }
+    
+      return true;
+    };
 
-    try {
-      initDB(); // ensure DB is initialized
+const handleSave = async () => {
+  console.log("🔥 Saving goal...");
 
-      // save to local DB
-      await addGoalLocal(
-        userId,
-        projectName,
-        remark,
-        parseFloat(savingAmount),
-        parseFloat(currentSaved || 0),
-        endDate.toISOString().split("T")[0] // store as YYYY-MM-DD
-      );
+  // 1️⃣ Project Name
+  if (!projectName || !projectName.trim()) {
+    Alert.alert("Missing Goal Name", "Please enter a goal/project name.");
+    return;
+  }
 
-      console.log("💾 Goal saved locally!");
-      Alert.alert("✅ Success", "Goal saved to local database!");
-      navigation.goBack();
-    } catch (error) {
-      console.error("❌ Error saving goal:", error);
-      Alert.alert("Error", "Failed to save goal. Please try again.");
-    }
-  };
+  // 2️⃣ Amount (use your shared validator!)
+  if (!validateAmount(savingAmount, "Goal Amount")) return;
+
+  const amountValue = parseFloat(savingAmount);
+
+  // 3️⃣ End Date
+  if (!endDate) {
+    Alert.alert("Missing End Date", "Please select your goal end date.");
+    return;
+  }
+
+  // 4️⃣ User ID
+  if (!userId) {
+    Alert.alert("Error", "User not logged in");
+    return;
+  }
+
+  try {
+    await initDB();
+
+    await addGoalLocal(
+      userId,
+      projectName.trim(),
+      remark || "",
+      amountValue,
+      parseFloat(currentSaved || 0),
+      endDate.toISOString().split("T")[0] // YYYY-MM-DD
+    );
+
+    console.log("💾 Goal saved!");
+    Alert.alert("Success", "Goal saved successfully!");
+    navigation.goBack();
+
+  } catch (error) {
+    console.error("❌ Error saving goal:", error);
+    Alert.alert("Error", "Failed to save goal. Please try again.");
+  }
+};
+
+
 
   return (
     <View style={{ flex: 1 }}>
@@ -85,18 +139,6 @@ export default function AddGoalScreen({ navigation }) {
           <TextInput
             value={savingAmount}
             onChangeText={setSavingAmount}
-            style={styles.input}
-            keyboardType="numeric"
-          />
-        </View>
-
-        {/* Current Saved */}
-        <Text style={styles.label}>Current Saved Amount (RM)</Text>
-        <View style={styles.inputRow}>
-          <Ionicons name="wallet-outline" size={20} color="#6c757d" />
-          <TextInput
-            value={currentSaved}
-            onChangeText={setCurrentSaved}
             style={styles.input}
             keyboardType="numeric"
           />

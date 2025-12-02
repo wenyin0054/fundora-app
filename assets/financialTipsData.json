@@ -1,46 +1,179 @@
 {
   "expenseOrganizer": {
     "default": {
-      "beginner": "💡 Track your daily spending to see where your money goes. Small expenses can add up quickly!",
-      "experienced": "📊 Pro tip: Use category tagging to analyze spending patterns over time and identify optimization opportunities."
+      "Beginner": "💡 Track your daily spending to see where your money goes. Small expenses can add up quickly!",
+      "Experienced User": "📊 Pro tip: Use category tagging to analyze spending patterns over time and identify optimization opportunities."
     },
     "highSpending": {
-      "beginner": "⚠️ Noticed high spending? Try setting weekly limits for categories that tend to overflow.",
-      "experienced": "📈 Consider implementing a rolling 30-day average to smooth out spending fluctuations in your analysis."
+      "Beginner": "⚠️ Noticed high spending? Try setting weekly limits for categories that tend to overflow.",
+      "Experienced User": "📈 Consider implementing a rolling 30-day average to smooth out spending fluctuations in your analysis."
     }
   },
-
   "savingPlanner": {
     "newGoal": {
-      "beginner": "🎯 Start with small, achievable goals to build your savings habit gradually.",
-      "experienced": "⚡ For long-term goals, explore compound growth calculators to understand the power of consistent investing."
+      "Beginner": "🎯 Start with small, achievable goals to build your savings habit gradually.",
+      "Experienced User": "⚡ For long-term goals, explore compound growth calculators to understand the power of consistent investing."
     },
     "progress": {
-      "beginner": "🎉 Great progress! Consistency is key.",
-      "experienced": "📊 You're on track! Increase your monthly target by 10% to accelerate your goal timeline."
+      "Beginner": "🎉 Great progress! Consistency is key.",
+      "Experienced User": "📊 You're on track! Increase your monthly target by 10% to accelerate your goal timeline."
+    }
+  },
+  "dashboard": {
+    "balance": {
+      "Beginner": "💰 View your current financial position including income, expenses, and net balance.",
+      "Experienced User": "💰 Overview of your current financial position showing income, expenses, and net balance."
+    },
+    "savings": {
+      "Beginner": "🏦 Track your progress towards monthly savings goals and financial targets.",
+      "Experienced User": "🏦 Monitor your monthly savings goals and track progress towards financial targets."
+    },
+    "bills": {
+      "Beginner": "📅 Manage and view upcoming bill payments and due dates.",
+      "Experienced User": "📅 Overview of upcoming bill payments and their respective due dates."
+    },
+    "prediction": {
+      "Beginner": "📊 Access financial forecasting tools for future planning and goal projection when inflation.",
+      "Experienced User": "📊 Financial forecasting tools for future planning and goal projection inflation analysis."
+    },
+    "quickActions": {
+      "Beginner": "⚡ Quick access to frequently used features for efficient financial management.",
+      "Experienced User": "⚡ Quick shortcuts to commonly used financial management features."
+    }
+  },
+  "futurePrediction": {
+    "calculator": {
+      "Beginner": "🔮 Enter your current finances to project future savings growth and purchasing power.",
+      "Experienced User": "🔮 Advanced projection tool modeling savings growth with income and inflation variables."
+    },
+    "growthProjection": {
+      "Beginner": "📈 Green line shows your potential savings growth. Red line shows what your money will actually be worth after inflation.",
+      "Experienced User": "📈 Detailed growth projection comparing nominal growth vs inflation-adjusted purchasing power."
+    },
+    "riskAnalysis": {
+      "Beginner": "🛡️ Understand financial risks and how to protect your savings from inflation.",
+      "Experienced User": "🛡️ Comprehensive risk assessment including inflation impact and emergency fund coverage."
+    },
+    "financialHealth": {
+      "Beginner": "❤️ Your score shows how stable your money habits are. Above 80 is great, 60–79 is okay, 40–59 has some risks, below 40 needs attention.",
+      "Experienced User": "❤️ Your score checks savings, emergency funds, and income growth. ≥80 is excellent, 60–79 is strong, 40–59 is moderate risk, <40 is high risk."
+    },
+    "SavingsComparison": {
+      "Beginner": "💰 Shows how your current savings compare to future projections. If future savings drop, consider spending less or earning more.",
+      "Experienced User": "💰 Compares your current surplus with future, inflation-adjusted savings. A drop means expenses or inflation may overtake income—adjust spending or boost earnings."
+    },
+    "YearlyBreakdown": {
+      "Beginner": "📊 The Yearly Breakdown shows how your income, expenses, and savings change every year. It helps you understand whether you're building stronger savings over time or if rising costs will reduce what you can save. Use it to plan ahead and avoid future financial stress.",
+      "Experienced User": "📊 The Yearly Breakdown provides a year-by-year projection of income growth, inflation-adjusted expenses, and net savings. This makes it easier to detect long-term risk trends such as negative real growth, diminishing surplus, or emerging deficits. Use these patterns to refine budgeting, investment allocation, and income strategy."
+    },
+    "inflationImpact": {
+      "Beginner": "💰 See how inflation reduces your future purchasing power over time.",
+      "Experienced User": "💰 Detailed inflation impact analysis showing real vs nominal value erosion."
+    },
+    "emergencyFund": {
+      "Beginner": "🏥 Track your emergency fund progress - aim for 3-6 months of living expenses.",
+      "Experienced User": "🏥 Emergency fund optimization with coverage analysis and growth tracking against targets."
+    },
+    "recommendations": {
+      "Beginner": "💡 Personalized suggestions to improve your financial strategy and security.",
+      "Experienced User": "💡 AI-powered strategic recommendations based on comprehensive financial analysis."
+    },
+    "keyMetrics": {
+      "Beginner": "📊 Quick overview of your most important financial health indicators.",
+      "Experienced User": "📊 Key performance indicators for strategic financial planning and optimization."
+    },
+    "projectionChart": {
+      "Beginner": "📊 Green line = Your savings could grow to this amount. Red line = What that money will actually buy after inflation.",
+      "Experienced User": "📊 Dual-line chart comparing nominal growth (green) vs inflation-adjusted value (red)."
+    },
+    "realGrowth": {
+      "Beginner": "🌱 Your actual growth after inflation - what really matters for building wealth.",
+      "Experienced User": "🌱 Real growth rate = Income growth - Inflation. The true measure of financial progress."
+    },
+    "monthsCoverage": {
+      "Beginner": "🛡️ How many months you can cover expenses with current savings - aim for 3-6 months.",
+      "Experienced User": "🛡️ Emergency fund coverage ratio. Optimal range: 3-6 months of essential expenses."
+    },
+    "greenLine": {
+      "Beginner": "💚 Green Line: This shows how much money you could have in the future if everything grows as expected.",
+      "Experienced User": "💚 Nominal Growth: Projected savings without inflation adjustment."
+    },
+    "redLine": {
+      "Beginner": "🔴 Red Line: This shows what your future savings will actually be worth - how much they can really buy after inflation.",
+      "Experienced User": "🔴 Real Value: Inflation-adjusted purchasing power of your savings."
+    },
+    "chartExplanation": {
+      "Beginner": "📊 The gap between green and red lines shows how inflation reduces your purchasing power over time.",
+      "Experienced User": "📊 The divergence between nominal and real values illustrates inflation's erosive effect on wealth."
+    },
+    "incomeGrowthRate": {
+      "Beginner": "📈 Income Growth Rate shows how much your income increases each year. \nFor example, 1% is slow growth, 3% is normal, 5% is faster growth, and 8% is very fast growth. You can also enter your own rate if you prefer.",
+      "Experienced User": "📈 Income Growth Rate represents your expected annual income increase. \n🌱Typical growth ranges from 1–3%, while 5–8% indicates higher career or business expansion. Adjust this value to reflect your earning trajectory."
     }
   },
 
-  "dashboard": {
-    "balance": {
-      "beginner": "💰 Your balance looks good! Keep tracking your spending to maintain healthy finances.",
-      "experienced": "📈 Your cash flow is stable. Consider reallocating excess funds into savings or investments."
+  "billTracker": {
+    "reminders": {
+      "Beginner": "🔔 Set up payment reminders to avoid late fees and protect your credit score.",
+      "Experienced User": "🔔 Pro tip: Schedule bill payments 2-3 days before due dates to account for processing time."
     },
-    "savings": {
-      "beginner": "🏦 Great savings! Even small monthly contributions make a big difference over time.",
-      "experienced": "🔍 You’re building a strong savings habit. Evaluate higher-yield accounts to boost returns."
+    "dsrCalculator": {
+  "Beginner": "💡 Your DSR (Debt Service Ratio) shows whether you’re eligible to borrow. It compares your monthly commitments to your monthly gross income.\n 💡 Gross income = income before deductions;Commitments = loans, installments, credit card minimums. A lower DSR means better loan approval chances.",
+  "Experienced User": "💡 DSR determines loan eligibility by dividing total monthly commitments by gross monthly income. Gross income includes salary before EPF/SOCSO/tax; commitments include all recurring debts. Banks prefer DSR < 40% for general loans and < 30% for safer profiles."
+}
+  },
+  "goalProjection": {
+    "progressBar": {
+      "Beginner": "📊 This shows your current savings vs your goal target. 100% means you've saved enough to reach your goal!",
+      "Experienced User": "📊 Progress bar shows current savings ÷ goal target. >100% indicates exceeding target - consider reallocating surplus to other goals."
     },
-    "bills": {
-      "beginner": "📅 Stay on track! Paying bills on time helps you avoid late fees and protects your credit score.",
-      "experienced": "⚙️ Consider automating recurring bills to streamline your financial management."
+    "futureValue": {
+      "Beginner": "📈 Future Value shows how much your savings could grow over time with compound interest and regular contributions.",
+      "Experienced User": "💹 Future Value represents projected compound growth assuming consistent contributions and fixed return rate over time."
     },
-    "prediction": {
-      "beginner": "📊 Predictions help you plan ahead. Use them to adjust spending before issues arise.",
-      "experienced": "🔮 Use predicted cash flow trends to optimize budgeting and plan investments strategically."
+    "todayValue": {
+      "Beginner": "🕒 Today's Value shows what your future savings will actually be worth after adjusting for inflation's impact.",
+      "Experienced User": "📉 Today's Value = Future Value discounted by inflation. Measures real purchasing power of your future savings."
+    },
+    "inflationAdjustedTarget": {
+      "Beginner": "🎯 Due to inflation, your goal will cost more in the future. This shows the adjusted amount you'll actually need.",
+      "Experienced User": "🔥 Inflation-Adjusted Target = Original target × inflation factor. Ensures your savings keep pace with rising prices."
+    },
+    "gapAnalysis": {
+      "Beginner": "📊 This shows the difference between your projected savings and what you'll actually need. Green = surplus, Red = shortfall.",
+      "Experienced User": "📊 Gap Analysis compares projected future value with inflation-adjusted target. Positive gap = on track, negative = adjustments needed."
+    },
+    "statusBadge": {
+      "Beginner": "🟢 Green badge = You're on track to reach your goal! 🔴 Red badge = You need to make some adjustments.",
+      "Experienced User": "🟢 On Track = Projected savings meet or exceed adjusted target. 🔴 Needs Attention = Projection shows potential shortfall."
+    },
+    "timeline": {
+      "Beginner": "⏳ Your goal timeline affects how much your money can grow. Longer timelines allow more time for compound interest to work.",
+      "Experienced User": "⏳ Timeline impacts compounding effect and inflation adjustment. Longer periods increase both growth potential and required target."
+    },
+    "monthlySavings": {
+      "Beginner": "💰 Regular monthly savings help your money grow through compound interest. Consistency is key to reaching your goals!",
+      "Experienced User": "💰 Monthly contributions significantly impact final value through systematic investment and dollar-cost averaging benefits."
+    },
+    "returnRate": {
+      "Beginner": "📈 This is the expected annual return on your investments. Higher returns mean faster growth but usually come with more risk.",
+      "Experienced User": "📈 Return rate assumption affects compound growth. Realistic rates (4-7%) balance growth expectations with risk management."
+    },
+    "inflationRate": {
+      "Beginner": "💰 Inflation reduces what your money can buy over time. We use 3% as a typical long-term average.",
+      "Experienced User": "💰 3% inflation reflects historical averages. Adjust if expecting different economic conditions for more accurate projections."
+    },
+    "recommendations": {
+      "Beginner": "💡 These personalized suggestions help you stay on track. Follow them to improve your chances of reaching your goal!",
+      "Experienced User": "💡 AI-powered recommendations based on gap analysis. Consider these strategic adjustments to optimize your financial plan."
+    },
+    "goalProgress": {
+      "Beginner": "🎯 Track your progress here! The bar fills as you get closer to your target amount.",
+      "Experienced User": "🎯 Progress visualization helps monitor goal attainment. Regular reviews ensure you stay aligned with your financial objectives."
     },
     "default": {
-      "beginner": "💡 Keep building strong financial habits one step at a time!",
-      "experienced": "📘 Continue optimizing your financial decisions with consistent tracking and analysis."
+      "Beginner": "💡 Keep building strong financial habits one step at a time!",
+      "Experienced User": "📘 Continue optimizing your financial decisions with consistent tracking and analysis."
     }
   }
 }

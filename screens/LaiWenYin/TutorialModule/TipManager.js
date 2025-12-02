@@ -6,7 +6,6 @@ export const useTipManager = (userLevel = 'beginner') => {
   const [currentTip, setCurrentTip] = useState('');
   const [isTipVisible, setIsTipVisible] = useState(false);
 
-  // ✅ FIXED getTip function (was broken in your code)
   const getTip = useCallback((module, context = 'default', level = userLevel) => {
     return (
       tipData?.[module]?.[context]?.[level] ||
@@ -15,7 +14,7 @@ export const useTipManager = (userLevel = 'beginner') => {
     );
   }, [userLevel]);
 
-  // ✅ FIXED showTip
+  
   const showTip = useCallback((module, context = 'default') => {
     const tip = getTip(module, context, userLevel);
     setCurrentTip(tip);

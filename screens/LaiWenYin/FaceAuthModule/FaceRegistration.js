@@ -15,7 +15,7 @@ import {
 } from '../../../database/userAuth';
 import { getApiBase } from './apiConfig';
 
-const API_URL = getApiBase;
+const API_URL = getApiBase();
 
 export default function FaceRegistrations({ navigation, route }) {
   const [isEnabled, setIsEnabled] = useState(true);
@@ -96,7 +96,7 @@ export default function FaceRegistrations({ navigation, route }) {
           setUserHasRegisteredFace(hasFace);
           
           if (hasFace && fromLogin) {
-            navigation.replace("MainTabs");
+            navigation.replace("MainApp");
           }
         }
       } catch (error) {
@@ -296,7 +296,7 @@ export default function FaceRegistrations({ navigation, route }) {
             text: 'Continue', 
             onPress: () => {
               if (fromLogin) {
-                navigation.replace("MainTabs");
+                navigation.replace("MainApp");
               }
             } 
           },
@@ -320,7 +320,7 @@ export default function FaceRegistrations({ navigation, route }) {
           text: 'Skip', 
           style: 'destructive',
           onPress: () => {
-            navigation.replace("MainTabs");
+            navigation.replace("MainApp");
           }
         },
       ]

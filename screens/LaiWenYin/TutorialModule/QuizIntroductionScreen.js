@@ -13,7 +13,7 @@ export default function QuizIntroductionScreen({ route, navigation }) {
 
   const handleSkip = async () => {
     await AsyncStorage.setItem(`hasSeenQuizIntro_${userId}`, 'true');
-    navigation.replace('MainTabs');
+    navigation.replace('MainApp');
   };
 
   return (

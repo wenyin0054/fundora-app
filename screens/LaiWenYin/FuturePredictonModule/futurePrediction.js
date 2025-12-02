@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef ,useEffect} from "react";
 import {
   View,
   Text,
@@ -7,136 +7,506 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
-  Alert,
+  Modal,
+  FlatList,
+  Animated,
+  ActivityIndicator,
 } from "react-native";
-import { LineChart, BarChart } from "react-native-chart-kit";
 import * as Progress from "react-native-progress";
+import { useUser } from "../../reuseComponet/UserContext";
+import { useTipManager } from "../TutorialModule/TipManager";
+import FinancialTipBanner from "../TutorialModule/FinancialTipBanner";
+import { BlurView } from "expo-blur";
+import { MotiView } from "moti";
+import { Ionicons } from '@expo/vector-icons';
+import { getUserIncome } from "../../../database/userAuth";
+import { getTotalExpensesLocal } from "../../../database/SQLite"
+import { LineChart} from "react-native-chart-kit" ;
+const screenWidth = Dimensions.get("window").width;
 
-const screenWidth = Dimensions.get("window").width - 40;
+// Validation limits
+const VALIDATION_LIMITS = {
+  INCOME: {
+    MIN: 0,
+    MAX: 100000,
+  },
+  EXPENSES: {
+    MIN: 0,
+    MAX: 100000,
+  },
+  YEARS: {
+    MIN: 1,
+    MAX: 50,
+  },
+  INCOME_GROWTH: {
+    MIN: 0,
+    MAX: 50,
+  },
+  INFLATION: {
+    MIN: 0,
+    MAX: 30,
+  }
+};
+
 
 export default function FuturePredictionScreen() {
-  const [data, setData] = useState({
-    savings: 50000,
-    expenses: 3000,
-    incomeGrowth: 5,
-    inflation: 3,
-    years: 10,
-  });
-
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState("projection");
+  const [showIncomeDropdown, setShowIncomeDropdown] = useState(false);
+  const [showInflationDropdown, setShowInflationDropdown] = useState(false);
+  const { userLevel, userId } = useUser();
+const [data, setData] = useState({
+  currentIncome: "",
+  currentExpenses: "",
+  incomeGrowth: 10,
+  inflation: 2.5,
+  years: 5,
+});
 
-  const calculateProjection = () => {
-    const { savings, expenses, incomeGrowth, inflation, years } = data;
+  useEffect(() => {
+    loadData();
+  }, []);
 
-    if (!savings || !years) {
-      Alert.alert("Missing Data", "Please enter your savings and timeline");
+  //String() makes input editable
+const loadData = async () => {
+  try {
+    const income = await getUserIncome(userId);
+    const expenses = await getTotalExpensesLocal(userId);
+    console.log("Loaded income and expenses:", income, expenses);
+    setData(prev => ({
+      ...prev,
+      currentIncome: income ? String(Number(income)) : "",
+      currentExpenses: expenses ? String(Number(expenses)) : "",
+    }));
+  } catch (err) {
+    console.log("Failed loading data:", err);
+  }
+};
+
+
+
+  const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
+  const showFuturePredictionCalculatorTips = () => {
+    showTip('futurePrediction', 'calculator');
+  };
+  const showKeyMetricsTips = () => {
+    showTip('futurePrediction', 'keyMetrics');
+  };
+  const showFinancialHealthTips = () => {
+    showTip('futurePrediction', 'financialHealth');
+  };
+  const showSavingsComparisonTips = () => {
+    showTip('futurePrediction', 'SavingsComparison');
+  };
+    const showYearlyBreakdownTips = () => {
+    showTip('futurePrediction', 'YearlyBreakdown');
+  };
+    const showRiskAssessmentTips = () => {
+    showTip('futurePrediction', 'riskAnalysis');
+  };
+  
+  const [calculationLoading, setCalculationLoading] = useState(false);
+  const [incomeError, setIncomeError] = useState('');
+  const [expensesError, setExpensesError] = useState('');
+  const [yearsError, setYearsError] = useState('');
+  const [incomeGrowthError, setIncomeGrowthError] = useState('');
+  const [inflationError, setInflationError] = useState('');
+
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+  const toastTimeoutRef = useRef(null);
+  const cardShakeAnim = useRef(new Animated.Value(0)).current;
+
+  // Professional presets - based on Malaysia context
+  const incomeGrowthPresets = [
+    { id: '1', label: "Conservative (5%)", value: 5 },
+    { id: '2', label: "Malaysia Average (10%)", value: 10 },
+    { id: '3', label: "Aggressive (15%)", value: 15 },
+    { id: '4', label: "High Growth (20%)", value: 20 },
+    { id: '5', label: "Custom", value: 0 },
+  ];
+
+  const inflationRatePresets = [
+    { id: '1', label: "Low Inflation (1.5%)", value: 1.5 },
+    { id: '2', label: "Malaysia Average (2.5%)", value: 2.5 },
+    { id: '3', label: "High Inflation (4%)", value: 4 },
+    { id: '4', label: "Very High Inflation (6%)", value: 6 },
+    { id: '5', label: "Custom", value: 0 },
+  ];
+
+  // Toast function
+  const showToast = (message, type = 'error', duration = 3000) => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastTimeoutRef.current = null;
+    }, duration);
+  };
+
+  // Shake animation
+  const runShake = (animRef) => {
+    animRef.setValue(0);
+    Animated.sequence([
+      Animated.timing(animRef, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: 6, duration: 60, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // Validation functions
+  const validateIncome = (value) => {
+    const numValue = parseFloat(value) || 0;
+    if (numValue < VALIDATION_LIMITS.INCOME.MIN) return `Income cannot be less than RM${VALIDATION_LIMITS.INCOME.MIN}`;
+    if (numValue > VALIDATION_LIMITS.INCOME.MAX) return `Income cannot exceed RM${VALIDATION_LIMITS.INCOME.MAX.toLocaleString()}`;
+    return null;
+  };
+
+  const validateExpenses = (value) => {
+    const numValue = parseFloat(value) || 0;
+    if (numValue < VALIDATION_LIMITS.EXPENSES.MIN) return `Expenses cannot be less than RM${VALIDATION_LIMITS.EXPENSES.MIN}`;
+    if (numValue > VALIDATION_LIMITS.EXPENSES.MAX) return `Expenses cannot exceed RM${VALIDATION_LIMITS.EXPENSES.MAX.toLocaleString()}`;
+    return null;
+  };
+
+  const validateYears = (value) => {
+    const numValue = parseInt(value) || 0;
+    if (numValue < VALIDATION_LIMITS.YEARS.MIN) return `Years cannot be less than ${VALIDATION_LIMITS.YEARS.MIN}`;
+    if (numValue > VALIDATION_LIMITS.YEARS.MAX) return `Years cannot exceed ${VALIDATION_LIMITS.YEARS.MAX}`;
+    return null;
+  };
+
+  const validateIncomeGrowth = (value) => {
+    const numValue = parseFloat(value) || 0;
+    if (numValue < VALIDATION_LIMITS.INCOME_GROWTH.MIN) return `Income growth cannot be less than ${VALIDATION_LIMITS.INCOME_GROWTH.MIN}%`;
+    if (numValue > VALIDATION_LIMITS.INCOME_GROWTH.MAX) return `Income growth cannot exceed ${VALIDATION_LIMITS.INCOME_GROWTH.MAX}%`;
+    return null;
+  };
+
+  const validateInflation = (value) => {
+    const numValue = parseFloat(value) || 0;
+    if (numValue < VALIDATION_LIMITS.INFLATION.MIN) return `Inflation cannot be less than ${VALIDATION_LIMITS.INFLATION.MIN}%`;
+    if (numValue > VALIDATION_LIMITS.INFLATION.MAX) return `Inflation cannot exceed ${VALIDATION_LIMITS.INFLATION.MAX}%`;
+    return null;
+  };
+
+  // Update functions
+  const updateCurrentIncome = (value) => {
+    // allow user to clear input
+    if (value === "") {
+      setData(prev => ({ ...prev, currentIncome: "" }));
+      setIncomeError("");
       return;
     }
 
-    // NEW FORMULA: Future Savings = (Current Income − Current Expenses) × (1 + Income Growth Rate)^t 
-    // − (Expected Future Expenses × (1 + Inflation Rate)^t)
-    
-    // For this implementation, we'll use savings as "current income - current expenses"
-    // So: currentIncome - currentExpenses = savings (simplified assumption)
-    const currentNetSavings = savings; // This represents (Income - Expenses)
-    
-    const yearlyData = [];
-    const inflationAdjustedData = [];
-    
-    for (let i = 1; i <= years; i++) {
-      // Apply the new formula
-      const futureIncomeComponent = currentNetSavings * Math.pow(1 + incomeGrowth/100, i);
-      const futureExpenseComponent = expenses * Math.pow(1 + inflation/100, i);
-      const futureNetSavings = futureIncomeComponent - futureExpenseComponent;
-      
-      yearlyData.push(parseFloat(futureNetSavings.toFixed(2)));
-      
-      // For inflation adjusted data (purchasing power)
-      const inflationAdjustedValue = futureNetSavings / Math.pow(1 + inflation/100, i);
-      inflationAdjustedData.push(parseFloat(inflationAdjustedValue.toFixed(2)));
+    const numValue = Number(value);
+    if (!isNaN(numValue)) {
+      setData(prev => ({ ...prev, currentIncome: value })); // keep raw string
+      if (incomeError) setIncomeError("");
+    }
+  };
+
+  const updateCurrentExpenses = (value) => {
+    if (value === "") {
+      setData(prev => ({ ...prev, currentExpenses: "" }));
+      setExpensesError("");
+      return;
     }
 
-    const futureSavings = yearlyData[years - 1];
-    const inflationLoss = futureSavings - inflationAdjustedData[years - 1];
+    const numValue = Number(value);
+    if (!isNaN(numValue)) {
+      setData(prev => ({ ...prev, currentExpenses: value }));
+      if (expensesError) setExpensesError("");
+    }
+  };
 
-    // Calculate financial health metrics
-    const monthsOfExpenses = savings / expenses;
-    const targetEmergencyFund = expenses * 6;
-    const currentEmergencyFund = Math.min(savings, targetEmergencyFund);
-    const realGrowthRate = (incomeGrowth - inflation) / 100;
+
+  const updateYears = (value) => {
+    if (value === "") {
+      setData({ ...data, years: "" });
+      setYearsError('');
+    } else {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue)) {
+        setData({ ...data, years: numValue });
+        if (yearsError) setYearsError('');
+      }
+    }
+  };
+
+  const updateIncomeGrowth = (value) => {
+    if (value === "") {
+      setData({ ...data, incomeGrowth: "" });
+      setIncomeGrowthError('');
+    } else {
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue)) {
+        setData({ ...data, incomeGrowth: numValue });
+        if (incomeGrowthError) setIncomeGrowthError('');
+      }
+    }
+  };
+
+  const updateInflation = (value) => {
+    if (value === "") {
+      setData({ ...data, inflation: "" });
+      setInflationError('');
+    } else {
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue)) {
+        setData({ ...data, inflation: numValue });
+        if (inflationError) setInflationError('');
+      }
+    }
+  };
+
+  const setIncomeGrowthPreset = (rate) => {
+    if (rate === 0) {
+      setData({ ...data, incomeGrowth: "" });
+    } else {
+      setData({ ...data, incomeGrowth: rate });
+    }
+    setShowIncomeDropdown(false);
+    setIncomeGrowthError('');
+  };
+
+  const setInflationGrowthPreset = (rate) => {
+    if (rate === 0) {
+      setData({ ...data, inflation: "" });
+    } else {
+      setData({ ...data, inflation: rate });
+    }
+    setShowInflationDropdown(false);
+    setInflationError('');
+  };
+
+  const getSelectedPresetLabel = () => {
+    const preset = incomeGrowthPresets.find(preset => preset.value === data.incomeGrowth);
+    return preset ? preset.label : "Custom";
+  };
+
+  const getSelectedInflationPresetLabel = () => {
+    const preset = inflationRatePresets.find(preset => preset.value === data.inflation);
+    return preset ? preset.label : "Custom";
+  };
+
+  // Core calculation function - implements your original formula
+  const calculateProjection = async () => {
+  // Validate inputs
+  const incomeError = validateIncome(data.currentIncome);
+  const expensesError = validateExpenses(data.currentExpenses);
+  const yearsError = validateYears(data.years);
+  const incomeGrowthError = validateIncomeGrowth(data.incomeGrowth);
+  const inflationError = validateInflation(data.inflation);
+
+  setIncomeError(incomeError);
+  setExpensesError(expensesError);
+  setYearsError(yearsError);
+  setIncomeGrowthError(incomeGrowthError);
+  setInflationError(inflationError);
+
+  const errors = [incomeError, expensesError, yearsError, incomeGrowthError, inflationError]
+    .filter(e => e !== null);
+
+  if (errors.length > 0) {
+    runShake(cardShakeAnim);
+    showToast("Please fix the errors before generating projection", "error");
+    return;
+  }
+
+  setCalculationLoading(true);
+  await new Promise(r => setTimeout(r, 600));
+
+  try {
+    const income = Number(data.currentIncome);
+    const expenses = Number(data.currentExpenses);
+    const growth = Number(data.incomeGrowth) / 100;
+    const inflation = Number(data.inflation) / 100;
+    const years = Number(data.years);
+
+    let yearlyBreakdown = [];
+
+    for (let year = 1; year <= years; year++) {
+      const futureIncome = income * Math.pow(1 + growth, year);
+      const futureExpenses = expenses * Math.pow(1 + inflation, year);
+      const futureNetSavings = futureIncome - futureExpenses;
+
+      yearlyBreakdown.push({
+        year,
+        futureIncome: Number(futureIncome.toFixed(2)),
+        futureExpenses: Number(futureExpenses.toFixed(2)),
+        futureSavings: Number(futureNetSavings.toFixed(2)),
+      });
+    }
+
+    /** FINAL YEAR RESULT */
+    const last = yearlyBreakdown[yearlyBreakdown.length - 1];
+
+    /** REAL (INFLATION-ADJUSTED) VALUE LOSS */
+    const inflationLoss =
+      last.futureSavings -
+      last.futureSavings / Math.pow(1 + inflation, years);
+
+    /** MONTHS OF COVERAGE (Realistic emergency approximation) */
+    const monthlySurplus = Math.max(income - expenses, 0);
+    const monthsOfExpenses =
+      monthlySurplus === 0 ? 0 : Number((monthlySurplus / expenses).toFixed(1));
+
+    /** EMERGENCY FUND GOAL */
+    const emergencyTarget = expenses * 6;
+    const emergencyEstimate = Math.min(monthlySurplus, emergencyTarget);
+
+    /** NET GROWTH RATE */
+    const netGrowthRate = Number(((data.incomeGrowth - data.inflation)).toFixed(1));
 
     setResult({
-      futureSavings: parseFloat(futureSavings.toFixed(2)),
-      yearlyData,
-      inflationAdjustedData,
-      emergencyGoal: parseFloat(currentEmergencyFund.toFixed(2)),
-      emergencyTarget: parseFloat(targetEmergencyFund.toFixed(2)),
-      monthsOfExpenses: parseFloat((monthsOfExpenses).toFixed(2)),
-      inflationLoss: parseFloat(inflationLoss.toFixed(2)),
-      financialHealth: calculateFinancialHealth(monthsOfExpenses, realGrowthRate),
-      recommendation: generateRecommendation(monthsOfExpenses, realGrowthRate, inflationLoss),
+      yearlyBreakdown,
+      futureSavings: last.futureSavings,
+      inflationLoss: Number(inflationLoss.toFixed(2)),
+      monthsOfExpenses,
+      emergencyTarget: Math.round(emergencyTarget),
+      emergencyGoal: Math.round(emergencyEstimate),
+      netGrowthRate,
+      currentNetSavings: Math.round(income - expenses),
+      financialHealth: calculateFinancialHealth(monthsOfExpenses, netGrowthRate, income, expenses),
+      recommendation: generateRecommendation(monthsOfExpenses, netGrowthRate, inflationLoss, income, expenses),
     });
-  };
-const calculateFinancialHealth = (monthsOfExpenses, growthRate) => {
-  let score = 0;
-  
-  // Emergency fund score (max 50 points)
-  score += Math.min(50, (monthsOfExpenses / 6) * 50);
-  
-  // Growth rate score (max 30 points)
-  if (growthRate > 0.02) score += 30;
-  else if (growthRate > 0) score += 20;
-  else if (growthRate > -0.02) score += 10;
-  
-  // Savings amount score (max 20 points)
-  if (data.savings > data.expenses * 12) score += 20;
-  else if (data.savings > data.expenses * 6) score += 15;
-  else if (data.savings > data.expenses * 3) score += 10;
-  
-  return Math.round(Math.min(100, score)); // Added Math.round() here
+
+    showToast("Projection generated successfully!", "success");
+
+  } catch (err) {
+    console.log("Calculation error:", err);
+    showToast("Error generating projection.", "error");
+  } finally {
+    setCalculationLoading(false);
+  }
 };
-  const generateRecommendation = (monthsOfExpenses, growthRate, inflationLoss) => {
+
+
+  const calculateFinancialHealth = (monthsOfExpenses, growthRate, income, expenses) => {
+    let score = 0;
+
+    // Savings rate component (max 40 points)
+    const savingsRate = (income - expenses) / income;
+    score += Math.min(40, savingsRate * 100);
+
+    // Growth rate component (max 30 points)
+    if (growthRate > 2) score += 30;
+    else if (growthRate > 0) score += 20;
+    else if (growthRate > -2) score += 10;
+
+    // Emergency fund component (max 30 points)
+    if (monthsOfExpenses >= 6) score += 30;
+    else if (monthsOfExpenses >= 3) score += 20;
+    else if (monthsOfExpenses >= 1) score += 10;
+
+    return Math.round(Math.min(100, score));
+  };
+
+  const generateRecommendation = (monthsOfExpenses, growthRate, inflationLoss, income, expenses) => {
     const recommendations = [];
-    
+    const savingsRate = (income - expenses) / income;
+
     if (monthsOfExpenses < 3) {
       recommendations.push("🚨 Build emergency fund to cover 3-6 months of expenses");
     } else if (monthsOfExpenses < 6) {
       recommendations.push("📈 Continue building emergency fund to 6 months coverage");
     }
-    
-    if (growthRate < 0.02) {
+
+    if (growthRate < 2) {
       recommendations.push("💡 Consider investments with returns above inflation rate");
     }
-    
-    if (inflationLoss > data.savings * 0.1) {
+
+    if (inflationLoss > (income - expenses) * 0.1) {
       recommendations.push("🛡️ Protect savings from inflation with diversified investments");
     }
-    
+
     if (data.incomeGrowth - data.inflation < 2) {
       recommendations.push("🎯 Focus on increasing income growth above inflation");
     }
-    
+
+    if (savingsRate < 0.2) {
+      recommendations.push("💰 Improve savings rate by reducing expenses or increasing income");
+    }
+
     if (recommendations.length === 0) {
       recommendations.push("✅ Excellent financial health! Maintain your current strategy");
     }
-    
+
     return recommendations;
   };
 
+  // Professional components to replace charts
+
+  // 1. Yearly Breakdown Table
+  const YearlyBreakdownTable = () => (
+    <View style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.subtitle}>📊 Yearly Breakdown</Text>
+         <TouchableOpacity onPress={showYearlyBreakdownTips} style={styles.infoIconTouchable}>
+          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tableHeader}>
+        <Text style={[styles.tableCell, styles.tableHeaderText, { flex: 1 }]}>Year</Text>
+        <Text style={[styles.tableCell, styles.tableHeaderText, { flex: 2 }]}>
+          Future Monthly Income (+Growth)
+        </Text>
+
+        <Text style={[styles.tableCell, styles.tableHeaderText, { flex: 2 }]}>
+          Future Monthly Expenses (+Inflation)
+        </Text>
+
+        <Text style={[styles.tableCell, styles.tableHeaderText, { flex: 2 }]}>
+          Future Savings
+        </Text>
+
+      </View>
+
+      <ScrollView style={styles.tableScroll} showsVerticalScrollIndicator={false}>
+        {result.yearlyBreakdown.map((item, index) => (
+          <View key={`year-${item.year}`} style={[
+            styles.tableRow,
+            index % 2 === 0 && styles.tableRowEven
+          ]}>
+            <Text style={[styles.tableCell, { flex: 1 }]}>Year {item.year}</Text>
+            <Text style={[styles.tableCell, { flex: 2 }]}>RM{item.futureIncome.toLocaleString()}</Text>
+            <Text style={[styles.tableCell, { flex: 2 }]}>RM{item.futureExpenses.toLocaleString()}</Text>
+            <Text style={[
+              styles.tableCell,
+              { flex: 2, color: item.futureSavings >= 0 ? '#27ae60' : '#e74c3c' }
+            ]}>
+              RM{Math.abs(item.futureSavings).toLocaleString()}
+              {item.futureSavings < 0 && " (Deficit)"}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  // 2. Financial Health Meter
   const FinancialHealthMeter = ({ score }) => {
     let color, label;
-    
+
     if (score >= 80) { color = "#27ae60"; label = "Excellent"; }
     else if (score >= 60) { color = "#3498db"; label = "Good"; }
     else if (score >= 40) { color = "#f39c12"; label = "Fair"; }
     else { color = "#e74c3c"; label = "Needs Improvement"; }
-    
+
     return (
-      <View style={styles.healthMeter}>
+      <View style={styles.card}>
         <View style={styles.healthHeader}>
           <Text style={styles.healthLabel}>Financial Health Score</Text>
-          <Text style={[styles.healthScore, { color }]}>{score}/100</Text>
+          <TouchableOpacity onPress={showFinancialHealthTips} style={styles.infoIconTouchable}>
+          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        </TouchableOpacity>
         </View>
         <Progress.Bar
           progress={score / 100}
@@ -147,336 +517,587 @@ const calculateFinancialHealth = (monthsOfExpenses, growthRate) => {
           borderWidth={0}
           borderRadius={6}
         />
-        <Text style={[styles.healthStatus, { color }]}>{label}</Text>
-      </View>
-    );
-  };
-
-  const InflationImpactCard = () => {
-    const inflationLoss = result?.inflationLoss || 0;
-    const purchasingPower = ((result?.futureSavings - inflationLoss) / result?.futureSavings) * 100;
-    
-    return (
-      <View style={styles.card}>
-        <Text style={styles.subtitle}>🪙 Inflation Impact Analysis</Text>
-        
-        <View style={styles.inflationGrid}>
-          <View style={styles.inflationItem}>
-            <Text style={styles.inflationLabel}>Future Value</Text>
-            <Text style={styles.inflationValue}>RM {result?.futureSavings?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
-          </View>
-          
-          <View style={styles.inflationItem}>
-            <Text style={styles.inflationLabel}>Value Lost to Inflation</Text>
-            <Text style={[styles.inflationValue, styles.lossValue]}>
-              -RM {inflationLoss?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-            </Text>
-          </View>
-          
-          <View style={styles.inflationItem}>
-            <Text style={styles.inflationLabel}>Future Purchasing Power</Text>
-            <Text style={styles.inflationValue}>
-              RM {(result?.futureSavings - inflationLoss)?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-            </Text>
-          </View>
-          
-          <View style={styles.inflationItem}>
-            <Text style={styles.inflationLabel}>Power Remaining</Text>
-            <Text style={styles.inflationValue}>
-              {purchasingPower.toFixed(2)}%
-            </Text>
-          </View>
+        <View style={styles.healthScoreRow}>
+          <Text style={[styles.healthStatus, { color }]}>{label}</Text>
+          <Text style={styles.healthScore}>{score}/100</Text>
         </View>
       </View>
     );
   };
 
+  // 3. Key Metrics Card
+  const KeyMetricsCard = () => (
+    <View style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.subtitle}>📈 Key Metrics</Text>
+        <TouchableOpacity onPress={showKeyMetricsTips} style={styles.infoIconTouchable}>
+          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.metricsGrid}>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {result.netGrowthRate.toFixed(1)}%
+          </Text>
+          <Text style={styles.metricLabel}>Net Growth Rate</Text>
+          <Text style={styles.metricDescription}>Income growth minus inflation</Text>
+        </View>
+
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {result.monthsOfExpenses}
+          </Text>
+          <Text style={styles.metricLabel}>Months Coverage</Text>
+          <Text style={styles.metricDescription}>Emergency fund duration</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // 4. Savings Comparison Card
+  const SavingsComparisonCard = () => (
+    <View style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.subtitle}>💰 Savings Comparison</Text>
+        <TouchableOpacity onPress={showSavingsComparisonTips} style={styles.infoIconTouchable}>
+          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.comparisonRow}>
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Current Monthly Savings</Text>
+          <Text style={styles.comparisonValue}>RM{result.currentNetSavings.toLocaleString()}</Text>
+        </View>
+
+        <View style={styles.comparisonArrow}>
+          <Text style={styles.arrowText}>→</Text>
+        </View>
+
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Future Monthly Savings</Text>
+          <Text style={[
+            styles.comparisonValue,
+            result.futureSavings >= result.currentNetSavings ? styles.positiveValue : styles.negativeValue
+          ]}>
+            RM{Math.abs(result.futureSavings).toLocaleString()}
+            {result.futureSavings < 0 && " (Deficit)"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.changeIndicator}>
+        <Text style={[
+          styles.changeText,
+          result.futureSavings >= result.currentNetSavings ? styles.positiveValue : styles.negativeValue
+        ]}>
+          {result.futureSavings >= result.currentNetSavings ? '📈 Increase' : '📉 Decrease'}:
+          RM{Math.abs(result.futureSavings - result.currentNetSavings).toLocaleString()}
+        </Text>
+      </View>
+    </View>
+  );
+
+  // 5. Risk Assessment Card
   const RiskAssessmentCard = () => {
     const riskFactors = [
-      { label: "Emergency Coverage", value: result?.monthsOfExpenses || 0, optimal: 6 },
-      { label: "Real Growth Rate", value: (data.incomeGrowth - data.inflation).toFixed(2) + "%", optimal: ">2%" },
-      { label: "Inflation Impact", value: result?.inflationLoss ? "High" : "Low", optimal: "Low" },
+      {
+        label: "Emergency Coverage",
+        value: `${result.monthsOfExpenses} months`,
+        optimal: "6+ months",
+        status: result.monthsOfExpenses >= 6 ? "good" : result.monthsOfExpenses >= 3 ? "warning" : "danger"
+      },
+      {
+        label: "Net Growth Rate",
+        value: `${result.netGrowthRate.toFixed(1)}%`,
+        optimal: ">2%",
+        status: result.netGrowthRate > 2 ? "good" : result.netGrowthRate > 0 ? "warning" : "danger"
+      },
+      {
+        label: "Savings Trend",
+        value: result.futureSavings >= result.currentNetSavings ? "Improving" : "Declining",
+        optimal: "Improving",
+        status: result.futureSavings >= result.currentNetSavings ? "good" : "danger"
+      },
     ];
-    
+
+    const getStatusColor = (status) => {
+      switch (status) {
+        case 'good': return '#27ae60';
+        case 'warning': return '#f39c12';
+        case 'danger': return '#e74c3c';
+        default: return '#7f8c8d';
+      }
+    };
+
     return (
       <View style={styles.card}>
-        <Text style={styles.subtitle}>📊 Risk Assessment</Text>
-        
+        <View style={styles.sectionHeader}>
+          <Text style={styles.subtitle}>📊 Risk Assessment</Text>
+          <TouchableOpacity onPress={showRiskAssessmentTips} style={styles.infoIconTouchable}>
+          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+        </TouchableOpacity>
+        </View>
+
         {riskFactors.map((factor, index) => (
-          <View key={index} style={styles.riskFactor}>
+          <View key={`risk-${index}`} style={styles.riskFactor}>
             <View style={styles.riskHeader}>
               <Text style={styles.riskLabel}>{factor.label}</Text>
-              <Text style={styles.riskValue}>{factor.value}</Text>
+              <Text style={[styles.riskValue, { color: getStatusColor(factor.status) }]}>
+                {factor.value}
+              </Text>
             </View>
-            <Text style={styles.riskOptimal}>Optimal: {factor.optimal}</Text>
-            {factor.label === "Emergency Coverage" && (
-              <Progress.Bar
-                progress={Math.min(1, factor.value / factor.optimal)}
-                width={null}
-                height={6}
-                color={factor.value >= factor.optimal ? "#27ae60" : "#f39c12"}
-                unfilledColor="#ecf0f1"
-                borderWidth={0}
-                borderRadius={3}
-              />
-            )}
+            <Text style={styles.riskOptimal}>Target: {factor.optimal}</Text>
           </View>
         ))}
       </View>
     );
   };
 
+
+// 6. Formula Explanation Card (Short & Attractive)
+const FormulaExplanation = () => (
+  <View style={styles.card}>
+    <View style={styles.sectionHeader}>
+      <Text style={styles.subtitle}>🧮 How Your Projection Is Calculated</Text>
+    </View>
+
+    <Text style={styles.formulaTitle}>📈 1. Future Income</Text>
+    <Text style={styles.formulaText}>
+      Monthly Income × (1 + Growth Rate)ⁿ
+    </Text>
+    <Text style={styles.formulaExample}>
+      e.g. RM3000 → Year 2 at 10% = RM3630
+    </Text>
+
+    <Text style={styles.formulaTitle}>💸 2. Future Expenses</Text>
+    <Text style={styles.formulaText}>
+      Monthly Expenses × (1 + Inflation Rate)ⁿ
+    </Text>
+    <Text style={styles.formulaExample}>
+      e.g. RM2000 → Year 2 at 3% = RM2121.80
+    </Text>
+
+    <Text style={styles.formulaTitle}>💰 3. Future Savings</Text>
+    <Text style={styles.formulaText}>
+      Future Income − Future Expenses
+    </Text>
+
+    <Text style={styles.formulaTitle}>🛡 4. Emergency Coverage</Text>
+    <Text style={styles.formulaText}>
+      (Income − Expenses) ÷ Expenses
+    </Text>
+  </View>
+);
+
+// 7. Recommendations Card
+const RecommendationsCard = () => {
+  if (!result) return null;   // prevent crash
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Financial Future Projection</Text>
-      <Text style={styles.subtitle}>Plan your financial journey </Text>
-
-      {/* Calculator Card */}
-      <View style={styles.card}>
-        <Text style={styles.title}>📈 Projection Calculator</Text>
-
-        <View style={styles.inputRow}>
-          <View style={styles.inputColumn}>
-            <Text style={styles.label}>Current Savings (RM)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={data.savings.toString()}
-              onChangeText={(t) => setData({ ...data, savings: parseFloat(t) || 0 })}
-            />
-          </View>
-          
-          <View style={styles.inputColumn}>
-            <Text style={styles.label}>Monthly Expenses (RM)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={data.expenses.toString()}
-              onChangeText={(t) => setData({ ...data, expenses: parseFloat(t) || 0 })}
-            />
-          </View>
+    <View style={styles.recommendationCard}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.recommendationTitle}>💡 Recommendations</Text>
+      </View>
+      {result.recommendation.map((rec, index) => (
+        <View key={`rec-${index}`} style={styles.recommendationItem}>
+          <Text style={styles.recommendationText}>{rec}</Text>
         </View>
+      ))}
+    </View>
+  );
+};
 
-        <View style={styles.inputRow}>
-          <View style={styles.inputColumn}>
-            <Text style={styles.label}>Income Growth (%)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={data.incomeGrowth.toString()}
-              onChangeText={(t) => setData({ ...data, incomeGrowth: parseFloat(t) || 0 })}
-            />
-          </View>
-          
-          <View style={styles.inputColumn}>
-            <Text style={styles.label}>Inflation Rate (%)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={data.inflation.toString()}
-              onChangeText={(t) => setData({ ...data, inflation: parseFloat(t) || 0 })}
-            />
-          </View>
-        </View>
+  // 8. Formula Diagram (Line Chart)
+const FormulaDiagram = () => {
+  if (!result) return null;
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Projection Timeline (Years)</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={data.years.toString()}
-            onChangeText={(t) => setData({ ...data, years: parseInt(t) || 0 })}
-          />
-        </View>
+  const labels = result.yearlyBreakdown.map(item => `Y${item.year}`);
 
-        <TouchableOpacity style={styles.button} onPress={calculateProjection}>
-          <Text style={styles.buttonText}>Generate Projection</Text>
-        </TouchableOpacity>
+  const incomeData = result.yearlyBreakdown.map(item => item.futureIncome);
+  const expensesData = result.yearlyBreakdown.map(item => item.futureExpenses);
+  const savingsData = result.yearlyBreakdown.map(item => item.futureSavings);
+
+  return (
+    <View style={styles.card}>
+      {/* Title */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.subtitle}>📉 Projection Diagram</Text>
       </View>
 
-      {result && (
-        <>
-          {/* Financial Health Overview */}
-          <FinancialHealthMeter score={result.financialHealth} />
+      {/* Line Chart */}
+      <LineChart
+        data={{
+          labels,
+          datasets: [
+            {
+              data: incomeData,
+              color: () => "#22c55e", // green
+              strokeWidth: 2,
+            },
+            {
+              data: expensesData,
+              color: () => "#ef4444", // red
+              strokeWidth: 2,
+            },
+            {
+              data: savingsData,
+              color: () => "#3b82f6", // blue
+              strokeWidth: 2,
+            },
+          ],
+          legend: ["Income", "Expenses", "Savings"],
+        }}
+        width={screenWidth * 0.9}
+        height={260}
+        withDots={true}
+        withShadow={false}
+        withInnerLines={false}
+        fromZero={true}
+        segments={4}
+        showDataPointLabel={true}   // ⭐ SHOWS THE RM VALUES
+        chartConfig={{
+          backgroundGradientFrom: "#ffffff",
+          backgroundGradientTo: "#ffffff",
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
+          labelColor: () => "#6b7280",
+          propsForDots: {
+            r: "5",
+            strokeWidth: "2",
+            stroke: "#ffffff"
+          },
+        }}
+        style={{
+          borderRadius: 16,
+          alignSelf: "center",
+        }}
+      />
 
-          {/* Tab Navigation */}
-          <View style={styles.tabContainer}>
-            <TouchableOpacity 
-              style={[styles.tab, activeTab === "projection" && styles.activeTab]}
-              onPress={() => setActiveTab("projection")}
-            >
-              <Text style={[styles.tabText, activeTab === "projection" && styles.activeTabText]}>
-                Growth Projection
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tab, activeTab === "analysis" && styles.activeTab]}
-              onPress={() => setActiveTab("analysis")}
-            >
-              <Text style={[styles.tabText, activeTab === "analysis" && styles.activeTabText]}>
-                Risk Analysis
-              </Text>
-            </TouchableOpacity>
-          </View>
+  
+      {/* Explanation */}
+      <Text style={styles.chartExplanation}>
+        {"\n"}• <Text style={{ color: "#22c55e", fontWeight: "700" }}>Income</Text> grows each year
+        {"\n"}• <Text style={{ color: "#ef4444", fontWeight: "700" }}>Expenses</Text> rise due to inflation
+        {"\n"}• <Text style={{ color: "#3b82f6", fontWeight: "700" }}>Savings</Text> show if you're improving or falling 
+      </Text>
+    </View>
+  );
+};
 
-          {activeTab === "projection" ? (
-            <>
-              {/* Savings Growth Projection */}
-              <View style={styles.card}>
-                <Text style={styles.subtitle}>Future Value Projection</Text>
-                
-                <LineChart
-                  data={{
-                    labels: result.yearlyData.map((_, i) => 
-                      i === 0 || i === Math.floor(data.years/2) || i === data.years - 1 ? `Y${i+1}` : ''
-                    ),
-                    datasets: [
-                      {
-                        data: result.yearlyData,
-                        color: (opacity = 1) => `rgba(46, 204, 113, ${opacity})`,
-                        strokeWidth: 3,
-                      },
-                      {
-                        data: result.inflationAdjustedData,
-                        color: (opacity = 1) => `rgba(231, 76, 60, ${opacity})`,
-                        strokeWidth: 2,
-                      },
-                    ],
-                  }}
-                  width={screenWidth}
-                  height={240}
-                  yAxisLabel="RM"
-                  chartConfig={{
-                    backgroundColor: "#fff",
-                    backgroundGradientFrom: "#f8f9fa",
-                    backgroundGradientTo: "#f8f9fa",
-                    decimalPlaces: 2,
-                    color: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
-                    labelColor: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
-                    style: { borderRadius: 16 },
-                    propsForDots: { r: "4", strokeWidth: "2" },
-                  }}
-                  bezier
-                  style={styles.chart}
+  return (
+    <View style={styles.container}>
+      <FinancialTipBanner
+        message={currentTip}
+        isVisible={isTipVisible}
+        onClose={hideTip}
+        userLevel={userLevel}
+      />
+
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+        {/* Calculator Card */}
+        <Animated.View style={{ transform: [{ translateX: cardShakeAnim }] }}>
+          <View style={styles.card}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.title}>📈 Future Prediction Calculator</Text>
+              <TouchableOpacity onPress={showFuturePredictionCalculatorTips} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={styles.inputColumn}>
+                <Text style={styles.label}>
+                  Current Monthly Income (RM)
+                </Text>
+                <TextInput
+                  style={[styles.input, incomeError ? styles.inputError : null]}
+                  keyboardType="numeric"
+                  value={data.currentIncome === "" ? "" : String(data.currentIncome)}
+                  onChangeText={updateCurrentIncome}
+                placeholder={data.currentIncome ? String(data.currentIncome) : "0"}
+                  editable={!calculationLoading}
+                />
+                {incomeError ? <Text style={styles.errorText}>{incomeError}</Text> : null}
+              </View>
+
+              <View style={styles.inputColumn}>
+                <Text style={styles.label}>
+                  Monthly Expenses (RM)
+                </Text>
+                <TextInput
+                  style={[styles.input, expensesError ? styles.inputError : null]}
+                  keyboardType="numeric"
+                  value={data.currentExpenses}
+                  onChangeText={updateCurrentExpenses}
+                  placeholder={data.currentExpenses ? String(data.currentExpenses) : "0"}
+                  editable={!calculationLoading}
                 />
 
-                <View style={styles.legend}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendColor, { backgroundColor: "#2ecc71" }]} />
-                    <Text style={styles.legendText}>Projected Growth</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendColor, { backgroundColor: "#e74c3c" }]} />
-                    <Text style={styles.legendText}>Inflation Adjusted</Text>
-                  </View>
-                </View>
-
-                <View style={styles.resultBox}>
-                  <Text style={styles.resultText}>In {data.years} years, you'll have:</Text>
-                  <Text style={styles.resultValue}>
-                    RM{result.futureSavings.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                  </Text>
-                  <Text style={styles.resultNote}>
-                    {result.futureSavings > data.savings * 2 ? "🚀 Strong growth trajectory" : 
-                     "📊 Moderate growth - consider optimization"}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Emergency Fund Progress */}
-              <View style={styles.card}>
-                <View style={styles.progressHeader}>
-                  <Text style={styles.subtitle}>🛡️ Emergency Fund</Text>
-                  <Text style={styles.progressPercentage}>
-                    {Math.round((result.emergencyGoal / result.emergencyTarget) * 100)}%
-                  </Text>
-                </View>
-                
-                <Text style={styles.goalValue}>
-                  RM{result.emergencyGoal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / RM{result.emergencyTarget.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                </Text>
-                
-                <Progress.Bar
-                  progress={result.emergencyGoal / result.emergencyTarget}
-                  width={null}
-                  height={16}
-                  color={result.emergencyGoal >= result.emergencyTarget ? "#27ae60" : "#3498db"}
-                  unfilledColor="#ecf0f1"
-                  borderWidth={0}
-                  borderRadius={8}
-                />
-                
-                <Text style={styles.coverageText}>
-                  Covers {result.monthsOfExpenses} months of expenses
-                  {result.monthsOfExpenses >= 6 ? " ✅" : " ⚠️"}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <>
-              {/* Risk Analysis View */}
-              <InflationImpactCard />
-              <RiskAssessmentCard />
-            </>
-          )}
-
-          {/* AI Recommendations */}
-          <View style={styles.recommendationCard}>
-            <Text style={styles.recommendationTitle}>💡 Smart Recommendations</Text>
-            {result.recommendation.map((rec, index) => (
-              <View key={index} style={styles.recommendationItem}>
-                <Text style={styles.recommendationText}>{rec}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Key Metrics Summary */}
-          <View style={styles.metricsCard}>
-            <Text style={styles.subtitle}>📋 Key Metrics</Text>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{result.monthsOfExpenses}</Text>
-                <Text style={styles.metricLabel}>Months Covered</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>
-                  {(data.incomeGrowth - data.inflation).toFixed(2)}%
-                </Text>
-                <Text style={styles.metricLabel}>Real Growth</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>
-                  {Math.round((result.emergencyGoal / result.emergencyTarget) * 100)}%
-                </Text>
-                <Text style={styles.metricLabel}>Emergency Fund</Text>
-              </View>
-              <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>
-                  {result.financialHealth}
-                </Text>
-                <Text style={styles.metricLabel}>Health Score</Text>
+                {expensesError ? <Text style={styles.errorText}>{expensesError}</Text> : null}
               </View>
             </View>
+
+            {/* Income Growth Dropdown */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>
+                  Income Growth Rate
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.dropdownButton, incomeGrowthError ? styles.inputError : null]}
+                onPress={() => setShowIncomeDropdown(!showIncomeDropdown)}
+                disabled={calculationLoading}
+              >
+                <Text style={styles.dropdownButtonText}>{getSelectedPresetLabel()}</Text>
+                <Text style={styles.dropdownArrow}>{showIncomeDropdown ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {incomeGrowthError ? <Text style={styles.errorText}>{incomeGrowthError}</Text> : null}
+
+              {data.incomeGrowth === "" && (
+                <TextInput
+                  style={[styles.input, { marginTop: 8 }, incomeGrowthError ? styles.inputError : null]}
+                  keyboardType="numeric"
+                  placeholder="Enter custom income growth rate (%)"
+                  value={data.incomeGrowth === "" ? "" : String(data.incomeGrowth)}
+                  onChangeText={updateIncomeGrowth}
+                  editable={!calculationLoading}
+                />
+              )}
+
+              <Modal
+                visible={showIncomeDropdown}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowIncomeDropdown(false)}
+              >
+                <TouchableOpacity
+                  style={styles.modalOverlay}
+                  activeOpacity={1}
+                  onPress={() => setShowIncomeDropdown(false)}
+                >
+                  <View style={styles.dropdownList}>
+                    <FlatList
+                      data={incomeGrowthPresets}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[
+                            styles.dropdownItem,
+                            data.incomeGrowth === item.value && styles.dropdownItemActive
+                          ]}
+                          onPress={() => setIncomeGrowthPreset(item.value)}
+                        >
+                          <Text style={[
+                            styles.dropdownItemText,
+                            data.incomeGrowth === item.value && styles.dropdownItemTextActive
+                          ]}>
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                </TouchableOpacity>
+              </Modal>
+            </View>
+
+            {/* Inflation Dropdown */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>
+                  Inflation Rate
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.dropdownButton, inflationError ? styles.inputError : null]}
+                onPress={() => setShowInflationDropdown(!showInflationDropdown)}
+                disabled={calculationLoading}
+              >
+                <Text style={styles.dropdownButtonText}>{getSelectedInflationPresetLabel()}</Text>
+                <Text style={styles.dropdownArrow}>{showInflationDropdown ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+
+              {inflationError ? <Text style={styles.errorText}>{inflationError}</Text> : null}
+
+              {data.inflation === "" && (
+                <TextInput
+                  style={[styles.input, { marginTop: 8 }, inflationError ? styles.inputError : null]}
+                  keyboardType="numeric"
+                  placeholder="Enter custom inflation rate (%)"
+                  value={data.inflation === "" ? "" : String(data.inflation)}
+                  onChangeText={updateInflation}
+                  editable={!calculationLoading}
+                />
+              )}
+
+              <Modal
+                visible={showInflationDropdown}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowInflationDropdown(false)}
+              >
+                <TouchableOpacity
+                  style={styles.modalOverlay}
+                  activeOpacity={1}
+                  onPress={() => setShowInflationDropdown(false)}
+                >
+                  <View style={styles.dropdownList}>
+                    <FlatList
+                      data={inflationRatePresets}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[
+                            styles.dropdownItem,
+                            data.inflation === item.value && styles.dropdownItemActive
+                          ]}
+                          onPress={() => setInflationGrowthPreset(item.value)}
+                        >
+                          <Text style={[
+                            styles.dropdownItemText,
+                            data.inflation === item.value && styles.dropdownItemTextActive
+                          ]}>
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                </TouchableOpacity>
+              </Modal>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>
+                Projection Timeline (Years)
+              </Text>
+              <TextInput
+                style={[styles.input, yearsError ? styles.inputError : null]}
+                keyboardType="numeric"
+                value={data.years === "" ? "" : String(data.years)}
+                onChangeText={updateYears}
+                placeholder="Enter number of years"
+                editable={!calculationLoading}
+              />
+              {yearsError ? <Text style={styles.errorText}>{yearsError}</Text> : null}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, calculationLoading && styles.buttonDisabled]}
+              onPress={calculateProjection}
+              disabled={calculationLoading}
+            >
+              {calculationLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Generate Projection</Text>
+              )}
+            </TouchableOpacity>
           </View>
-        </>
+        </Animated.View>
+
+        {result && (
+          <>
+            {/* Key Metrics */}
+            <KeyMetricsCard />
+
+            {/* Financial Health Overview */}
+            <FinancialHealthMeter score={result.financialHealth} />
+
+            {/* Tab Navigation */}
+            <View style={styles.tabContainer}>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === "projection" && styles.activeTab]}
+                onPress={() => setActiveTab("projection")}
+              >
+                <Text style={[styles.tabText, activeTab === "projection" && styles.activeTabText]}>
+                  Projection
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === "analysis" && styles.activeTab]}
+                onPress={() => setActiveTab("analysis")}
+              >
+                <Text style={[styles.tabText, activeTab === "analysis" && styles.activeTabText]}>
+                  Risk Analysis
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {activeTab === "projection" ? (
+              <>
+                {/* Savings Comparison */}
+                <SavingsComparisonCard />
+                <FormulaDiagram />
+                {/* Yearly Breakdown */}
+                <YearlyBreakdownTable />
+              </>
+            ) : (
+              <>
+                {/* Risk Assessment */}
+                <RiskAssessmentCard />
+              </>
+            )}
+            {/* AI Recommendations */}
+             <FormulaExplanation />
+       
+          </>
+        )}
+            <RecommendationsCard />
+      </ScrollView>
+
+      {/* Loading Overlay */}
+      {calculationLoading && (
+        <BlurView intensity={50} tint="light" style={styles.loadingOverlay}>
+          <MotiView
+            from={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "timing", duration: 300 }}
+            style={styles.loadingCard}
+          >
+            <ActivityIndicator size="large" color="#8AD0AB" />
+            <Text style={styles.loadingText}>Calculating your financial future...</Text>
+          </MotiView>
+        </BlurView>
       )}
-    </ScrollView>
+
+      {/* Toast */}
+      {toastVisible && (
+        <MotiView
+          from={{ opacity: 0, translateY: 80 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          style={[
+            styles.toastContainer,
+            toastType === 'error' ? styles.toastError : styles.toastSuccess
+          ]}
+        >
+          <Text style={styles.toastText}>{toastMessage}</Text>
+          <TouchableOpacity onPress={() => setToastVisible(false)}>
+            <Text style={styles.toastClose}>✕</Text>
+          </TouchableOpacity>
+        </MotiView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8f9fa", padding: 20 },
-  header: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#2c3e50",
-    marginBottom: 8,
+  container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa"
   },
-  subtitle: {
-    fontSize: 14,
-    color: "#7f8c8d",
-    marginBottom: 20,
-    lineHeight: 20,
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
   },
   card: {
     backgroundColor: "#fff",
@@ -489,11 +1110,179 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  title: { 
-    fontSize: 18, 
-    fontWeight: "700", 
-    color: "#2c3e50", 
-    marginBottom: 16 
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#2c3e50",
+  },
+  subtitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#2c3e50",
+  },
+  // Toast Styles
+  toastContainer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  toastError: {
+    backgroundColor: '#EF4444',
+  },
+  toastSuccess: {
+    backgroundColor: '#10B981',
+  },
+  toastText: {
+    flex: 1,
+    color: '#fff',
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  toastClose: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  // Validation Styles
+  inputError: {
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    backgroundColor: '#FEF3F2',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  // Loading Overlay
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 50,
+  },
+  loadingCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderRadius: 20,
+    padding: 25,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#8AD0AB",
+  },
+  // Button disabled state
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  // Input styles
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  label: {
+    color: "#2c3e50",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  infoIconTouchable: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+  },
+  infoIcon: {
+    fontSize: 18,
+    color: "#8AD0AB",
+    fontWeight: "bold",
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: "#e1e8ed",
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: "#f8f9fa",
+  },
+  dropdownButtonText: {
+    fontSize: 14,
+    color: "#2c3e50",
+    fontWeight: "500",
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: "#7f8c8d",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownList: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    width: '80%',
+    maxHeight: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  dropdownItem: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#a2ddbdff',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#2c3e50",
+  },
+  dropdownItemTextActive: {
+    color: "#007938ff",
+    fontWeight: "600",
   },
   inputRow: {
     flexDirection: "row",
@@ -502,16 +1291,10 @@ const styles = StyleSheet.create({
   },
   inputColumn: {
     flex: 1,
-    marginHorizontal: 4,
+    marginHorizontal: 3,
   },
-  inputGroup: { 
-    marginBottom: 16 
-  },
-  label: { 
-    color: "#2c3e50", 
-    fontSize: 13,  
-    fontWeight: "600",
-    marginBottom: 6 
+  inputGroup: {
+    marginBottom: 16,
   },
   input: {
     borderWidth: 1,
@@ -523,37 +1306,54 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   button: {
-    backgroundColor: "#27ae60",
+    backgroundColor: "#8AD0AB",
     borderRadius: 10,
     paddingVertical: 14,
     marginTop: 8,
     alignItems: "center",
-    shadowColor: "#27ae60",
+    shadowColor: "#8AD0AB",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
-  buttonText: { 
-    color: "#fff", 
-    fontWeight: "700", 
-    fontSize: 16 
+  buttonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16
   },
-  chart: { 
-    marginVertical: 10, 
-    borderRadius: 12 
+  // Metrics styles
+  metricsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
-  healthMeter: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  metricItem: {
+    flex: 1,
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 12,
+    marginHorizontal: 4,
   },
+  metricValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#4CAF50",
+    marginBottom: 4,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: "#2c3e50",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  metricDescription: {
+    fontSize: 10,
+    color: "#7f8c8d",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  // Health meter styles
   healthHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -565,16 +1365,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#2c3e50",
   },
-  healthScore: {
-    fontSize: 18,
-    fontWeight: "700",
+  healthScoreRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
   },
   healthStatus: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
-    marginTop: 8,
-    textAlign: "center",
   },
+  healthScore: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c3e50",
+  },
+  // Tab styles
   tabContainer: {
     flexDirection: "row",
     backgroundColor: "#ecf0f1",
@@ -584,7 +1390,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: "center",
     borderRadius: 8,
   },
@@ -604,100 +1410,82 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: "#2c3e50",
   },
-  legend: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  legendItem: {
+  // Comparison styles
+  comparisonRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 12,
+    justifyContent: "space-between",
   },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 6,
+  comparisonItem: {
+    flex: 1,
+    alignItems: "center",
   },
-  legendText: {
+  comparisonArrow: {
+    paddingHorizontal: 10,
+  },
+  comparisonLabel: {
     fontSize: 12,
     color: "#7f8c8d",
-    fontWeight: "500",
-  },
-  resultBox: { 
-    alignItems: "center", 
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#ecf0f1",
-  },
-  resultText: { 
-    color: "#7f8c8d", 
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  resultValue: { 
-    fontSize: 24, 
-    fontWeight: "700", 
-    color: "#27ae60",
+    textAlign: "center",
     marginBottom: 4,
   },
-  resultNote: {
-    fontSize: 12,
-    color: "#95a5a6",
-    fontStyle: "italic",
-  },
-  progressHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  progressPercentage: {
+  comparisonValue: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#27ae60",
-  },
-  goalValue: {
     color: "#2c3e50",
+    textAlign: "center",
+  },
+  arrowText: {
+    fontSize: 20,
+    color: "#7f8c8d",
+  },
+  changeIndicator: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  changeText: {
     fontSize: 14,
     fontWeight: "600",
-    marginBottom: 12,
   },
-  coverageText: {
-    fontSize: 12,
-    color: "#7f8c8d",
-    marginTop: 8,
-    fontWeight: "500",
+  positiveValue: {
+    color: "#27ae60",
   },
-  inflationGrid: {
+  negativeValue: {
+    color: "#e74c3c",
+  },
+  // Table styles
+  tableHeader: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  inflationItem: {
-    width: "48%",
     backgroundColor: "#f8f9fa",
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
   },
-  inflationLabel: {
-    fontSize: 11,
-    color: "#7f8c8d",
-    fontWeight: "500",
-    marginBottom: 4,
-  },
-  inflationValue: {
-    fontSize: 14,
+  tableHeaderText: {
     fontWeight: "700",
     color: "#2c3e50",
   },
-  lossValue: {
-    color: "#e74c3c",
+  tableScroll: {
+    maxHeight: 200,
   },
+  tableRow: {
+    flexDirection: "row",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ecf0f1",
+  },
+  tableRowEven: {
+    backgroundColor: "#f8f9fa",
+  },
+  tableCell: {
+    fontSize: 12,
+    color: "#2c3e50",
+    textAlign: "center",
+  },
+  // Risk assessment styles
   riskFactor: {
     backgroundColor: "#f8f9fa",
     padding: 12,
@@ -718,13 +1506,12 @@ const styles = StyleSheet.create({
   riskValue: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#27ae60",
   },
   riskOptimal: {
     fontSize: 11,
     color: "#7f8c8d",
-    marginBottom: 6,
   },
+  // Recommendation styles
   recommendationCard: {
     backgroundColor: "#e3f2fd",
     borderRadius: 16,
@@ -737,7 +1524,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#1976d2",
-    marginBottom: 12,
   },
   recommendationItem: {
     marginBottom: 8,
@@ -748,35 +1534,33 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "500",
   },
-  metricsCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-  },
-  metricsGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-  },
-  metricItem: {
-    width: "48%",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#f8f9fa",
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  metricValue: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#27ae60",
-    marginBottom: 4,
-  },
-  metricLabel: {
-    fontSize: 11,
-    color: "#7f8c8d",
-    fontWeight: "600",
-    textAlign: "center",
-  },
+  formulaTitle: {
+  fontSize: 14,
+  fontWeight: "700",
+  marginTop: 12,
+  color: "#2c3e50",
+},
+
+formulaText: {
+  fontSize: 13,
+  lineHeight: 18,
+  color: "#34495e",
+  marginTop: 4,
+},
+
+formulaExample: {
+  fontSize: 12,
+  color: "#7f8c8d",
+  marginTop: 4,
+  backgroundColor: "#f8f9fa",
+  padding: 8,
+  borderRadius: 8,
+},
+
+formulaFootnote: {
+  fontSize: 11,
+  color: "#7f8c8d",
+  marginTop: 12,
+  fontStyle: "italic",
+},
 });

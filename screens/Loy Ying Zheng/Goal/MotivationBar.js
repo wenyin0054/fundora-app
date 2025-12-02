@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { getGoalsLocal, getExpensesLocal } from "../database/SQLite";
+import { getGoalsLocal, getExpensesLocal } from "../../../database/SQLite";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function MotivationBanner() {

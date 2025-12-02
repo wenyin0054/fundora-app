@@ -32,7 +32,7 @@ const [currentUser, setCurrentUser] = useState(null);
   const handleGetStarted = async () => {
     try {
       await completeOnboarding(currentUser.userId);
-      navigation.replace("MainTabs");
+      navigation.replace("MainApp");
     } catch (error) {
       console.log("Error saving onboarding flag:", error);
     }

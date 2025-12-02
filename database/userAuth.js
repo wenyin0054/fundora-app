@@ -1,7 +1,7 @@
 import { openDatabaseAsync } from "expo-sqlite";
 import bcrypt from "bcryptjs";
 import * as Crypto from "expo-crypto";
-import quizData from "../assets/financial_quiz.json"; 
+import quizData from "../assets/financial_quiz.json";
 let db = null;
 let isConnecting = false;
 let connectionPromise = null;
@@ -23,10 +23,10 @@ export const connectUserDB = async () => {
     try {
       console.log("🔄 Establishing database connection...");
       db = await openDatabaseAsync("userAuth.db");
-      
+
       // Test the connection
       await db.execAsync('SELECT 1');
-      
+
       console.log("✅ Database connected successfully");
       isConnecting = false;
       resolve(db);
@@ -110,7 +110,7 @@ export const initUserDB = async () => {
       );
     `);
 
-   await db.execAsync(`
+    await db.execAsync(`
   CREATE TABLE IF NOT EXISTS quiz_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId TEXT,
@@ -123,11 +123,11 @@ export const initUserDB = async () => {
   );
 `);
 
-    
+
     console.log("✅ User, Face, and Quiz tables initialized successfully");
-    
+
     // Insert quiz data after creating tables
-    
+
   } catch (error) {
     console.error("❌ initUserDB error:", error);
   }
@@ -155,40 +155,53 @@ export const getTodayQuizStatus = async (userId) => {
   );
   return !!result;
 };
+/** ✅ Get User Income */
+export const getUserIncome = async (userId) => {
+  const db = await connectUserDB();
+
+  const result = await db.getFirstAsync(
+    "SELECT monthlyIncome FROM users WHERE userId = ?",
+    [userId]
+  );
+
+  return result && result.monthlyIncome !== null
+    ? Number(result.monthlyIncome)
+    : 0;
+};
 
 
 
 /** ✅ Get a random quiz by user level */
-export  const getQuizByLevel = (level) => {
+export const getQuizByLevel = (level) => {
   try {
     console.log("📊 Loading quiz for level:", level);
     console.log("📁 Quiz data type:", Array.isArray(quizData) ? 'Array' : typeof quizData);
-    
+
     // Check if quizData is an array (your current structure)
     if (!Array.isArray(quizData)) {
       console.error("❌ quizData is not an array");
       return null;
     }
-    
+
     // Normalize level name
     const normalizedLevel = level?.toLowerCase() || 'beginner';
     console.log("🔍 Filtering for level:", normalizedLevel);
-    
+
     // Filter quizzes by level
-    const levelQuizzes = quizData.filter(quiz => 
+    const levelQuizzes = quizData.filter(quiz =>
       quiz.level?.toLowerCase() === normalizedLevel
     );
-    
+
     console.log(`📋 Found ${levelQuizzes.length} quizzes for level: ${normalizedLevel}`);
-    
+
     if (!levelQuizzes || levelQuizzes.length === 0) {
       console.error(`❌ No quizzes found for level: ${normalizedLevel}`);
-      
+
       // Fallback to beginner level
-      const fallbackQuizzes = quizData.filter(quiz => 
+      const fallbackQuizzes = quizData.filter(quiz =>
         quiz.level?.toLowerCase() === 'beginner'
       );
-      
+
       if (fallbackQuizzes && fallbackQuizzes.length > 0) {
         console.log("🔄 Falling back to beginner level quizzes");
         const randomIndex = Math.floor(Math.random() * fallbackQuizzes.length);
@@ -197,11 +210,11 @@ export  const getQuizByLevel = (level) => {
       }
       return null;
     }
-    
+
     // Get a random quiz from the level
     const randomIndex = Math.floor(Math.random() * levelQuizzes.length);
     const selectedQuiz = levelQuizzes[randomIndex];
-    
+
     console.log("✅ Successfully loaded quiz:", selectedQuiz?.question?.substring(0, 50) + "...");
     return transformQuizFormat(selectedQuiz);
   } catch (error) {
@@ -213,7 +226,7 @@ export  const getQuizByLevel = (level) => {
 // Helper function to transform quiz format
 const transformQuizFormat = (quiz) => {
   if (!quiz) return null;
-  
+
   return {
     question: quiz.question,
     options: quiz.options,
@@ -227,10 +240,10 @@ const transformQuizFormat = (quiz) => {
 const recoverFromDatabaseError = async () => {
   try {
     console.log("🔄 Attempting database recovery...");
-    
+
     // Simple recovery - just wait and retry
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Test by checking face registration status
     if (loggedInUserId) {
       const hasFace = await hasRegisteredFace(loggedInUserId);
@@ -244,44 +257,7 @@ const recoverFromDatabaseError = async () => {
   }
 };
 
-// Update your loadCurrentUser with better error handling
-const loadCurrentUser = async () => {
-  try {
-    const currentUserData = await AsyncStorage.getItem('currentUser');
-    if (currentUserData) {
-      const parsed = JSON.parse(currentUserData);
-      setLoggedInUserId(parsed.userId);
-      
-      try {
-        const hasFace = await hasRegisteredFace(parsed.userId);
-        setUserHasRegisteredFace(hasFace);
-        
-        if (hasFace && fromLogin) {
-          navigation.replace("MainTabs");
-        }
-      } catch (dbError) {
-        console.error('Database error in hasRegisteredFace:', dbError);
-        
-        // Try to recover from database error
-        const recovered = await recoverFromDatabaseError();
-        if (recovered) {
-          // Retry the operation
-          try {
-            const hasFace = await hasRegisteredFace(parsed.userId);
-            setUserHasRegisteredFace(hasFace);
-          } catch (retryError) {
-            console.error('Retry also failed:', retryError);
-            setUserHasRegisteredFace(false);
-          }
-        } else {
-          setUserHasRegisteredFace(false);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error loading current user:', error);
-  }
-};
+
 
 export const logUserTable = async () => {
   try {
@@ -372,18 +348,47 @@ export const addUser = async (username, email, password) => {
 export const loginUser = async (email, password) => {
   try {
     const db = await connectUserDB();
-    const users = await db.getAllAsync(`SELECT * FROM users WHERE email = ?;`, [email]);
-    const user = users && users.length > 0 ? users[0] : null;
-    
+    const users = await db.getAllAsync(
+      `SELECT * FROM users WHERE email = ?;`,
+      [email]
+    );
+
+    const user = users?.length > 0 ? users[0] : null;
     if (!user) return null;
 
     const isMatch = await bcrypt.compare(password, user.password);
-    return isMatch ? user : null;
+    if (!isMatch) return null;
+
+    // Ensure userId exists (backward compatibility)
+    if (!user.userId) {
+      const generatedId = `user_${Date.now()}`;
+
+      await db.runAsync(
+        `UPDATE users SET userId = ? WHERE id = ?;`,
+        [generatedId, user.id]
+      );
+
+      user.userId = generatedId;
+    }
+
+    // Always return a clean object
+    return {
+      id: user.id,
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      monthlyIncome: user.monthlyIncome,
+      dailyQuiz: user.dailyQuiz,
+      onboardingCompleted: user.onboardingCompleted,
+      occupation: user.occupation,
+    };
+
   } catch (error) {
     console.error("⚠️ loginUser error:", error);
     return null;
   }
 };
+
 
 // ---------- Generate reset token ----------
 export const generateResetToken = async (email) => {
@@ -391,7 +396,7 @@ export const generateResetToken = async (email) => {
     const db = await connectUserDB();
     const users = await db.getAllAsync("SELECT * FROM users WHERE email = ?", [email]);
     const user = users && users.length > 0 ? users[0] : null;
-    
+
     if (!user) throw new Error("User not found");
 
     // generate random token
@@ -424,7 +429,7 @@ export const verifyResetToken = async (email, token) => {
       [email, token]
     );
     const user = users && users.length > 0 ? users[0] : null;
-    
+
     if (!user) return false;
     if (Date.now() > user.resetTokenExpiry) return false;
     return true;
@@ -461,25 +466,27 @@ export const resetPassword = async (email, token, newPassword) => {
 export const getExperienceLevel = async (userId) => {
   try {
     console.log(`🔍 Getting experience level for user ID: ${userId}`);
-    
+
     const db = await connectUserDB();
-    
+
     if (!db) {
       console.error("❌ Database connection failed");
       return null;
     }
 
     const result = await db.getAllAsync(
-      `SELECT levelOfExperience FROM users WHERE userId = ?;`, 
+      `SELECT levelOfExperience FROM users WHERE userId = ?;`,
       [userId]
     );
-    
+
     console.log(`✅ Experience level query executed successfully, found ${result.length} records`);
-    
+
     if (result && result.length > 0) {
       console.log(`📊 User ${userId} experience level: ${result[0].levelOfExperience}`);
       return result[0].levelOfExperience;
     } else {
+      console.log("userId", userId);
+
       console.log(`❌ No user found with ID: ${userId}`);
       return null;
     }
@@ -509,10 +516,10 @@ export const updateUserExperienceLevel = async (userId, levelOfExperience) => {
 };
 
 // ------------------- UPDATE USER PROFILE -------------------
-export const updateUserProfile = async (userId, username, age, monthlyIncome, goals, occupation, budgetCategory,dailyQuiz, profileImage = null) => {
+export const updateUserProfile = async (userId, username, age, monthlyIncome, goals, occupation, budgetCategory, dailyQuiz, profileImage = null) => {
   try {
     const db = await connectUserDB();
-    
+
     console.log("🔄 Updating profile for user:", userId);
     console.log("📝 Data:", { username, age, monthlyIncome, goals, occupation, dailyQuiz, profileImage });
 
@@ -530,13 +537,13 @@ export const updateUserProfile = async (userId, username, age, monthlyIncome, go
          updatedAt = datetime('now')
        WHERE userId = ?;`,
       [
-        username || '', 
-        age ? parseInt(age) : null, 
-        monthlyIncome ? parseFloat(monthlyIncome) : null, 
-        goals || '', 
-        occupation || '', 
+        username || '',
+        age ? parseInt(age) : null,
+        monthlyIncome ? parseFloat(monthlyIncome) : null,
+        goals || '',
+        occupation || '',
         budgetCategory || '',
-        dailyQuiz ? 1 : 0, 
+        dailyQuiz ? 1 : 0,
         profileImage,
         userId
       ]
@@ -550,22 +557,61 @@ export const updateUserProfile = async (userId, username, age, monthlyIncome, go
   }
 };
 
+export const getUserProfileImage = async (userId) => {
+  try {
+    const db = await connectUserDB();
+
+    const result = await db.getAllAsync(
+      `SELECT profileImage FROM users WHERE userId = ?;`,
+      [userId]
+    );
+
+    if (result && result.length > 0) {
+      const profileImage = result[0].profileImage;
+      console.log(`✅ Retrieved profile image for user ${userId}:`, profileImage ? 'Has image' : 'No image');
+      return profileImage;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("❌ getUserProfileImage error:", error);
+    return null;
+  }
+};
+
+export const deleteUserProfileImage = async (userId) => {
+  try {
+    const db = await connectUserDB();
+
+    await db.runAsync(
+      `UPDATE users SET profileImage = NULL, updatedAt = datetime('now') WHERE userId = ?;`,
+      [userId]
+    );
+
+    console.log(`🗑️ Profile image deleted for user ${userId}`);
+    return true;
+  } catch (error) {
+    console.error("❌ deleteUserProfileImage error:", error);
+    throw error;
+  }
+};
+
 // ------------------- GET USER BY ID -------------------
 export const getUserById = async (userId) => {
   try {
     console.log(`🔍 Getting user by ID: ${userId}`);
-    
+
     const db = await connectUserDB();
-    
+
     if (!db) {
       console.error("❌ Database connection failed");
       return null;
     }
 
     const result = await db.getAllAsync(`SELECT * FROM users WHERE userId = ?;`, [userId]);
-    
+
     console.log(`✅ Query executed successfully, found ${result.length} users`);
-    
+
     return result && result.length > 0 ? result[0] : null;
   } catch (error) {
     console.error("❌ getUserById error:", error);
@@ -622,7 +668,7 @@ export const checkOnboardingStatus = async (userId) => {
 export const updateUserOnboardingInfo = async (userId, ageRange, incomeRange, occupation) => {
   try {
     console.log(`💾 Updating onboarding info for user: ${userId}`);
-    
+
     const userExists = await getUserById(userId);
     if (!userExists) {
       console.error(`❌ User with ID ${userId} not found`);
@@ -630,7 +676,7 @@ export const updateUserOnboardingInfo = async (userId, ageRange, incomeRange, oc
     }
 
     const db = await connectUserDB();
-    
+
     if (!db) {
       throw new Error("Database connection failed");
     }
@@ -642,7 +688,7 @@ export const updateUserOnboardingInfo = async (userId, ageRange, incomeRange, oc
 
     console.log(`✅ Onboarding info updated successfully for user: ${userId}`);
     console.log(`Update result:`, result);
-    
+
     return result;
   } catch (error) {
     console.error("❌ updateUserOnboardingInfo error:", error);
@@ -656,13 +702,13 @@ export const updateUserOnboardingInfo = async (userId, ageRange, incomeRange, oc
 export const storeFaceData = async (userId, faceEmbedding, faceImage, poseType) => {
   try {
     const db = await connectUserDB();
-    
+
     await db.runAsync(
       `INSERT INTO face_data (userId, face_embedding, face_image, pose_type) 
        VALUES (?, ?, ?, ?);`,
       [userId, faceEmbedding, faceImage, poseType]
     );
-    
+
     console.log(`✅ Face data stored for user ${userId}, pose: ${poseType}`);
     return true;
   } catch (error) {

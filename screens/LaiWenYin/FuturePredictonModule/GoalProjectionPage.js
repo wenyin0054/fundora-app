@@ -1,59 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Alert,
 } from 'react-native';
-import Svg, { Circle, Rect } from 'react-native-svg';
+import { useNavigation } from "@react-navigation/native";
+import { getGoalsLocal } from "../../../database/SQLite"
+import { useTipManager } from '../TutorialModule/TipManager';
+import FinancialTipBanner from '../TutorialModule/FinancialTipBanner';
+import { Ionicons } from "@expo/vector-icons";
+import { TouchableOpacity } from "react-native";
+import { useUser } from '../../reuseComponet/UserContext';
 
-const GoalProjectionScreen = ({navigation}) => {
-  const [goals, setGoals] = useState([
-    {
-      id: 1,
-      name: '🏠 Dream House Down Payment',
-      targetAmount: 100000,
-      currentAmount: 45000,
-      monthlySave: 1500,
-      years: 5,
-      returnRate: 4,
-      inflation: 3,
-    },
-    {
-      id: 2,
-      name: '🚗 Car Down Payment',
-      targetAmount: 50000,
-      currentAmount: 10000,
-      monthlySave: 500,
-      years: 5,
-      returnRate: 4,
-      inflation: 3,
-    },
-  ]);
+export default function GoalProjectionScreen() {
+  const { userId, userLevel } = useUser();
+  const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
+  const [goals, setGoals] = useState([]);
 
-  const [newGoal, setNewGoal] = useState({
-    name: '',
-    targetAmount: '',
-    currentAmount: '',
-    monthlySave: '',
-    years: '',
-  });
+  // ---- All Tip Handlers ----
+  const showFutureValueTip = () => showTip('goalProjection', 'futureValue');
+  const showTodayValueTip = () => showTip('goalProjection', 'todayValue');
+  const showInflationAdjustedTargetTip = () => showTip('goalProjection', 'inflationAdjustedTarget');
+  const showProgressBarTip = () => showTip('goalProjection', 'progressBar');
+  const showGapAnalysisTip = () => showTip('goalProjection', 'gapAnalysis');
+  const showStatusBadgeTip = () => showTip('goalProjection', 'statusBadge');
+  const showTimelineTip = () => showTip('goalProjection', 'timeline');
+  const showMonthlySavingsTip = () => showTip('goalProjection', 'monthlySavings');
+  const showReturnRateTip = () => showTip('goalProjection', 'returnRate');
+  const showInflationRateTip = () => showTip('goalProjection', 'inflationRate');
+  const showRecommendationsTip = () => showTip('goalProjection', 'recommendations');
+  const showGoalProgressTip = () => showTip('goalProjection', 'goalProgress');
+
+  // Load goals from SQLite DB
+  const loadGoals = async () => {
+    try {
+      const results = await getGoalsLocal(userId);
+      const mapped = results.map((g) => ({
+        id: g.id.toString(),
+        name: g.goalName,
+        targetAmount: parseFloat(g.targetAmount),
+        currentAmount: parseFloat(g.currentAmount),
+        monthlySave: parseFloat(g.monthlySaving || 0),
+        years: calculateYearsFromDeadline(g.deadline),
+        returnRate: 4,
+        inflation: 3,
+      }));
+      setGoals(mapped);
+    } catch (error) {
+      console.error("❌ Error loading goals:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadGoals();
+  }, []);
+
+  const calculateYearsFromDeadline = (deadline) => {
+    const now = new Date();
+    const goalDate = new Date(deadline);
+    const diff = goalDate - now;
+    const years = diff / (1000 * 60 * 60 * 24 * 365);
+    return years > 0 ? parseFloat(years.toFixed(1)) : 0;
+  };
 
   const calculateProjection = (goal) => {
     const monthlyRate = goal.returnRate / 100 / 12;
     const months = goal.years * 12;
-    
-    // Future value calculation
+
     let futureValue = goal.currentAmount * Math.pow(1 + monthlyRate, months);
     futureValue += goal.monthlySave * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
-    
-    // Adjust for inflation
+
     const inflationFactor = Math.pow(1 + goal.inflation / 100, goal.years);
     const realValue = futureValue / inflationFactor;
-    
+
     return {
       futureValue: Math.round(futureValue),
       realValue: Math.round(realValue),
@@ -62,318 +82,616 @@ const GoalProjectionScreen = ({navigation}) => {
     };
   };
 
-  const ProgressBar = ({ progress, color = '#4CAF50' }) => (
-    <View style={styles.progressContainer}>
-      <View style={styles.progressBackground}>
-        <View 
-          style={[
-            styles.progressFill, 
-            { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: color }
-          ]} 
-        />
+  // Enhanced Progress Bar
+  const ProgressBar = ({ progress, color = '#4CAF50' }) => {
+    const displayProgress = Math.min(progress, 1);
+    const isOverTarget = progress > 1;
+    const progressPercentage = Math.round(displayProgress * 100);
+    
+    return (
+      <View style={styles.progressContainer}>
+        <View style={styles.progressHeader}>
+          <TouchableOpacity onPress={showGoalProgressTip} style={styles.progressLabelContainer}>
+            <Text style={styles.progressLabel}>Goal Progress</Text>
+            <Text style={styles.progressPercentage}>{progressPercentage}%</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={showProgressBarTip} style={styles.infoButton}>
+            <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.progressBarContainer}>
+          <View style={styles.progressBackground}>
+            <View
+              style={[
+                styles.progressFill,
+                { 
+                  width: `${displayProgress * 100}%`, 
+                  backgroundColor: isOverTarget ? '#F59E0B' : color 
+                },
+              ]}
+            />
+          </View>
+        </View>
+        
+        {isOverTarget && (
+          <View style={styles.successIndicator}>
+            <Ionicons name="trophy" size={16} color="#F59E0B" />
+            <Text style={styles.successText}>
+              Exceeded target by {Math.round((progress - 1) * 100)}%
+            </Text>
+          </View>
+        )}
       </View>
-      <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
-    </View>
-  );
+    );
+  };
 
+  // Enhanced Projection Card
   const PredictionCard = ({ goal }) => {
     const projection = calculateProjection(goal);
     const currentProgress = goal.currentAmount / goal.targetAmount;
+    const isOnTrack = projection.gap <= 0;
 
     return (
       <View style={styles.card}>
-        <Text style={styles.goalName}>{goal.name}</Text>
-        <Text style={styles.goalTarget}>
-          Target: RM {goal.targetAmount.toLocaleString()} (in {goal.years} years)
-        </Text>
-        
-        <ProgressBar progress={currentProgress} />
-        
-        <View style={styles.predictionSection}>
-          <Text style={styles.sectionTitle}>📊 Prediction Results</Text>
-          
-          <View style={styles.predictionItem}>
-            <Text style={styles.predictionLabel}>• Current Progress:</Text>
-            <Text style={styles.predictionValue}>
-              RM {projection.futureValue.toLocaleString()} in {goal.years} years
-            </Text>
+        {/* Header Section */}
+        <View style={styles.headerSection}>
+          <View style={styles.goalHeader}>
+            <View style={styles.goalTitleContainer}>
+              <Ionicons name="flag" size={20} color="#4CAF50" />
+              <Text style={styles.goalName}>{goal.name}</Text>
+            </View>
+            <TouchableOpacity 
+              onPress={showStatusBadgeTip} 
+              style={[
+                styles.statusBadge,
+                isOnTrack ? styles.onTrackBadge : styles.offTrackBadge
+              ]}
+            >
+              <Ionicons 
+                name={isOnTrack ? "checkmark-circle" : "warning"} 
+                size={14} 
+                color={isOnTrack ? "#059669" : "#DC2626"} 
+              />
+              <Text style={styles.statusText}>
+                {isOnTrack ? 'On Track' : 'Needs Attention'}
+              </Text>
+              <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
+            </TouchableOpacity>
           </View>
           
-          <View style={styles.predictionItem}>
-            <Text style={styles.predictionLabel}>• After Inflation:</Text>
-            <Text style={styles.predictionValue}>
-              RM {projection.realValue.toLocaleString()} (today's value)
-            </Text>
-          </View>
-          
-          <View style={styles.predictionItem}>
-            <Text style={styles.predictionLabel}>• Adjusted Target Needed:</Text>
-            <Text style={styles.predictionValue}>
-              RM {projection.adjustedTarget.toLocaleString()}
-            </Text>
-          </View>
-
-          <View style={[
-            styles.gapIndicator,
-            projection.gap > 0 ? styles.gapNegative : styles.gapPositive
-          ]}>
-            <Text style={styles.gapText}>
-              {projection.gap > 0 ? 'Shortfall: ' : 'Surplus: '}
-              RM {Math.abs(projection.gap).toLocaleString()}
-            </Text>
+          <View style={styles.targetContainer}>
+            <Text style={styles.targetLabel}>Target Amount</Text>
+            <Text style={styles.targetAmount}>RM {goal.targetAmount.toLocaleString()}</Text>
           </View>
         </View>
 
+        {/* Timeline Info */}
+        <View style={styles.timelineContainer}>
+          <TouchableOpacity onPress={showTimelineTip} style={styles.timelineItem}>
+            <Ionicons name="calendar" size={16} color="#6B7280" />
+            <View style={styles.timelineTextContainer}>
+              <Text style={styles.timelineLabel}>Timeline</Text>
+              <Text style={styles.timelineValue}>{goal.years} years</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.timelineDivider} />
+          <TouchableOpacity onPress={showMonthlySavingsTip} style={styles.timelineItem}>
+            <Ionicons name="cash" size={16} color="#6B7280" />
+            <View style={styles.timelineTextContainer}>
+              <Text style={styles.timelineLabel}>Monthly Save</Text>
+              <Text style={styles.timelineValue}>RM {goal.monthlySave.toLocaleString()}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Progress Bar */}
+        <ProgressBar progress={currentProgress} />
+
+        {/* Projection Section */}
+        <View style={styles.projectionSection}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Financial Projection</Text>
+              <Text style={styles.sectionSubtitle}>Accounting for inflation and returns</Text>
+            </View>
+          </View>
+
+          <View style={styles.metricsGrid}>
+            <MetricCard
+              label="Future Value"
+              value={`RM ${projection.futureValue.toLocaleString()}`}
+              description={`With ${goal.returnRate}% returns`}
+              onPress={showFutureValueTip}
+              icon="trending-up"
+              showInfoIcon={true}
+            />
+            <MetricCard
+              label="Today's Value"
+              value={`RM ${projection.realValue.toLocaleString()}`}
+              description="After inflation"
+              onPress={showTodayValueTip}
+              icon="today"
+              showInfoIcon={true}
+            />
+            <MetricCard
+              label="Adjusted Target"
+              value={`RM ${projection.adjustedTarget.toLocaleString()}`}
+              description="Future cost"
+              onPress={showInflationAdjustedTargetTip}
+              icon="target"
+              showInfoIcon={true}
+            />
+            <MetricCard
+              label="Gap Analysis"
+              value={`RM ${Math.abs(projection.gap).toLocaleString()}`}
+              description={isOnTrack ? 'Surplus' : 'Shortfall'}
+              onPress={showGapAnalysisTip}
+              icon="analytics"
+              isOnTrack={isOnTrack}
+              showInfoIcon={true}
+            />
+          </View>
+
+          {/* Return Rate and Inflation Info */}
+          <View style={styles.assumptionsContainer}>
+            <TouchableOpacity onPress={showReturnRateTip} style={styles.assumptionItem}>
+              <Ionicons name="trending-up" size={14} color="#6B7280" />
+              <Text style={styles.assumptionText}>Assumed return: {goal.returnRate}% annually</Text>
+              <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={showInflationRateTip} style={styles.assumptionItem}>
+              <Ionicons name="trending-down" size={14} color="#6B7280" />
+              <Text style={styles.assumptionText}>Assumed inflation: {goal.inflation}% annually</Text>
+              <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Recommendations */}
         <View style={styles.recommendationBox}>
-          <Text style={styles.recommendationTitle}>💡 Recommended Actions:</Text>
+          <TouchableOpacity onPress={showRecommendationsTip} style={styles.recommendationHeader}>
+            <View style={styles.recommendationIcon}>
+              <Ionicons name="bulb" size={20} color="#4CAF50" />
+            </View>
+            <Text style={styles.recommendationTitle}>Recommendations</Text>
+            <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
           {projection.gap > 0 ? (
-            <>
-              <Text style={styles.recommendationItem}>
-                • Increase monthly savings by RM {Math.round(projection.gap / (goal.years * 12))}
-              </Text>
-              <Text style={styles.recommendationItem}>
-                • Improve investment return to {Math.round(goal.returnRate + 2)}%
-              </Text>
-              <Text style={styles.recommendationItem}>
-                • Extend timeline by 1-2 years
-              </Text>
-            </>
+            <View style={styles.recommendationList}>
+              <RecommendationItem 
+                text={`Increase monthly savings by RM ${Math.round(projection.gap / (goal.years * 12))}`}
+                icon="add-circle"
+              />
+              <RecommendationItem 
+                text={`Explore investment options with ${goal.returnRate + 2}% potential returns`}
+                icon="analytics"
+              />
+              <RecommendationItem 
+                text={`Consider extending timeline by ${Math.ceil(projection.gap / (goal.monthlySave * 12))} year(s)`}
+                icon="time"
+              />
+            </View>
           ) : (
-            <Text style={styles.recommendationItem}>
-              ✅ You're on track! Consider increasing your target or timeline.
-            </Text>
+            <View style={styles.successMessage}>
+              <Ionicons name="checkmark-done-circle" size={24} color="#4CAF50" />
+              <View style={styles.successTextContainer}>
+                <Text style={styles.successTitle}>Excellent Progress!</Text>
+                <Text style={styles.successText}>You're on track to achieve your goal</Text>
+              </View>
+            </View>
           )}
         </View>
       </View>
     );
   };
 
-  const addNewGoal = () => {
-    if (!newGoal.name || !newGoal.targetAmount || !newGoal.currentAmount) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
-    }
+  // Reusable Metric Card Component
+  const MetricCard = ({ label, value, description, onPress, icon, isOnTrack, showInfoIcon = true }) => (
+    <View style={styles.metricItem}>
+      <TouchableOpacity onPress={onPress} style={styles.metricHeader}>
+        <Ionicons name={icon} size={16} color="#6B7280" />
+        <Text style={styles.metricLabel}>{label}</Text>
+        {showInfoIcon && <Ionicons name="information-circle-outline" size={14} color="#9CA3AF" />}
+      </TouchableOpacity>
+      <Text style={[
+        styles.metricValue,
+        label === "Gap Analysis" && (isOnTrack ? styles.positiveGap : styles.negativeGap)
+      ]}>
+        {value}
+      </Text>
+      <Text style={styles.metricDescription}>{description}</Text>
+    </View>
+  );
 
-    const goal = {
-      id: goals.length + 1,
-      name: newGoal.name,
-      targetAmount: parseFloat(newGoal.targetAmount),
-      currentAmount: parseFloat(newGoal.currentAmount),
-      monthlySave: parseFloat(newGoal.monthlySave) || 0,
-      years: parseFloat(newGoal.years) || 5,
-      returnRate: 4,
-      inflation: 3,
-    };
-
-    setGoals([...goals, goal]);
-    setNewGoal({ name: '', targetAmount: '', currentAmount: '', monthlySave: '', years: '' });
-  };
+  // Reusable Recommendation Item Component
+  const RecommendationItem = ({ text, icon }) => (
+    <View style={styles.recommendationItem}>
+      <Ionicons name={icon} size={16} color="#4CAF50" />
+      <Text style={styles.recommendationText}>{text}</Text>
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>🎯 Goal Projection</Text>
-      <Text style={styles.subtitle}>
-        Your financial GPS - see if you're on track to reach your goals!
-      </Text>
+    <View style={styles.container}>
+      <FinancialTipBanner
+        message={currentTip}
+        isVisible={isTipVisible}
+        onClose={hideTip}
+        userLevel={userLevel}
+      />
 
-      {/* Add New Goal Form */}
-      <View style={styles.addCard}>
-        <Text style={styles.sectionTitle}>Add New Goal</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Goal Name (e.g., Vacation Fund)"
-          value={newGoal.name}
-          onChangeText={(text) => setNewGoal({...newGoal, name: text})}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Target Amount (RM)"
-          keyboardType="numeric"
-          value={newGoal.targetAmount}
-          onChangeText={(text) => setNewGoal({...newGoal, targetAmount: text})}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Current Savings (RM)"
-          keyboardType="numeric"
-          value={newGoal.currentAmount}
-          onChangeText={(text) => setNewGoal({...newGoal, currentAmount: text})}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Monthly Savings (RM)"
-          keyboardType="numeric"
-          value={newGoal.monthlySave}
-          onChangeText={(text) => setNewGoal({...newGoal, monthlySave: text})}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Timeline (Years)"
-          keyboardType="numeric"
-          value={newGoal.years}
-          onChangeText={(text) => setNewGoal({...newGoal, years: text})}
-        />
-        <TouchableOpacity style={styles.addButton} onPress={addNewGoal}>
-          <Text style={styles.addButtonText}>Add Goal</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Goals List */}
-      {goals.map(goal => (
-        <PredictionCard key={goal.id} goal={goal} />
-      ))}
-    </ScrollView>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {goals.length === 0 ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyStateIcon}>
+              <Ionicons name="flag-outline" size={64} color="#D1D5DB" />
+            </View>
+            <Text style={styles.emptyStateTitle}>No Goals Found</Text>
+            <Text style={styles.emptyStateText}>
+              Create financial goals to see detailed projections and track your progress
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.goalsList}>
+            {goals.map((goal) => (
+              <PredictionCard key={goal.id} goal={goal} />
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 16,
+    backgroundColor: '#F8FAFC'
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
+    padding: 24,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9'
+  },
+  pageTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+    fontWeight: '700',
+    color: '#1E293B',
     marginBottom: 8,
   },
-  subtitle: {
+  pageSubtitle: {
     fontSize: 16,
-    color: '#7f8c8d',
-    marginBottom: 24,
+    color: '#64748B',
+    lineHeight: 22,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 48,
+    margin: 24,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  emptyStateIcon: {
+    marginBottom: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 15,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  goalsList: {
+    padding: 16,
   },
   card: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 20,
     marginBottom: 16,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
-  addCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+  headerSection: {
+    marginBottom: 20,
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  goalName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 4,
-  },
-  goalTarget: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 12,
-  },
-  progressContainer: {
+  goalTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    flex: 1,
+    marginRight: 12,
+  },
+  goalName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginLeft: 8,
+    flex: 1,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+  },
+  onTrackBadge: {
+    backgroundColor: '#F0FDF4',
+  },
+  offTrackBadge: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  targetContainer: {
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  targetLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  targetAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  timelineContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  timelineItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  timelineTextContainer: {
+    flex: 1,
+  },
+  timelineDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 16,
+  },
+  timelineLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  timelineValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  progressContainer: {
+    marginBottom: 28,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  progressPercentage: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+  infoButton: {
+    padding: 4,
+  },
+  progressBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   progressBackground: {
     flex: 1,
     height: 8,
-    backgroundColor: '#ecf0f1',
+    backgroundColor: '#E2E8F0',
     borderRadius: 4,
-    marginRight: 8,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     borderRadius: 4,
   },
-  progressText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#7f8c8d',
-    minWidth: 30,
+  successIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 8,
   },
-  predictionSection: {
-    marginBottom: 16,
+  successText: {
+    fontSize: 12,
+    color: '#F59E0B',
+    fontWeight: '500',
+  },
+  projectionSection: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 8,
-  },
-  predictionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
     marginBottom: 4,
   },
-  predictionLabel: {
+  sectionSubtitle: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: '#64748B',
   },
-  predictionValue: {
-    fontSize: 14,
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -6,
+  },
+  metricItem: {
+    width: '50%',
+    padding: 6,
+  },
+  metricHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  metricLabel: {
+    fontSize: 13,
+    color: '#64748B',
     fontWeight: '500',
-    color: '#2c3e50',
+    flex: 1,
   },
-  gapIndicator: {
-    padding: 8,
-    borderRadius: 6,
-    marginTop: 8,
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
   },
-  gapNegative: {
-    backgroundColor: '#ffebee',
+  metricDescription: {
+    fontSize: 12,
+    color: '#94A3B8',
   },
-  gapPositive: {
-    backgroundColor: '#e8f5e8',
+  assumptionsContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    gap: 8,
   },
-  gapText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  assumptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  assumptionText: {
+    fontSize: 12,
+    color: '#64748B',
+    flex: 1,
+  },
+  positiveGap: {
+    color: '#059669',
+  },
+  negativeGap: {
+    color: '#DC2626',
   },
   recommendationBox: {
-    backgroundColor: '#e3f2fd',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    padding: 20,
+    borderRadius: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#2196f3',
+    borderLeftColor: '#4CAF50',
+  },
+  recommendationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  recommendationIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E8F5E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   recommendationTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1976d2',
-    marginBottom: 4,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E293B',
+    flex: 1,
+  },
+  recommendationList: {
+    gap: 12,
   },
   recommendationItem: {
-    fontSize: 12,
-    color: '#2c3e50',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  recommendationText: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+    flex: 1,
+  },
+  successMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  successTextContainer: {
+    flex: 1,
+  },
+  successTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#059669',
     marginBottom: 2,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+  successText: {
     fontSize: 14,
-  },
-  addButton: {
-    backgroundColor: '#4CAF50',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
+    color: '#047857',
+    lineHeight: 20,
   },
 });
-
-export default GoalProjectionScreen;

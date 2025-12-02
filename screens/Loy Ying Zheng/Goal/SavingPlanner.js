@@ -8,9 +8,12 @@ import {
   Platform,
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import AppHeader from "./reuseComponet/header";
-import { getGoalsLocal } from "../database/SQLite"
+import AppHeader from "../../reuseComponet/header";
+import { getGoalsLocal } from "../../../database/SQLite";
 import MotivationBanner from "./MotivationBar";
+import { Ionicons } from "@expo/vector-icons";
+import { DrawerActions } from '@react-navigation/native';
+import { useUser } from "../../reuseComponet/UserContext";
 
 // ------------------ Savings Planner Screen ------------------
 
@@ -18,10 +21,14 @@ export default function SavingsPlanner() {
   const navigation = useNavigation();
   const [goals, setGoals] = useState([]);
 
+  const { userId } = useUser();
+
   // Load goals from local DB
   const loadGoals = async () => {
     try {
-      const results = await getGoalsLocal();
+
+      const results = await getGoalsLocal(userId);
+
       const mapped = results.map((g) => ({
         id: g.id.toString(),
         title: g.goalName,
@@ -53,7 +60,12 @@ export default function SavingsPlanner() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Savings Planner" />
+      <AppHeader
+        title="Savings Planner"
+        showLeftButton={true}
+        leftIcon="menu"
+        onLeftPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+      />
       <ScrollView style={styles.scrollContent}>
         <Text style={styles.header}>Your Savings Goals</Text>
 
@@ -73,6 +85,16 @@ export default function SavingsPlanner() {
                   Saved: RM{goal.saved.toLocaleString()} / RM{goal.target.toLocaleString()}
                 </Text>
                 {renderProgressBar(progress)}
+
+                {progress >= 1 && (
+                  <TouchableOpacity
+                    style={styles.withdrawPrompt}
+                    onPress={() => navigation.navigate("GoalDetail", { goal })}
+                  >
+                    <Ionicons name="cash-outline" size={16} color="#4CAF50" />
+                    <Text style={styles.withdrawPromptText}>Goal completed! Tap to withdraw funds</Text>
+                  </TouchableOpacity>
+                )}
                 <Text style={styles.due}>Due Date: {goal.due}</Text>
                 <Text style={styles.suggested}>
                   Suggested Saving: RM{goal.suggested} per month
@@ -91,7 +113,7 @@ export default function SavingsPlanner() {
         {/* Motivational Message */}
         {/* Reminders */}
         <View>
-          <MotivationBanner/>
+          <MotivationBanner />
         </View>
 
         {/* Add New Goal */}
@@ -242,5 +264,55 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "600",
+  },
+
+  // 在 GoalDetailScreen 的樣式中添加
+  completedSection: {
+    backgroundColor: "#E8F5E8",
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#4CAF50",
+    borderStyle: "dashed",
+  },
+  completedText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2E7D32",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  withdrawAllButton: {
+    backgroundColor: "#4CAF50",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  withdrawAllText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+
+  withdrawPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F8E9",
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  withdrawPromptText: {
+    fontSize: 12,
+    color: "#4CAF50",
+    fontWeight: "500",
+    marginLeft: 4,
   },
 });

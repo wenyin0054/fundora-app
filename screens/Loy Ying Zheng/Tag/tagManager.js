@@ -9,9 +9,10 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getTagsLocal, addTagLocal, createTagTable, deleteTagLocal } from "../database/SQLite";
-import AppHeader from "./reuseComponet/header";
-import db from "../database/SQLite";
+import { getTagsLocal, addTagLocal, createTagTable, deleteTagLocal } from "../../../database/SQLite";
+import AppHeader from "../../reuseComponet/header";
+import db from "../../../database/SQLite";
+import { useUser } from "../../reuseComponet/UserContext";
 
 export default function TagManager({ route, navigation }) {
   const [tags, setTags] = useState([]);
@@ -19,7 +20,7 @@ export default function TagManager({ route, navigation }) {
   const [isEssential, setIsEssential] = useState(true);
   const [editingTag, setEditingTag] = useState(null);
 
-  const userId = "U000001";
+  const { userId } = useUser(); 
   const { tag } = route.params || {};
 
   // 🧠 Load Tags

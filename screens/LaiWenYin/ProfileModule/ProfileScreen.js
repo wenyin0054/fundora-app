@@ -28,9 +28,8 @@ export default function ProfileScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [budgetCategory, setBudgetCategory] = useState("Food & Groceries");
-
+  const [userLevel, setUserLevel] = useState("");
   useEffect(() => {
     fetchUserData();
     logUserTable();
@@ -74,6 +73,7 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const populateForm = (userData) => {
+    setUserLevel(userData.levelOfExperience || "Beginner");
     setFullName(userData.username || "");
     setAge(userData.age ? userData.age.toString() : "");
     setIncome(userData.monthlyIncome ? `RM ${userData.monthlyIncome}` : "RM 0");
@@ -84,9 +84,14 @@ export default function ProfileScreen({ navigation }) {
     );
 
     setBudgetCategory(userData.budgetCategory || "Food & Groceries");
-    setDailyQuiz(userData.dailyQuiz !== undefined ? userData.dailyQuiz : true);
+    setDailyQuiz(Boolean(Number(userData.dailyQuiz)));
+
+    console.log(dailyQuiz);
+
     setProfileImage(userData.profileImage || null);
   };
+
+
 
   const pickImage = async () => {
     if (!isEditing) return;
@@ -223,8 +228,11 @@ export default function ProfileScreen({ navigation }) {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* Experience Level */}
-      <Text style={styles.levelBadge}>
-        {currentUser?.levelOfExperience || "Beginner"}
+      <Text style={[
+        styles.levelBadge,
+        userLevel?.toLowerCase() === 'experienced user' ? styles.experiencedBadge : styles.beginnerBadge
+      ]}>
+        {userLevel ? `${userLevel}` : ' Beginner'}
       </Text>
 
       {/* Profile Image with Upload Option */}
@@ -234,7 +242,7 @@ export default function ProfileScreen({ navigation }) {
             source={
               profileImage
                 ? { uri: profileImage }
-                : require('../../../assets/default-avatar.png') // Add a default avatar image
+                : require('../../../assets/default-avatar.png')
             }
             style={styles.profileImage}
           />
@@ -288,47 +296,19 @@ export default function ProfileScreen({ navigation }) {
           onChangeText={setOccupation}
           editable={isEditing}
         />
-        <Text style={styles.label}>Financial Goals</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          multiline
-          value={goals}
-          onChangeText={setGoals}
-          editable={isEditing}
+      </View>
+      <View style={styles.switchRow}>
+        <Text style={styles.label}>Daily Quizzes</Text>
+        <Switch
+          value={dailyQuiz}
+          onValueChange={setDailyQuiz}
+          trackColor={{ false: "#ccc", true: "#57C0A1" }}
+          thumbColor={dailyQuiz ? "#f4f3f4" : "#f4f3f4"}
+          disabled={!isEditing}
         />
       </View>
 
-      {/* Preferences Card */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Financial Preferences</Text>
-        <Text style={styles.label}>Budgeting Category</Text>
 
-        <View style={styles.dropdownContainer}>
-          <Picker
-            selectedValue={budgetCategory}
-            onValueChange={(itemValue) => setBudgetCategory(itemValue)}
-            enabled={isEditing}
-            style={styles.dropdown}
-          >
-            <Picker.Item label="Food & Groceries" value="Food & Groceries" />
-            <Picker.Item label="Transportation" value="Transportation" />
-            <Picker.Item label="Housing & Utilities" value="Housing & Utilities" />
-            <Picker.Item label="Savings" value="Savings" />
-            <Picker.Item label="Entertainment" value="Entertainment" />
-            <Picker.Item label="Health & Medical" value="Health & Medical" />
-            <Picker.Item label="Others" value="Others" />
-          </Picker>
-        </View>
-        <View style={styles.switchRow}>
-          <Text style={styles.label}>Daily Quizzes</Text>
-          <Switch
-            value={dailyQuiz}
-            onValueChange={setDailyQuiz}
-            trackColor={{ false: "#ccc", true: "#57C0A1" }}
-            disabled={!isEditing}
-          />
-        </View>
-      </View>
 
       {/* Buttons */}
       {isEditing ? (
@@ -541,15 +521,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   dropdownContainer: {
-  backgroundColor: "#F8F9FA",
-  borderRadius: 8,
-  borderWidth: 1,
-  borderColor: "#E9ECEF",
-  marginBottom: 15,
-},
-dropdown: {
-  height: 50,
-  paddingHorizontal: 10,
-},
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
+    marginBottom: 15,
+  },
+  dropdown: {
+    height: 50,
+    paddingHorizontal: 10,
+  },
 
 });

@@ -1,20 +1,23 @@
 {
   "expo": {
     "name": "Fundora App",
-    "slug": "Fundora App",
+    "slug": "fundora-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/fundora_Logo.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+
     "splash": {
       "image": "./assets/fundora_Logo-removebg-preview.png",
       "resizeMode": "contain",
       "backgroundColor": "#f5efe1"
     },
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/fundora_Logo.jpg",
@@ -23,11 +26,21 @@
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.FundoraApp"
     },
+
     "web": {
       "favicon": "./assets/fundora_Logo-removebg-preview.png"
     },
+
     "plugins": [
-      "expo-sqlite"
-    ]
+      "expo-sqlite",
+      "expo-camera",
+      "react-native-vision-camera"
+    ],
+
+    "extra": {
+      "eas": {
+        "projectId": "394d1485-87d8-4cd7-822d-9614995faa13"
+      }
+    }
   }
 }

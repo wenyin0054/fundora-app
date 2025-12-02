@@ -20,13 +20,15 @@ import {
   getTodayQuizStatus,
   resetUserDB,
   checkOnboardingStatus,
-  hasRegisteredFace
+  hasRegisteredFace,
 } from '../../../database/userAuth.js';
 import { BlurView } from "expo-blur";
 import { MotiView } from "moti";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { useFocusEffect } from '@react-navigation/native';
+import { useUser } from '../../reuseComponet/UserContext.js';
 export default function LoginScreen({ navigation }) {
+   const { setUserId } = useUser();  
   // form fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -66,6 +68,11 @@ export default function LoginScreen({ navigation }) {
     };
   }, []);
 
+useFocusEffect(
+  React.useCallback(() => {
+    setFaceLoginLoading(false);
+  }, [])
+);
   // validate when fields change
   useEffect(() => {
     const eErr = validateEmail(email);
@@ -259,6 +266,10 @@ export default function LoginScreen({ navigation }) {
         email: user.email,
       }));
 
+      // 🔥 IMPORTANT: update UserContext
+      setUserId(user.userId);
+
+
       // store for face auth
       const hasFace = await hasRegisteredFace(user.userId);
       if (hasFace) {
@@ -276,7 +287,7 @@ export default function LoginScreen({ navigation }) {
     } catch (err) {
       console.error('Error during post-login:', err);
       // fallback
-      navigation.replace('MainTabs');
+      navigation.replace('MainApp');
     } finally {
       setNavigationLoading(false);
     }
@@ -312,10 +323,10 @@ export default function LoginScreen({ navigation }) {
         }
       }
 
-      return { screen: 'MainTabs' };
+      return { screen: 'MainApp' };
     } catch (err) {
       console.error('determineNextScreen error:', err);
-      return { screen: 'MainTabs' };
+      return { screen: 'MainApp' };
     }
   };
 

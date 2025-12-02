@@ -40,37 +40,55 @@ export default function OnboardingPage3({ navigation }) {
     fetchUser();
   }, []);
 
-  const handleFinish = async () => {
-    const finalOccupation =
-      occupation === "Other" ? customOccupation.trim() : occupation;
+  const mapIncomeRangeToValue = (range) => {
+  switch (range) {
+    case "<2000": return 1500;
+    case "2000-4000": return 3000;
+    case "4001-6000": return 5000;
+    case "6001-8000": return 7000;
+    case ">8000": return 9000;
+    default: return 0;
+  }
+};
 
-    if (!incomeRange || !ageRange || !finalOccupation) {
-      Alert.alert("Missing Info", "Please fill in all the fields.");
-      return;
-    }
-    if (!currentUser?.userId) {
-      Alert.alert("Error", "User not found. Please log in again.");
-      return;
-    }
+const handleFinish = async () => {
+  const finalOccupation =
+    occupation === "Other" ? customOccupation.trim() : occupation;
 
-    try {
-      console.log("💾 Saving onboarding info for userId:", currentUser.userId);
-      await updateUserOnboardingInfo(
-        currentUser.userId,
-        ageRange,
-        incomeRange,
-        finalOccupation
-      );
-      Alert.alert("✅ Success", "Your information has been saved!");
-      
-      // Mark onboarding as completed
+  if (!incomeRange || !ageRange || !finalOccupation) {
+    Alert.alert("Missing Info", "Please fill in all the fields.");
+    return;
+  }
+
+  if (!currentUser?.userId) {
+    Alert.alert("Error", "User not found. Please log in again.");
+    return;
+  }
+
+  try {
+    console.log("💾 Saving onboarding info for userId:", currentUser.userId);
+
+    // Convert income range → numeric REAL value
+    const numericIncome = mapIncomeRangeToValue(incomeRange);
+
+    await updateUserOnboardingInfo(
+      currentUser.userId,
+      ageRange,
+      numericIncome,
+      finalOccupation
+    );
+
+    // Mark onboarding as completed
     await completeOnboarding(currentUser.userId);
-      navigation.replace("MainTabs");
-    } catch (error) {
-      console.error("Error saving onboarding info:", error);
-      Alert.alert("Error", "Failed to save your details. Please try again.");
-    }
-  };
+
+    Alert.alert("✅ Success", "Your information has been saved!");
+    navigation.replace("MainApp");
+  } catch (error) {
+    console.error("Error saving onboarding info:", error);
+    Alert.alert("Error", "Failed to save your details. Please try again.");
+  }
+};
+
 
   // Safe skip function that doesn't rely on database
   const handleSkip = async () => {
@@ -81,11 +99,11 @@ export default function OnboardingPage3({ navigation }) {
       await AsyncStorage.setItem("hasLaunched", "true");
       
       // Navigate directly without any database calls
-      navigation.replace("MainTabs");
+      navigation.replace("MainApp");
     } catch (error) {
       console.log("Error during skip:", error);
-      // Even if there's an error, still navigate to MainTabs
-      navigation.replace("MainTabs");
+      // Even if there's an error, still navigate to Home
+      navigation.replace("MainApp");
     }
   };
 

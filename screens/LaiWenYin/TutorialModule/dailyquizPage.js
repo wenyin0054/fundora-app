@@ -20,7 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get("window");
 
-export default function DailyQuiz({ userId, navigation }) {
+export default function DailyQuiz({ route, navigation }) {
+  const { userId } = route.params;
   const [quiz, setQuiz] = useState(null);
   const [selectedOption, setSelectedOption] = useState(null);
   const [showResult, setShowResult] = useState(false);
@@ -80,7 +81,7 @@ export default function DailyQuiz({ userId, navigation }) {
 
   const showResultModalAnimation = () => {
     setShowResultModal(true);
-    
+
     Animated.parallel([
       Animated.timing(modalScale, {
         toValue: 1,
@@ -115,7 +116,7 @@ export default function DailyQuiz({ userId, navigation }) {
       })
     ]).start(() => {
       setShowResultModal(false);
-      navigation.replace("MainTabs");
+      navigation.replace("MainApp");
     });
   };
 
@@ -252,10 +253,10 @@ export default function DailyQuiz({ userId, navigation }) {
           opacity,
         }}
       >
-        <Ionicons 
-          name="star" 
-          size={size || 16} 
-          color={color || "#FFD700"} 
+        <Ionicons
+          name="star"
+          size={size || 16}
+          color={color || "#FFD700"}
         />
       </Animated.View>
     );
@@ -279,7 +280,7 @@ export default function DailyQuiz({ userId, navigation }) {
         </Text>
         <TouchableOpacity
           style={styles.homeButton}
-          onPress={() => navigation.replace("MainTabs")}
+          onPress={() => navigation.replace("MainApp")}
         >
           <Text style={styles.homeButtonText}>Back to Home</Text>
         </TouchableOpacity>
@@ -320,8 +321,8 @@ export default function DailyQuiz({ userId, navigation }) {
                   isThisSelected && !isCorrect
                     ? { translateX: shakeAnim }
                     : isThisCorrect && isCorrect
-                    ? { scale: correctScale }
-                    : { scale: 1 },
+                      ? { scale: correctScale }
+                      : { scale: 1 },
                 ],
               }}
             >
@@ -333,9 +334,9 @@ export default function DailyQuiz({ userId, navigation }) {
                   selectedOption === i + 1 && styles.selectedOption,
                   showResult && isThisCorrect && styles.correctOption,
                   showResult &&
-                    isThisSelected &&
-                    !isThisCorrect &&
-                    styles.incorrectOption,
+                  isThisSelected &&
+                  !isThisCorrect &&
+                  styles.incorrectOption,
                 ]}
               >
                 <View style={styles.optionContent}>
@@ -354,9 +355,9 @@ export default function DailyQuiz({ userId, navigation }) {
                       styles.optionText,
                       showResult && isThisCorrect && styles.correctOptionText,
                       showResult &&
-                        isThisSelected &&
-                        !isThisCorrect &&
-                        styles.incorrectOptionText,
+                      isThisSelected &&
+                      !isThisCorrect &&
+                      styles.incorrectOptionText,
                     ]}
                   >
                     {option}
@@ -381,7 +382,7 @@ export default function DailyQuiz({ userId, navigation }) {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            onPress={() => navigation.replace("MainTabs")}
+            onPress={() => navigation.replace("MainApp")}
             style={styles.nextButton}
           >
             <Text style={styles.nextButtonText}>Continue to Home</Text>
@@ -398,7 +399,7 @@ export default function DailyQuiz({ userId, navigation }) {
         statusBarTranslucent={true}
       >
         <View style={styles.modalOverlay}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.modalContainer,
               {
@@ -426,19 +427,19 @@ export default function DailyQuiz({ userId, navigation }) {
               styles.resultIconContainer,
               isCorrect ? styles.correctIconContainer : styles.incorrectIconContainer
             ]}>
-              <Ionicons 
-                name={isCorrect ? "trophy" : "bulb"} 
-                size={60} 
-                color="#fff" 
+              <Ionicons
+                name={isCorrect ? "trophy" : "bulb"}
+                size={60}
+                color="#fff"
               />
             </View>
 
             <Text style={styles.resultTitle}>
               {isCorrect ? "🎉 Brilliant!" : "💡 Learning Opportunity"}
             </Text>
-            
+
             <Text style={styles.resultMessage}>
-              {isCorrect 
+              {isCorrect
                 ? "You nailed it! Your financial knowledge is impressive!"
                 : "Don't worry, every expert was once a beginner!"
               }
@@ -457,17 +458,17 @@ export default function DailyQuiz({ userId, navigation }) {
             )}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
                   styles.modalButton,
                   isCorrect ? styles.modalButtonSuccess : styles.modalButtonLearn
                 ]}
                 onPress={hideResultModal}
               >
-                <Ionicons 
-                  name="home" 
-                  size={20} 
-                  color="#fff" 
+                <Ionicons
+                  name="home"
+                  size={20}
+                  color="#fff"
                 />
                 <Text style={styles.modalButtonText}>
                   {isCorrect ? "Celebrate!" : "Continue Learning"}
@@ -476,7 +477,7 @@ export default function DailyQuiz({ userId, navigation }) {
             </View>
 
             <Text style={styles.encouragementText}>
-              {isCorrect 
+              {isCorrect
                 ? "Keep up the great work! 🚀"
                 : "Every mistake is a step toward mastery! 📈"
               }
@@ -491,9 +492,9 @@ export default function DailyQuiz({ userId, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F3F7FA" },
   content: { padding: 20, flex: 1 },
-  center: { 
-    flex: 1, 
-    alignItems: "center", 
+  center: {
+    flex: 1,
+    alignItems: "center",
     justifyContent: "center",
     padding: 20,
   },
@@ -507,10 +508,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  title: { 
-    fontSize: 26, 
-    fontWeight: "700", 
-    color: "#2A4D69", 
+  title: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#2A4D69",
     flex: 1,
   },
   levelBadge: {
@@ -580,8 +581,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-  optionText: { 
-    fontSize: 16, 
+  optionText: {
+    fontSize: 16,
     color: "#374151",
     flex: 1,
     lineHeight: 22,
@@ -615,13 +616,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  disabledButton: { 
-    backgroundColor: "#9ca3af", 
+  disabledButton: {
+    backgroundColor: "#9ca3af",
     shadowOpacity: 0,
   },
-  submitButtonText: { 
-    color: "#fff", 
-    fontWeight: "700", 
+  submitButtonText: {
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 16,
   },
   nextButton: {
@@ -634,9 +635,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  nextButtonText: { 
-    color: "#fff", 
-    fontWeight: "700", 
+  nextButtonText: {
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 16,
   },
   // Completed Screen Styles

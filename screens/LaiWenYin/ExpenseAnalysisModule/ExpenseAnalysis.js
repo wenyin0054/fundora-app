@@ -12,6 +12,7 @@ import { PieChart, BarChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import AppHeader from "../../reuseComponet/header.js";
 import { getExpensesLocal } from "../../../database/SQLite.js";
+import { useUser } from "../../reuseComponet/UserContext.js";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -24,7 +25,7 @@ const roundToTwo = (num) => {
 const isIncomeCategory = (category) => {
     if (!category) return false;
     const incomeKeywords = ['income', 'salary', 'revenue', 'earnings', 'paycheck', 'wage'];
-    return incomeKeywords.some(keyword => 
+    return incomeKeywords.some(keyword =>
         category.toLowerCase().includes(keyword.toLowerCase())
     );
 };
@@ -41,16 +42,16 @@ const groupExpensesByMonth = (expenses) => {
         const year = dateObj.getFullYear();
         const monthYear = `${month} ${year}`;
 
-        if (!result[monthYear]) result[monthYear] = { 
+        if (!result[monthYear]) result[monthYear] = {
             month: month,
             year: year,
             date: dateObj,
-            data: {} 
+            data: {}
         };
 
         const tag = exp.tag || 'Other';
         if (isIncomeCategory(tag)) return;
-        
+
         if (!result[monthYear].data[tag]) result[monthYear].data[tag] = 0;
         result[monthYear].data[tag] += exp.amount;
     });
@@ -61,7 +62,7 @@ const groupExpensesByMonth = (expenses) => {
 // Get category-specific financial data
 const getCategoryFinancialData = (expenses, selectedCategory) => {
     if (selectedCategory === "All") return getIncomeExpenseData(expenses);
-    
+
     let categoryExpenses = 0;
     let totalExpenses = 0;
     let totalIncome = 0;
@@ -142,11 +143,11 @@ const getRecentTransactions = (expenses) => {
     return sortedExpenses.map(exp => ({
         name: exp.payee,
         amount: exp.typeLabel === "income" || isIncomeCategory(exp.tag)
-            ? `+RM${roundToTwo(exp.amount).toFixed(2)}` 
+            ? `+RM${roundToTwo(exp.amount).toFixed(2)}`
             : `-RM${roundToTwo(exp.amount).toFixed(2)}`,
-        date: new Date(exp.date).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric' 
+        date: new Date(exp.date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
         }),
         type: (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) ? "income" : "expense",
         category: exp.tag || 'Other'
@@ -155,16 +156,16 @@ const getRecentTransactions = (expenses) => {
 
 const getAvailableMonths = (expenses) => {
     const monthsSet = new Set();
-    
+
     expenses.forEach(exp => {
         const dateObj = new Date(exp.date);
         const month = dateObj.toLocaleString("default", { month: "long" });
         monthsSet.add(month);
     });
-    
+
     return Array.from(monthsSet).sort((a, b) => {
-        const months = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"];
+        const months = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
         return months.indexOf(a) - months.indexOf(b);
     });
 };
@@ -175,7 +176,7 @@ const getFilteredExpenses = (expenses, selectedCategory, selectedMonth) => {
         if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) {
             return false;
         }
-        
+
         const expenseMonth = new Date(exp.date).toLocaleString("default", { month: "long" });
         const monthMatch = selectedMonth === "All" || expenseMonth === selectedMonth;
         const categoryMatch = selectedCategory === "All" || exp.tag === selectedCategory;
@@ -187,14 +188,14 @@ const getFilteredExpenses = (expenses, selectedCategory, selectedMonth) => {
 const getCategoryInsights = (expenses, selectedCategory) => {
     if (selectedCategory === "All") return null;
 
-    const categoryExpenses = expenses.filter(exp => 
+    const categoryExpenses = expenses.filter(exp =>
         exp.typeLabel !== "income" && !isIncomeCategory(exp.tag) && exp.tag === selectedCategory
     );
-    
+
     const totalSpent = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
     const transactionCount = categoryExpenses.length;
     const averageTransaction = transactionCount > 0 ? totalSpent / transactionCount : 0;
-    
+
     const topTransactions = categoryExpenses
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 3);
@@ -210,7 +211,7 @@ const getCategoryInsights = (expenses, selectedCategory) => {
     };
 };
 
-// Calculate spending insights
+// Calculate spending insights - FIXED PERCENTAGE ISSUE
 const calculateSpendingInsights = (barData, totalPerMonth) => {
     if (!barData || !totalPerMonth || totalPerMonth.length === 0) return null;
 
@@ -227,14 +228,32 @@ const calculateSpendingInsights = (barData, totalPerMonth) => {
     if (totalPerMonth.length > 1) {
         const latestMonth = totalPerMonth[totalPerMonth.length - 1];
         const previousMonth = totalPerMonth[totalPerMonth.length - 2];
-        const change = roundToTwo(((latestMonth - previousMonth) / previousMonth * 100));
-        
-        if (Math.abs(change) > 1) {
+        const absoluteChange = roundToTwo(latestMonth - previousMonth);
+
+        // Only calculate percentage if it makes sense
+        if (previousMonth > 0 && previousMonth >= 20) { // Only use percentage if previous month >= RM 20
+            const change = roundToTwo((absoluteChange / previousMonth * 100));
+
+            // Cap at reasonable percentages to avoid absurd numbers
+            const reasonableChange = Math.min(Math.max(change, -100), 200); // Cap between -100% and +200%
+
+            if (Math.abs(reasonableChange) > 5) { // Only show changes > 5%
+                trendInsight = {
+                    change: reasonableChange,
+                    absoluteChange: absoluteChange,
+                    isIncrease: reasonableChange > 0,
+                    latestMonth: barData.labels[barData.labels.length - 1],
+                    previousMonth: barData.labels[barData.labels.length - 2],
+                    type: 'percentage'
+                };
+            }
+        } else if (Math.abs(absoluteChange) >= 10) { // Use absolute for small bases, only if change >= RM 10
             trendInsight = {
-                change: change,
-                isIncrease: change > 0,
+                absoluteChange: absoluteChange,
+                isIncrease: absoluteChange > 0,
                 latestMonth: barData.labels[barData.labels.length - 1],
-                previousMonth: barData.labels[barData.labels.length - 2]
+                previousMonth: barData.labels[barData.labels.length - 2],
+                type: 'absolute'
             };
         }
     }
@@ -250,17 +269,17 @@ const calculateSpendingInsights = (barData, totalPerMonth) => {
 // Generate colors for dynamic categories
 const generateCategoryColors = (categories) => {
     const baseColors = [
-        '#57C0A1', '#C084FC', '#0F172A', '#FACC15', '#3B82F6', 
+        '#57C0A1', '#C084FC', '#0F172A', '#FACC15', '#3B82F6',
         '#EF4444', '#8B5CF6', '#06B6D4', '#F97316', '#84CC16'
     ];
-    
+
     const colorMap = {};
     categories.forEach((category, index) => {
         if (!isIncomeCategory(category)) {
             colorMap[category] = baseColors[index % baseColors.length];
         }
     });
-    
+
     return colorMap;
 };
 
@@ -276,11 +295,12 @@ export default function AnalysisDashboard() {
     const [allExpenses, setAllExpenses] = useState([]);
     const [categoryColors, setCategoryColors] = useState({});
     const [categoryInsights, setCategoryInsights] = useState(null);
+    const { userId, isLoading: userLoading } = useUser(); // Use useUser to get userId
 
     useEffect(() => {
         const loadExpenses = async () => {
             try {
-                const expenses = await getExpensesLocal();
+                const expenses = await getExpensesLocal(userId);
                 setAllExpenses(expenses);
 
                 if (!expenses || expenses.length === 0) {
@@ -301,7 +321,7 @@ export default function AnalysisDashboard() {
                 setAvailableMonths(months);
 
                 processData(expenses, "All", "All");
-                
+
             } catch (error) {
                 console.error("Error loading expenses:", error);
                 setBarData(null);
@@ -323,8 +343,8 @@ export default function AnalysisDashboard() {
 
     const processData = (expenses, category, month) => {
         const filtered = getFilteredExpenses(expenses, category, month);
-        
-        const financialData = category === "All" 
+
+        const financialData = category === "All"
             ? getIncomeExpenseData(expenses)
             : getCategoryFinancialData(expenses, category);
         setIncomeExpenseData(financialData);
@@ -340,12 +360,12 @@ export default function AnalysisDashboard() {
         }
 
         const grouped = groupExpensesByMonth(filtered);
-        const sortedMonthKeys = Object.keys(grouped).sort((a, b) => 
+        const sortedMonthKeys = Object.keys(grouped).sort((a, b) =>
             new Date(grouped[a].date) - new Date(grouped[b].date)
         );
-        
+
         const monthsForChart = sortedMonthKeys.slice(-4);
-        
+
         if (monthsForChart.length === 0) {
             setBarData(null);
             return;
@@ -360,7 +380,7 @@ export default function AnalysisDashboard() {
                 }
             });
         });
-        
+
         const uniqueCategories = Array.from(allTags);
         const colorMap = generateCategoryColors(uniqueCategories);
         setCategoryColors(colorMap);
@@ -384,16 +404,16 @@ export default function AnalysisDashboard() {
         : [];
 
     const spendingInsights = calculateSpendingInsights(barData, totalPerMonth);
-    
-    const categoriesForLegend = allCategories.length > 0 
+
+    const categoriesForLegend = allCategories.length > 0
         ? allCategories.filter(cat => !isIncomeCategory(cat))
         : ['Groceries', 'Transport', 'Entertainment', 'Utilities'];
 
     return (
         <View style={styles.container}>
             <AppHeader title="Financial Analysis" />
-            
-            <ScrollView 
+
+            <ScrollView
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
@@ -412,10 +432,10 @@ export default function AnalysisDashboard() {
                                 >
                                     <Picker.Item label="All Categories" value="All" />
                                     {categoriesForLegend.map((category, index) => (
-                                        <Picker.Item 
-                                            key={index} 
-                                            label={category} 
-                                            value={category} 
+                                        <Picker.Item
+                                            key={index}
+                                            label={category}
+                                            value={category}
                                         />
                                     ))}
                                 </Picker>
@@ -438,9 +458,9 @@ export default function AnalysisDashboard() {
                             </View>
                         </View>
                     </View>
-                    
+
                     {(selectedCategory !== "All" || selectedMonth !== "All") && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.clearFilterButton}
                             onPress={() => {
                                 setSelectedCategory("All");
@@ -452,14 +472,14 @@ export default function AnalysisDashboard() {
                     )}
                 </View>
 
-                {/* Financial Overview - FIXED */}
+                {/* Financial Overview */}
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>
                             {selectedCategory === "All" ? "Financial Overview" : `${selectedCategory} Analysis`}
                         </Text>
                         <Text style={styles.cardSubtitle} numberOfLines={1}>
-                            {selectedCategory === "All" 
+                            {selectedCategory === "All"
                                 ? selectedMonth === "All" ? "All Time Period" : `${selectedMonth}`
                                 : `Deep dive into ${selectedCategory}`
                             }
@@ -469,22 +489,39 @@ export default function AnalysisDashboard() {
                     {loading ? (
                         <ActivityIndicator size="small" color="#57C0A1" style={styles.loader} />
                     ) : incomeExpenseData.length > 0 ? (
-                        <View style={styles.chartContainer}>
+                        <View style={styles.enhancedPieContainer}>
                             <PieChart
-                                data={incomeExpenseData}
+                                data={incomeExpenseData.map((item, index) => ({
+                                    ...item,
+                                    legendFontSize: 14,
+                                    legendFontColor: "#374151",
+                                }))}
                                 width={Math.min(screenWidth - 60, 320)}
-                                height={160}
-                                chartConfig={{
-                                    color: (opacity = 1) => `rgba(87, 192, 161, ${opacity})`,
-                                }}
-                                accessor={"population"}
-                                backgroundColor={"transparent"}
-                                paddingLeft={"0"}
+                                height={200}
+                                accessor="population"
+                                backgroundColor="transparent"
+                                paddingLeft="75"
                                 center={[0, 0]}
-                                hasLegend={true}
                                 absolute
+                                chartConfig={{
+                                    color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
+                                }}
+                                hasLegend={false}
                             />
+
+                            {/* CUSTOM LEGEND */}
+                            <View style={styles.pieLegendContainer}>
+                                {incomeExpenseData.map((item, index) => (
+                                    <View key={index} style={styles.pieLegendRow}>
+                                        <View style={[styles.pieLegendDot, { backgroundColor: item.color }]} />
+                                        <Text style={styles.pieLegendLabel}>
+                                            {item.name}: RM{item.population.toLocaleString()}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
                         </View>
+
                     ) : (
                         <Text style={styles.noDataText}>No financial data available</Text>
                     )}
@@ -509,7 +546,7 @@ export default function AnalysisDashboard() {
                     )}
                 </View>
 
-                {/* Monthly Spend Analysis - FIXED */}
+                {/* Monthly Spend Analysis */}
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>
@@ -524,74 +561,108 @@ export default function AnalysisDashboard() {
                         <ActivityIndicator size="small" color="#57C0A1" style={styles.loader} />
                     ) : barData && barData.datasets.length > 0 ? (
                         <>
-                            {/* Monthly Summary - IMPROVED */}
+                            {/* Monthly Summary */}
                             <View style={styles.monthlySummary}>
                                 {barData.labels.map((m, i) => {
                                     const currentTotal = totalPerMonth[i];
-                                    const prevTotal = i > 0 ? totalPerMonth[i-1] : null;
-                                    const trend = prevTotal ? roundToTwo(((currentTotal - prevTotal) / prevTotal * 100)) : 0;
-                                    
-                                    return (
-                                        <View key={i} style={styles.monthSummaryItem}>
-                                            <Text style={styles.monthLabel}>{m}</Text>
-                                            <Text style={styles.monthTotal}>RM{currentTotal?.toFixed(0)}</Text>
-                                            {prevTotal && Math.abs(trend) > 1 && (
+                                    const prevTotal = i > 0 ? totalPerMonth[i - 1] : null;
+                                    let trendDisplay = null;
+
+                                    if (prevTotal && prevTotal >= 20) {
+                                        let trend = roundToTwo(((currentTotal - prevTotal) / prevTotal * 100));
+                                        trend = Math.min(Math.max(trend, -100), 200);
+                                        if (Math.abs(trend) > 5) {
+                                            trendDisplay = (
                                                 <Text style={[
                                                     styles.trendText,
                                                     { color: trend >= 0 ? '#EF4444' : '#10B981' }
                                                 ]}>
                                                     {trend >= 0 ? '↑' : '↓'}{Math.abs(trend).toFixed(0)}%
                                                 </Text>
-                                            )}
+                                            );
+                                        }
+                                    } else if (prevTotal) {
+                                        const absoluteChange = Math.abs(roundToTwo(currentTotal - prevTotal));
+                                        if (absoluteChange >= 10) {
+                                            trendDisplay = (
+                                                <Text style={[
+                                                    styles.trendText,
+                                                    { color: currentTotal >= prevTotal ? '#EF4444' : '#10B981' }
+                                                ]}>
+                                                    {currentTotal >= prevTotal ? '↑' : '↓'}RM{absoluteChange.toFixed(0)}
+                                                </Text>
+                                            );
+                                        }
+                                    }
+
+                                    return (
+                                        <View key={i} style={styles.monthSummaryItem}>
+                                            <Text style={styles.monthLabel}>{m}</Text>
+                                            <Text style={styles.monthTotal}>RM{currentTotal?.toFixed(0)}</Text>
+                                            {trendDisplay}
                                         </View>
                                     );
                                 })}
                             </View>
 
-                            {/* Bar Chart - IMPROVED */}
+                            {/* Bar Chart */}
+                            <View style={styles.enhancedBarContainer}>
+                                <BarChart
+                                    data={barData}
+                                    width={Math.min(screenWidth - 40, 350)}
+                                    height={240}
+                                    fromZero={true}
+                                    showValuesOnTopOfBars={false}
+                                    withInnerLines={true}
+                                    withHorizontalLabels={true}
+                                    withVerticalLabels={true}
+                                    segments={4}
+                                    yAxisLabel="RM"
+                                    flatColor={true}
+                                    withCustomBarColorFromData={true}
+                                    chartConfig={{
+                                        backgroundColor: "#abf1a3ff",
+                                        backgroundGradientFrom: "#ffffff",
+                                        backgroundGradientTo: "#ffffff",
+                                        decimalPlaces: 0,
+                                        color: () => "#6B7280",
+                                        labelColor: () => "#6B7280",
+                                        propsForBackgroundLines: {
+                                            stroke: "#E5E7EB",
+                                            strokeDasharray: "4", // dotted line
+                                        },
+                                        propsForLabels: {
+                                            fontSize: 12,
+                                        },
+                                        barRadius: 6, // ⭐ Rounded bars
+                                    }}
+                                    style={styles.barStyle}
+                                />
 
-                                <View style={styles.chartContainer}>
-                                    <BarChart
-                                        data={barData}
-                                        width={Math.min(screenWidth - 40, 350)}
-                                        height={200}
-                                        fromZero={true}
-                                        showValuesOnTopOfBars={true}
-                                        yAxisLabel="RM"
-                                        withInnerLines={true}
-                                        withHorizontalLabels={true}
-                                        withVerticalLabels={true}
-                                        segments={4}
-                                        showBarTops={false}
-                                        // REMOVE this line to show individual bars instead of stacked:
-                                        // showBarTops={false}
-                                        withCustomBarColorFromData={true}
-                                        flatColor={true}
-                                        chartConfig={{
-                                            backgroundColor: "#ffffff",
-                                            backgroundGradientFrom: "#ffffff",
-                                            backgroundGradientTo: "#ffffff",
-                                            decimalPlaces: 0,
-                                            color: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-                                            labelColor: (opacity = 1) => `rgba(75, 85, 99, ${opacity})`,
-                                            propsForBackgroundLines: {
-                                                stroke: "#E5E7EB",
-                                                strokeWidth: 1,
-                                            },
-                                            barPercentage: 0.7,
-                                            propsForLabels: {
-                                                fontSize: 10,
-                                            },
-                                        }}
-                                        style={styles.barChart}
-                                    />
+                                {/* Custom Category Legend */}
+                                <View style={styles.barLegendContainer}>
+                                    {barData.legend.map((cat, i) => (
+                                        <View key={i} style={styles.barLegendItem}>
+                                            <View
+                                                style={[
+                                                    styles.barLegendDot,
+                                                    { backgroundColor: barData.datasets[i].color(1) },
+                                                ]}
+                                            />
+                                            <Text style={styles.barLegendText}>
+                                                {cat.length > 14 ? cat.slice(0, 14) + "..." : cat}
+                                            </Text>
+                                        </View>
+                                    ))}
                                 </View>
+                            </View>
+
 
                             {/* Insights */}
                             {spendingInsights && (
                                 <View style={styles.insightsContainer}>
                                     <Text style={styles.insightsTitle}>💡 Quick Insights</Text>
-                                    
+
                                     {selectedCategory === "All" ? (
                                         <>
                                             <View style={styles.insightItem}>
@@ -602,12 +673,25 @@ export default function AnalysisDashboard() {
                                             {spendingInsights.trendInsight && (
                                                 <View style={styles.insightItem}>
                                                     <Text style={styles.insightText} numberOfLines={2}>
-                                                        Spending {spendingInsights.trendInsight.isIncrease ? 'increased' : 'decreased'} by{' '}
-                                                        <Text style={[styles.highlightText, { 
-                                                            color: spendingInsights.trendInsight.isIncrease ? '#EF4444' : '#10B981'
-                                                        }]}>
-                                                            {Math.abs(spendingInsights.trendInsight.change).toFixed(0)}%
-                                                        </Text>
+                                                        {spendingInsights.trendInsight.type === 'absolute' ? (
+                                                            <>
+                                                                Spending {spendingInsights.trendInsight.isIncrease ? 'increased' : 'decreased'} by{' '}
+                                                                <Text style={[styles.highlightText, {
+                                                                    color: spendingInsights.trendInsight.isIncrease ? '#EF4444' : '#10B981'
+                                                                }]}>
+                                                                    RM{Math.abs(spendingInsights.trendInsight.absoluteChange).toFixed(0)}
+                                                                </Text>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                Spending {spendingInsights.trendInsight.isIncrease ? 'increased' : 'decreased'} by{' '}
+                                                                <Text style={[styles.highlightText, {
+                                                                    color: spendingInsights.trendInsight.isIncrease ? '#EF4444' : '#10B981'
+                                                                }]}>
+                                                                    {Math.abs(spendingInsights.trendInsight.change).toFixed(0)}%
+                                                                </Text>
+                                                            </>
+                                                        )}
                                                     </Text>
                                                 </View>
                                             )}
@@ -622,7 +706,7 @@ export default function AnalysisDashboard() {
                                 </View>
                             )}
 
-                            {/* Legend - IMPROVED */}
+                            {/* Legend */}
                             <View style={styles.legendContainer}>
                                 {categoriesForLegend.slice(0, 5).map((category, index) => (
                                     <View key={index} style={styles.legendItem}>
@@ -646,7 +730,7 @@ export default function AnalysisDashboard() {
                             <Text style={styles.cardTitle}>Largest Expenses</Text>
                             <Text style={styles.cardSubtitle} numberOfLines={1}>Top {selectedCategory} spending</Text>
                         </View>
-                        
+
                         {categoryInsights.topTransactions.map((transaction, index) => (
                             <View key={index} style={styles.largeTransactionRow}>
                                 <View style={styles.transactionLeft}>
@@ -654,9 +738,9 @@ export default function AnalysisDashboard() {
                                         {transaction.payee}
                                     </Text>
                                     <Text style={styles.transactionDate}>
-                                        {new Date(transaction.date).toLocaleDateString('en-US', { 
-                                            month: 'short', 
-                                            day: 'numeric' 
+                                        {new Date(transaction.date).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric'
                                         })}
                                     </Text>
                                 </View>
@@ -759,8 +843,8 @@ const styles = StyleSheet.create({
         borderColor: "#E5E7EB",
         overflow: "hidden",
     },
-    dropdown: { 
-        height: 48, 
+    dropdown: {
+        height: 48,
         color: "#1F2937",
         fontSize: 14,
     },
@@ -792,14 +876,14 @@ const styles = StyleSheet.create({
     cardHeader: {
         marginBottom: 16,
     },
-    cardTitle: { 
-        fontSize: 18, 
-        fontWeight: "700", 
+    cardTitle: {
+        fontSize: 18,
+        fontWeight: "700",
         color: "#1F2937",
         marginBottom: 4,
     },
-    cardSubtitle: { 
-        color: "#6B7280", 
+    cardSubtitle: {
+        color: "#6B7280",
         fontSize: 13,
         fontWeight: '500',
     },
@@ -839,7 +923,7 @@ const styles = StyleSheet.create({
         color: '#6B7280',
         fontWeight: '500',
     },
-    // Monthly Summary - IMPROVED
+    // Monthly Summary
     monthlySummary: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -896,7 +980,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#1F2937',
     },
-    // Legend - IMPROVED
+    // Legend
     legendContainer: {
         flexDirection: "row",
         justifyContent: "center",
@@ -912,15 +996,15 @@ const styles = StyleSheet.create({
         alignItems: "center",
         maxWidth: 100,
     },
-    legendDot: { 
-        width: 10, 
-        height: 10, 
-        borderRadius: 5, 
+    legendDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
         marginRight: 4,
         flexShrink: 0,
     },
-    legendText: { 
-        fontSize: 11, 
+    legendText: {
+        fontSize: 11,
         color: "#4B5563",
         fontWeight: '500',
         flexShrink: 1,
@@ -942,8 +1026,8 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: "#F3F4F6",
     },
-    transactionLeft: { 
-        flex: 1, 
+    transactionLeft: {
+        flex: 1,
         marginRight: 12,
     },
     transactionName: {
@@ -952,8 +1036,8 @@ const styles = StyleSheet.create({
         color: "#1F2937",
         marginBottom: 2,
     },
-    transactionDate: { 
-        fontSize: 12, 
+    transactionDate: {
+        fontSize: 12,
         color: "#6B7280",
     },
     transactionAmount: {
@@ -976,4 +1060,90 @@ const styles = StyleSheet.create({
         paddingVertical: 24,
         fontStyle: "italic",
     },
+    enhancedPieContainer: {
+        backgroundColor: "#ffffff",
+        paddingVertical: 10,
+        borderRadius: 16,
+        alignItems: "center",
+        marginVertical: 10,
+        shadowColor: "#000",
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+
+    pieLegendContainer: {
+        marginTop: 10,
+        width: "90%",
+        borderTopWidth: 1,
+        borderTopColor: "#E5E7EB",
+        paddingTop: 12,
+    },
+
+    pieLegendRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 8,
+    },
+
+    pieLegendDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 10,
+    },
+
+    pieLegendLabel: {
+        fontSize: 14,
+        color: "#374151",
+        fontWeight: "500",
+    },
+    enhancedBarContainer: {
+  marginTop: 10,
+  backgroundColor: "#ffffff",
+  borderRadius: 16,
+  paddingVertical: 10,
+  shadowColor: "#000",
+  shadowOpacity: 0.08,
+  shadowRadius: 6,
+  elevation: 3,
+  alignItems: "center",
+},
+
+barStyle: {
+  borderRadius: 12,
+  marginTop: 8,
+},
+
+barLegendContainer: {
+  width: "95%",
+  marginTop: 14,
+  borderTopWidth: 1,
+  borderTopColor: "#F3F4F6",
+  paddingTop: 14,
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 12,
+  justifyContent: "center",
+},
+
+barLegendItem: {
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+barLegendDot: {
+  width: 12,
+  height: 12,
+  borderRadius: 6,
+  marginRight: 6,
+},
+
+barLegendText: {
+  fontSize: 12,
+  fontWeight: "600",
+  color: "#4B5563",
+},
+
+
 });

@@ -56,10 +56,10 @@ const handleSkip = async () => {
   try {
     console.log("⏭️ Skipping onboarding - marking as completed");
    await completeOnboarding(currentUser.userId);
-    navigation.replace("MainTabs");
+    navigation.replace("MainApp");
   } catch (error) {
     console.log("Error during skip:", error);
-    navigation.replace("MainTabs");
+    navigation.replace("MainApp");
   }
 };
   return (
