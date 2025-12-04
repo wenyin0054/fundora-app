@@ -1,18 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
   Alert,
+  TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AppHeader from "../../reuseComponet/header";
-import { addGoalLocal, initDB } from "../../../database/SQLite";
+import { addGoalLocal, initDB, isGoalNameDuplicate } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
+import ValidatedInput from "../../reuseComponet/ValidatedInput";
 
 export default function AddGoalScreen({ navigation }) {
   const [projectName, setProjectName] = useState("");
@@ -25,90 +26,67 @@ export default function AddGoalScreen({ navigation }) {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const { userId } = useUser(); 
+  const goalNameRef = useRef(null);
+  const savingAmountRef = useRef(null);
 
-    const validateAmount = (value, fieldName = "Amount") => {
-      if (!value || value === "") {
-        triggerShake();
-        Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
-        return false;
-      }
-    
-      if (isNaN(value)) {
-        triggerShake();
-        Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
-        return false;
-      }
-    
-      const num = parseFloat(value);
-      if (num <= 0) {
-        triggerShake();
-        Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
-        return false;
-      }
-    
-      if (num > 9999999999999999) {
-        triggerShake();
-        Alert.alert(
-          `Invalid ${fieldName}`,
-          `${fieldName} cannot exceed 9,999,999,999,999,999.`
-        );
-        return false;
-      }
-    
-      return true;
-    };
+  const { userId } = useUser();
 
-const handleSave = async () => {
-  console.log("🔥 Saving goal...");
+  // -----------------------------------------
+  // SAVE GOAL
+  // -----------------------------------------
+  const handleSave = async () => {
+    console.log("🔥 Saving goal...");
 
-  // 1️⃣ Project Name
-  if (!projectName || !projectName.trim()) {
-    Alert.alert("Missing Goal Name", "Please enter a goal/project name.");
-    return;
-  }
+    // 1️⃣ Local input validation (from ValidatedInput)
+    const validGoalName = goalNameRef.current?.validate();
+    const validAmount = savingAmountRef.current?.validate();
 
-  // 2️⃣ Amount (use your shared validator!)
-  if (!validateAmount(savingAmount, "Goal Amount")) return;
+    if (!validGoalName || !validAmount) {
+      return; // error already shown
+    }
 
-  const amountValue = parseFloat(savingAmount);
+    // 2️⃣ Duplicate name check
+    const isDuplicate = await isGoalNameDuplicate(userId, projectName.trim());
+    if (isDuplicate) {
+      goalNameRef.current?.shake();
+      goalNameRef.current?.setError(true);
+      return Alert.alert("Duplicate Goal Name", "A goal with this name already exists.");
+    }
 
-  // 3️⃣ End Date
-  if (!endDate) {
-    Alert.alert("Missing End Date", "Please select your goal end date.");
-    return;
-  }
+    // 3️⃣ User selection validation
+    if (!endDate) {
+      return Alert.alert("Missing End Date", "Please select your goal end date.");
+    }
 
-  // 4️⃣ User ID
-  if (!userId) {
-    Alert.alert("Error", "User not logged in");
-    return;
-  }
+    if (!userId) {
+      return Alert.alert("Error", "User not logged in");
+    }
 
-  try {
-    await initDB();
+    try {
+      await initDB();
 
-    await addGoalLocal(
-      userId,
-      projectName.trim(),
-      remark || "",
-      amountValue,
-      parseFloat(currentSaved || 0),
-      endDate.toISOString().split("T")[0] // YYYY-MM-DD
-    );
+      await addGoalLocal(
+        userId,
+        projectName.trim(),                // goal name
+        remark || "",                      // remark
+        parseFloat(savingAmount),          // target amount
+        parseFloat(currentSaved || 0),     // current saved
+        endDate.toISOString().split("T")[0] // YYYY-MM-DD
+      );
 
-    console.log("💾 Goal saved!");
-    Alert.alert("Success", "Goal saved successfully!");
-    navigation.goBack();
+      console.log("💾 Goal saved!");
+      Alert.alert("Success", "Goal saved successfully!");
+      navigation.goBack();
 
-  } catch (error) {
-    console.error("❌ Error saving goal:", error);
-    Alert.alert("Error", "Failed to save goal. Please try again.");
-  }
-};
+    } catch (error) {
+      console.error("❌ Error saving goal:", error);
+      Alert.alert("Error", "Failed to save goal. Please try again.");
+    }
+  };
 
-
-
+  // -----------------------------------------
+  // RENDER UI
+  // -----------------------------------------
   return (
     <View style={{ flex: 1 }}>
       <AppHeader
@@ -120,29 +98,33 @@ const handleSave = async () => {
       />
 
       <ScrollView style={styles.container}>
+
         {/* Project Name */}
-        <Text style={styles.label}>Project Name</Text>
-        <View style={styles.inputRow}>
-          <Ionicons name="clipboard-outline" size={20} color="#6c757d" />
-          <TextInput
-            value={projectName}
-            onChangeText={setProjectName}
-            style={styles.input}
-            placeholder="Enter goal name"
-          />
-        </View>
+        <ValidatedInput
+          ref={goalNameRef}
+          label="Project Name"
+          value={projectName}
+          onChangeText={setProjectName}
+          placeholder="Enter goal name"
+          placeholderTextColor={"#c5c5c5ff"}
+          validate={(v) => v.trim().length > 0}
+          errorMessage="Goal name cannot be empty"
+          icon={<Ionicons name="clipboard-outline" size={20} color="#6c757d" />}
+        />
 
         {/* Saving Amount */}
-        <Text style={styles.label}>Saving Amount (RM)</Text>
-        <View style={styles.inputRow}>
-          <Ionicons name="cash-outline" size={20} color="#6c757d" />
-          <TextInput
-            value={savingAmount}
-            onChangeText={setSavingAmount}
-            style={styles.input}
-            keyboardType="numeric"
-          />
-        </View>
+        <ValidatedInput
+          ref={savingAmountRef}
+          label="Saving Amount (RM)"
+          value={savingAmount}
+          onChangeText={setSavingAmount}
+          placeholder="Enter target amount"
+          placeholderTextColor={"#c5c5c5ff"}
+          keyboardType="numeric"
+          validate={(v) => !isNaN(v) && Number(v) > 0}
+          errorMessage="Please enter a valid amount"
+          icon={<Ionicons name="cash-outline" size={20} color="#6c757d" />}
+        />
 
         {/* Start Date */}
         <Text style={styles.label}>Start Date</Text>
@@ -195,12 +177,15 @@ const handleSave = async () => {
           value={remark}
           onChangeText={setRemark}
           multiline
+          placeholder="Optional"
+          placeholderTextColor={"#c5c5c5ff"}
         />
 
         {/* Save Button */}
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
           <Text style={styles.saveText}>Save Goal</Text>
         </TouchableOpacity>
+
       </ScrollView>
     </View>
   );
@@ -218,19 +203,6 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     marginTop: 10,
   },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 10,
-  },
-  input: {
-    flex: 1,
-    height: 45,
-    marginLeft: 8,
-  },
   dateInput: {
     flexDirection: "row",
     alignItems: "center",
@@ -246,7 +218,7 @@ const styles = StyleSheet.create({
   textArea: {
     backgroundColor: "#f5f5f5",
     borderRadius: 10,
-    height: 90,
+    height: 100,
     textAlignVertical: "top",
     padding: 10,
     fontSize: 14,

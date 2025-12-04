@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,14 +8,17 @@ import {
   Alert,
   ScrollView,
   Switch,
+  Platform,
+  Animated,
+  Vibration,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import Slider from '@react-native-community/slider';
-import { Platform } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import Slider from "@react-native-community/slider";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import AddSavingAccountModal from "./AddSavingAccountModal";
 import {
   updateExpenseLocal,
   deleteExpenseLocal,
@@ -29,13 +32,18 @@ import {
   getActiveEventTagsLocal,
   getGoalsLocal,
   initDB,
-  getExpensesLocal,
+  getSavingMethods,
+  getSavingAccounts,
+  allocateFundToGoal,
+  getGoalFundAllocations,
+
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
-import { useUser } from "../../reuseComponet/UserContext"; 
+import { useUser } from "../../reuseComponet/UserContext";
 
 export default function ExpenseDetail({ route, navigation }) {
   const { expense } = route.params;
+
   useEffect(() => {
     if (expense) {
       console.log("🧾 Expense Details from DB:");
@@ -60,41 +68,77 @@ export default function ExpenseDetail({ route, navigation }) {
       console.log("⚠️ No expense data found in route.params");
     }
   }, [expense]);
-  // State declarations
-  const [payee, setPayee] = useState(expense.payee);
-  const [amount, setAmount] = useState(expense.amount.toString());
-  const [date, setDate] = useState(new Date(expense.date));
+
+  // ---------- STATE ----------
+  const [payee, setPayee] = useState(expense.payee || "");
+  const [amount, setAmount] = useState(expense.amount ? expense.amount.toString() : "0");
+  const [date, setDate] = useState(new Date(expense.date || Date.now()));
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [tag, setTag] = useState(expense.tag);
-  const [eventTag, setEventTag] = useState(expense.eventTag);
-  const [paymentType, setPaymentType] = useState(expense.paymentType);
+  const [tag, setTag] = useState(expense.tag || "");
+  const [eventTag, setEventTag] = useState(expense.eventTag || "");
+  const [paymentType, setPaymentType] = useState(expense.paymentType || "");
   const [isPeriodic, setIsPeriodic] = useState(Boolean(expense.isPeriodic));
-  const [periodInterval, setPeriodInterval] = useState(0);
-  const [essentialityLabel, setEssentialityLabel] = useState(expense.essentialityLabel);
+  const [periodInterval, setPeriodInterval] = useState(expense.periodInterval || 0);
+  const [essentialityLabel, setEssentialityLabel] = useState(expense.essentialityLabel || 0);
   const [allocateToGoal, setAllocateToGoal] = useState(expense.goalId != null);
-  const [dbReady, setdbReady] = useState(false);
-  // Type selection
+  const [dbReady, setDbReady] = useState(false);
+
   const options = ["Expenses", "Income", "Transaction"];
-  const [selectedOption, setSelectedOption] = useState(expense.typeLabel);
-  const [selectedPeriodType, setSelectedPeriodType] = useState(
-    expense.type || "null"
-  );
-  // New states for additional features
+  const [selectedOption, setSelectedOption] = useState(dbToUiType(expense.typeLabel));
   const periodType = ["Yearly", "Monthly"];
-  const [selectedType, setSelectedType] = useState(expense.periodType || "Yearly");
+  const [selectedPeriodType, setSelectedPeriodType] = useState(expense.type || "null");
+
   const [goals, setGoals] = useState([]);
   const [selectedGoal, setSelectedGoal] = useState(expense.goalId);
-  const [sliderValue, setSliderValue] = useState(expense.amount || 0);
-  const [sliderPercent, setSliderPercent] = useState(100);
-  const [userSummary, setUserSummary] = useState({ total_income: 0, total_expense: 0, total_balance: 0 });
+  const [savingMethods, setSavingMethods] = useState([]);
+  const [selectedSavingMethod, setSelectedSavingMethod] = useState(null);
+  const [savingAccounts, setSavingAccounts] = useState([]);
+  const [savingAccountError, setSavingAccountError] = useState(false);
+  const [selectedSavingAccount, setSelectedSavingAccount] = useState(null);
+  const [showSavingAccountModal, setShowSavingAccountModal] = useState(false);
 
-  // Data states
+  const [userSummary, setUserSummary] = useState({
+    total_income: 0,
+    total_expense: 0,
+    total_balance: 0,
+  });
+
   const [tags, setTags] = useState([]);
   const [activeEventTags, setActiveEventTags] = useState([]);
 
-  const { userId } = useUser(); 
+  const { userId } = useUser();
 
-  // Payment types data
+  // ---------- ERROR STATES ----------
+  const [payeeError, setPayeeError] = useState(false);
+  const [amountError, setAmountError] = useState(false);
+  const [tagError, setTagError] = useState(false);
+  const [paymentTypeError, setPaymentTypeError] = useState(false);
+  const [typeError, setTypeError] = useState(false);
+  const [dateError, setDateError] = useState(false);
+  const [goalError, setGoalError] = useState(false);
+  const [savingMethodError, setSavingMethodError] = useState(false);
+
+  // ---------- ANIMATED SHAKE ----------
+  const payeeShake = useRef(new Animated.Value(0)).current;
+  const amountShake = useRef(new Animated.Value(0)).current;
+  const tagShake = useRef(new Animated.Value(0)).current;
+  const paymentTypeShake = useRef(new Animated.Value(0)).current;
+  const goalShake = useRef(new Animated.Value(0)).current;
+
+  const runShake = (animRef) => {
+    if (!animRef) return;
+    animRef.setValue(0);
+    Animated.sequence([
+      Animated.timing(animRef, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: -6, duration: 50, useNativeDriver: true }),
+      Animated.timing(animRef, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+    Vibration.vibrate(50);
+  };
+
+  // ---------- CONSTANT TAGS ----------
   const paymentTypeData = [
     { id: "1", name: "Cash" },
     { id: "2", name: "Credit Card" },
@@ -106,7 +150,7 @@ export default function ExpenseDetail({ route, navigation }) {
     { id: "8", name: "Gift Card" },
   ];
 
-    const DEFAULT_TAGS = [
+  const DEFAULT_TAGS = [
     { name: "Food & Drinks", essentialityLabel: 1 },
     { name: "Groceries", essentialityLabel: 1 },
     { name: "Transport", essentialityLabel: 2 },
@@ -122,215 +166,479 @@ export default function ExpenseDetail({ route, navigation }) {
     { name: "Miscellaneous", essentialityLabel: 3 },
   ];
 
-  // Initialize data
-  useEffect(() => {
-    const init = async () => {
-      console.log("🚀 [init] start");
+  // ---------- INIT DB & LOAD DATA ----------
+useEffect(() => {
+  const init = async () => {
+    console.log("🚀 [init] start");
+    try {
+      await initDB();
+      setDbReady(true);
 
-      try {
-        // Initialize DB
-        await initDB();
-        console.log("✅ DB initialized");
-        setdbReady(true);
+      const [
+        loadedTags,
+        loadedEventTags,
+        active,
+        goalsData,
+        summary,
+        methods,
+        accounts,
+        allocations
+      ] = await Promise.all([
+        getTagsLocal(userId),
+        getEventTagsLocal(userId),
+        getActiveEventTagsLocal(userId),
+        getGoalsLocal(userId),
+        getUserSummary(userId),
+        getSavingMethods(userId),
+        getSavingAccounts(userId),
+        getGoalFundAllocations(userId, expense.goalId),
+      ]);
 
-        // Load tags
-        const loadedTags = await getTagsLocal();
-        console.log("✅ Tags loaded:", loadedTags.length);
-        setTags(loadedTags);
 
-        // Load event tags
-        const loadedEventTags = await getEventTagsLocal();
-        console.log("✅ Event tags loaded:", loadedEventTags.length);
-        setEventTag(loadedEventTags);
+      setTags(loadedTags);
+      setActiveEventTags(active);
+      setGoals(goalsData);
+      setUserSummary(summary);
+      setSavingMethods(methods);
+      setSavingAccounts(accounts);
 
-        // Load active event tags
-        const active = await getActiveEventTagsLocal(userId);
-        console.log("✅ Active event tags loaded:", active.length);
-        setActiveEventTags(active);
+      console.log("Allocation", allocations);
 
-        // Load goals
-        const goalsData = await getGoalsLocal();
-        console.log("✅ Goals loaded:", goalsData.length);
-        setGoals(goalsData);
+      const allocation = allocations.find(a => a.transaction_id === expense.id);
+      console.log("🔍 Found allocation?", allocation);
 
-        // Load user summary
-        const summary = await getUserSummary(userId);
-        console.log("✅ User summary loaded:", summary);
-        setUserSummary(summary);
+      if (allocation) {
+        const method = methods.find(m => m.id === allocation.method_id);
+        const account = accounts.find(a => a.id === allocation.account_id);
 
-        console.log("⚡ [init] all data loaded successfully");
-      } catch (err) {
-        console.error("❌ [init] error:", err);
+        setSelectedSavingMethod(method || null);
+        setSelectedSavingAccount(account || null);
+      } else {
+        console.log("⚠️ No allocation found for this expense");
       }
-    };
 
-    init();
-  }, []);
+      console.log("⚡ [init] all data loaded successfully");
 
-  // Update slider when amount changes
-  useEffect(() => {
-    if (amount && parseFloat(amount) > 0) {
-      setSliderValue(parseFloat(amount));
-      setSliderPercent(100);
+    } catch (err) {
+      console.error("❌ [init] error:", err);
     }
-  }, [amount]);
+  };
 
-  // Handle type change
+  if (userId) init();
+
+}, [userId, expense.id]);
+
+
+  // ---------- TYPE MAPPING ----------
+  function dbToUiType(type) {
+    if (!type) return "Expenses";
+    const t = String(type).toLowerCase();
+    if (t === "expense") return "Expenses";
+    if (t === "income") return "Income";
+    if (t === "transaction") return "Transaction";
+    return "Expenses";
+  }
+
+  function uiToDbType(type) {
+    if (!type) return null;
+    const t = type.toLowerCase();
+    if (t === "expenses") return "expense";
+    if (t === "income") return "income";
+    if (t === "transaction") return "transaction";
+    return null;
+  }
+
+  // ---------- TYPE CHANGE ----------
   const handleTypeChange = (option) => {
     setSelectedOption(option);
+    setTypeError(false);
     if (option !== "Transaction") {
       setAllocateToGoal(false);
+      setSelectedGoal(null);
     }
-
   };
 
-const onUpdate = async () => {
-  if (!dbReady) {
-    return Alert.alert("Database not ready yet!");
-  }
-
-  // 1️⃣ VALIDATION
-  if (!payee || !payee.trim()) {
-    triggerShake && triggerShake();
-    return Alert.alert("Missing Payee", "Please enter a payee or project.");
-  }
-
-  if (!validateAmount(amount, "Amount")) return;
-
-  if (!date) {
-    return Alert.alert("Missing Date", "Please select a date.");
-  }
-
-  if (!selectedOption) {
-    return Alert.alert("Missing Type", "Please choose a type (Income/Expense/Transaction).");
-  }
-
-  // tag only for Expense & Transaction
-  if (selectedOption !== "Income" && !tag) {
-    return Alert.alert("Missing Tag", "Please select a tag.");
-  }
-
-  if (selectedOption !== "Income" && !paymentType) {
-    return Alert.alert("Missing Payment Type", "Please select a payment type.");
-  }
-
-  // validate goal allocation
-  if (selectedOption === "Transaction" && allocateToGoal) {
-    if (!selectedGoal) {
-      return Alert.alert("Missing Goal", "Please select a goal.");
+  // ---------- AMOUNT VALIDATION ----------
+  const validateAmount = (value, fieldName = "Amount", animRef) => {
+    if (!value || value === "") {
+      setAmountError(true);
+      runShake(animRef);
+      Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
+      return false;
     }
-    if (sliderValue <= 0) {
-      return Alert.alert("Invalid Amount", "Allocated amount must be > 0.");
-    }
-    if (sliderValue > parseFloat(amount)) {
-      return Alert.alert("Error", "Allocated amount cannot exceed transaction amount.");
-    }
-  }
 
-  const newAmount = selectedOption === "Transaction" && allocateToGoal
-    ? sliderValue
-    : parseFloat(amount);
+    if (isNaN(value)) {
+      setAmountError(true);
+      runShake(animRef);
+      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
+      return false;
+    }
 
-  const newData = {
-    payee: payee.trim(),
-    amount: newAmount,
-    date: date.toISOString().split("T")[0],
-    tag,
-    eventTag,
-    paymentType,
-    isPeriodic,
-    selectedType,
-    typeLabel: selectedOption.toLowerCase(),
-    essentialityLabel: essentialityLabel ? 1 : 0,
-    goalId: selectedOption === "Transaction" && allocateToGoal ? selectedGoal : null,
-    periodInterval
+    const num = parseFloat(value);
+    if (num <= 0) {
+      setAmountError(true);
+      runShake(animRef);
+      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
+      return false;
+    }
+
+    if (num > 9999999999999999) {
+      setAmountError(true);
+      runShake(animRef);
+      Alert.alert(
+        `Invalid ${fieldName}`,
+        `${fieldName} cannot exceed 9,999,999,999,999,999.`
+      );
+      return false;
+    }
+
+    setAmountError(false);
+    return true;
   };
 
-  const oldData = {
-    payee: expense.payee,
-    amount: parseFloat(expense.amount),
-    date: expense.date,
-    tag: expense.tag,
-    eventTag: expense.eventTag,
-    paymentType: expense.paymentType,
-    isPeriodic: expense.isPeriodic,
-    selectedType: expense.selectedType,
-    typeLabel: expense.typeLabel.toLowerCase(),
-    essentialityLabel: expense.essentialityLabel,
-    goalId: expense.goalId,
-    periodInterval: expense.periodInterval
-  };
+  // ---------- UPDATE ----------
+  const onUpdate = async () => {
+    if (!dbReady) return Alert.alert("Database not ready yet!");
+    if (!userId) return Alert.alert("Error", "User not logged in");
 
-  // 2️⃣ COMPARE — skip update if no changes
-  const unchanged = JSON.stringify(newData) === JSON.stringify(oldData);
-  if (unchanged) {
-    return Alert.alert("No Changes", "You did not modify any fields.");
-  }
+    // ----------------------------------------------
+    //  1. VALIDATION
+    // ----------------------------------------------
+    let valid = true;
 
-  try {
-    // 3️⃣ GOAL ALLOCATION LOGIC
-    const oldAmount = oldData.amount;
-    const oldType = oldData.typeLabel;
-    const newType = newData.typeLabel;
-    const hadGoalBefore = oldData.goalId !== null;
-    const hasGoalNow = newData.goalId !== null;
+    if (!payee || !payee.trim()) {
+      setPayeeError(true); runShake(payeeShake);
+      Alert.alert("Missing Payee", "Please enter a payee or project.");
+      valid = false;
+    } else setPayeeError(false);
 
-    // remove old allocation
-    if (hadGoalBefore && !hasGoalNow) {
-      await updateGoalAmount(oldData.goalId, -oldAmount, true);
+    if (!validateAmount(amount, "Amount", amountShake)) valid = false;
+
+    if (!date) {
+      setDateError(true);
+      Alert.alert("Missing Date", "Please select a date.");
+      valid = false;
+    } else setDateError(false);
+
+    if (!selectedOption) {
+      setTypeError(true);
+      Alert.alert("Missing Type", "Please choose a type.");
+      valid = false;
+    } else setTypeError(false);
+
+    if (selectedOption !== "Income" && !tag) {
+      setTagError(true); runShake(tagShake);
+      Alert.alert("Missing Tag", "Please select a tag.");
+      valid = false;
+    } else setTagError(false);
+
+    if (selectedOption !== "Income" && !paymentType) {
+      setPaymentTypeError(true); runShake(paymentTypeShake);
+      Alert.alert("Missing Payment Type", "Please select a payment type.");
+      valid = false;
+    } else setPaymentTypeError(false);
+
+    if (selectedOption === "Transaction" && allocateToGoal) {
+      if (!selectedGoal) {
+        setGoalError(true); runShake(goalShake);
+        Alert.alert("Missing Goal", "Please select a goal.");
+        valid = false;
+      } else setGoalError(false);
+
+      if (!selectedSavingMethod) {
+        setSavingMethodError(true);
+        Alert.alert("Missing Saving Method", "Please select a saving method.");
+        valid = false;
+      } else setSavingMethodError(false);
+
+      if (!selectedSavingAccount) {
+        setSavingAccountError(true);
+        Alert.alert("Missing Account", "Please select a saving account.");
+        valid = false;
+      } else setSavingAccountError(false);
     }
 
-    // add new allocation
-    if (!hadGoalBefore && hasGoalNow) {
-      await updateGoalAmount(newData.goalId, newData.amount, true);
-    }
+    if (!valid) return;
 
-    // adjust allocation (same goal, different amount)
-    if (hadGoalBefore && hasGoalNow && oldData.goalId === newData.goalId) {
-      const diff = newData.amount - oldAmount;
-      if (diff !== 0) {
-        await updateGoalAmount(newData.goalId, diff, true);
+    // ----------------------------------------------
+    //  2. Build newData + oldData
+    // ----------------------------------------------
+    const newData = {
+      payee: payee.trim(),
+      amount: parseFloat(amount),
+      date: date.toISOString().split("T")[0],
+      tag: selectedOption === "Income" ? null : tag,
+      eventTag: eventTag || null,
+      paymentType: selectedOption === "Income" ? null : paymentType,
+      isPeriodic,
+      type: isPeriodic ? selectedPeriodType : null,
+      typeLabel: uiToDbType(selectedOption),
+      essentialityLabel:
+        selectedOption === "Income" ? null : (essentialityLabel ? 1 : 0),
+      goalId:
+        selectedOption === "Transaction" && allocateToGoal ? selectedGoal : null,
+      periodInterval: isPeriodic ? periodInterval : 0,
+    };
+
+    const oldData = {
+      payee: expense.payee || "",
+      amount: parseFloat(expense.amount) || 0,
+      date: expense.date || new Date().toISOString().split("T")[0],
+      tag: expense.tag || "",
+      eventTag: expense.eventTag || "",
+      paymentType: expense.paymentType || "",
+      isPeriodic: Boolean(expense.isPeriodic),
+      type: expense.type || null,
+      typeLabel: expense.typeLabel || "expense",
+      essentialityLabel: expense.essentialityLabel || 0,
+      goalId: expense.goalId || null,
+      periodInterval: expense.periodInterval || 0,
+    };
+
+    // ----------------------------------------------
+    //  3. Check for real changes
+    // ----------------------------------------------
+    const hasChanges =
+      newData.payee !== oldData.payee ||
+      newData.amount !== oldData.amount ||
+      newData.date !== oldData.date ||
+      newData.tag !== oldData.tag ||
+      newData.eventTag !== oldData.eventTag ||
+      newData.paymentType !== oldData.paymentType ||
+      newData.isPeriodic !== oldData.isPeriodic ||
+      newData.type !== oldData.type ||
+      newData.typeLabel !== oldData.typeLabel ||
+      newData.essentialityLabel !== oldData.essentialityLabel ||
+      newData.goalId !== oldData.goalId ||
+      newData.periodInterval !== oldData.periodInterval;
+
+    if (!hasChanges)
+      return Alert.alert("No Changes", "You did not modify any fields.");
+
+    try {
+      const oldAmount = oldData.amount;
+      const oldType = oldData.typeLabel;
+      const newType = newData.typeLabel;
+
+      // ----------------------------------------------
+      //  4. READ EXISTING ALLOCATION 
+      // ----------------------------------------------
+      let existingAllocation = null;
+
+      if (oldData.goalId) {
+        const allocations = await getGoalFundAllocations(userId, oldData.goalId);
+        existingAllocation =
+          allocations.find((a) => a.transaction_id === expense.id) || null;
       }
+
+      console.log("🔍 [CHECK] Existing Allocation Loaded:", existingAllocation ? {
+        allocationId: existingAllocation.id,
+        oldAllocAmount: existingAllocation.allocated_amount,
+        oldAccountId: existingAllocation.account_id,
+        oldGoalId: existingAllocation.goalId
+      } : "❌ No existing allocation found for this transaction");
+
+
+      // ----------------------------------------------
+      //  5. HANDLE ALLOCATION CHANGES
+      // ----------------------------------------------
+
+      // 🟩 A. Remove allocation (old -> has, new -> none)
+      if (existingAllocation && !newData.goalId) {
+        console.log("🔴 [REMOVE] Removing allocation:", {
+          allocationId: existingAllocation.id,
+          rollbackGoal: existingAllocation.goalId,
+          rollbackAmount: existingAllocation.allocated_amount
+        });
+
+
+        await db.runAsync(
+          `DELETE FROM goal_fund_allocations WHERE id = ? AND userId = ?`,
+          [existingAllocation.id, userId]
+        );
+
+        await updateGoalAmount(
+          userId,
+          existingAllocation.goalId,
+          -existingAllocation.allocated_amount
+        );
+
+        await db.runAsync(
+          `UPDATE saving_accounts SET current_balance = current_balance - ?
+         WHERE id = ? AND userId = ?`,
+          [
+            existingAllocation.allocated_amount,
+            existingAllocation.account_id,
+            userId,
+          ]
+        );
+      }
+
+      // 🟩 B. Add new allocation (old none → new has)
+      if (!existingAllocation && newData.goalId) {
+
+        console.log("🟢 [ADD] Creating NEW allocation", {
+          goalId: newData.goalId,
+          accountId: selectedSavingAccount.id,
+          amount: newData.amount
+        });
+
+        await allocateFundToGoal(
+          userId,
+          newData.goalId,
+          selectedSavingAccount.id,
+          newData.amount,
+          newData.date,
+          expense.id,
+          null,
+          "Allocated via edit",
+          selectedSavingMethod.id
+        );
+
+        await updateGoalAmount(userId, newData.goalId, newData.amount);
+      }
+
+      // 🟩 C. Edit existing allocation
+      if (existingAllocation && newData.goalId) {
+        const allocationId = existingAllocation.id;
+        const oldAllocAmount = existingAllocation.allocated_amount;
+        const oldAccountId = existingAllocation.account_id;
+        const oldGoalId = existingAllocation.goalId;
+
+        // ① Amount changed
+        if (newData.amount !== oldAllocAmount) {
+          const diff = newData.amount - oldAllocAmount;
+
+          await db.runAsync(
+            `UPDATE goal_fund_allocations 
+           SET allocated_amount = ?, current_value = ?
+           WHERE id = ? AND userId = ?`,
+            [newData.amount, newData.amount, allocationId, userId]
+          );
+
+          await updateGoalAmount(userId, oldGoalId, diff);
+
+          await db.runAsync(
+            `UPDATE saving_accounts SET current_balance = current_balance + ?
+           WHERE id = ? AND userId = ?`,
+            [diff, oldAccountId, userId]
+          );
+        }
+
+        // ② Account changed
+        if (
+          selectedSavingAccount &&
+          selectedSavingAccount.id !== oldAccountId
+        ) {
+          console.log("🟣 [UPDATE ACCOUNT] Changing saving account:", {
+            from: oldAccountId,
+            to: selectedSavingAccount.id,
+            amount: newData.amount
+          });
+
+          // remove from old account
+          await db.runAsync(
+            `UPDATE saving_accounts SET current_balance = current_balance - ?
+           WHERE id = ? AND userId = ?`,
+            [newData.amount, oldAccountId, userId]
+          );
+
+          // add into new account
+          await db.runAsync(
+            `UPDATE saving_accounts SET current_balance = current_balance + ?
+           WHERE id = ? AND userId = ?`,
+            [newData.amount, selectedSavingAccount.id, userId]
+          );
+
+          // update allocation record
+          await db.runAsync(
+            `UPDATE goal_fund_allocations SET account_id = ?
+           WHERE id = ? AND userId = ?`,
+            [selectedSavingAccount.id, allocationId, userId]
+          );
+        }
+
+        // ③ Goal changed
+        if (newData.goalId !== oldGoalId) {
+          console.log("🟦 [UPDATE GOAL] Moving allocation to another goal:", {
+            from: oldGoalId,
+            to: newData.goalId,
+            amount: newData.amount
+          });
+          // move amount
+          await updateGoalAmount(userId, oldGoalId, -oldAllocAmount);
+          await updateGoalAmount(userId, newData.goalId, newData.amount);
+
+          await db.runAsync(
+            `UPDATE goal_fund_allocations SET goalId = ?
+           WHERE id = ? AND userId = ?`,
+            [newData.goalId, allocationId, userId]
+          );
+        }
+      }
+
+      // ----------------------------------------------
+      //  6. UPDATE EXPENSE RECORD
+      // ----------------------------------------------
+      await updateExpenseLocal(
+        expense.id,
+        userId,
+        newData.payee,
+        newData.amount,
+        newData.date,
+        newData.tag,
+        newData.eventTag,
+        newData.paymentType,
+        newData.isPeriodic,
+        newData.type,
+        newData.typeLabel,
+        newData.essentialityLabel,
+        newData.goalId,
+        newData.periodInterval
+      );
+
+      // ----------------------------------------------
+      //  7. UPDATE USER SUMMARY（保留你原本的）
+      // ----------------------------------------------
+      const oldHadGoal = oldType === "transaction" && oldData.goalId != null;
+      const newHasGoal = newType === "transaction" && newData.goalId != null;
+
+      const isIncomeInvolved =
+        oldType === "income" || newType === "income";
+
+      if (!isIncomeInvolved) {
+        if (oldType === newType && oldAmount !== newData.amount)
+          await updateUserSummaryOnEdit(
+            userId,
+            oldType,
+            oldAmount,
+            newData.amount
+          );
+      } else {
+        if (oldType === newType)
+          await updateUserSummaryOnEdit(
+            userId,
+            oldType,
+            oldAmount,
+            newData.amount
+          );
+        else {
+          await updateUserSummaryOnDelete(userId, oldType, oldAmount);
+          await updateUserSummaryOnAdd(userId, newType, newData.amount);
+        }
+      }
+
+      Alert.alert("Success", "Record updated successfully!", [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
+    } catch (error) {
+      console.error("❌ Failed to update expense:", error);
+      Alert.alert("Error", "Failed to update record: " + error.message);
     }
-
-    // 4️⃣ UPDATE EXPENSE DATA
-    await updateExpenseLocal(
-      expense.id,
-      newData.payee,
-      newData.amount,
-      newData.date,
-      newData.tag,
-      newData.eventTag,
-      newData.paymentType,
-      newData.isPeriodic,
-      newData.selectedType,
-      newData.typeLabel,
-      newData.essentialityLabel,
-      newData.goalId,
-      newData.periodInterval
-    );
-
-    // 5️⃣ UPDATE USER SUMMARY
-    if (oldType === newType) {
-      await updateUserSummaryOnEdit(expense.userId, oldType, oldAmount, newData.amount);
-    } else {
-      // remove old
-      await updateUserSummaryOnDelete(expense.userId, oldType, oldAmount);
-      // add new
-      await updateUserSummaryOnAdd(expense.userId, newType, newData.amount);
-    }
-
-    Alert.alert("Success", "Record updated successfully!");
-    navigation.goBack();
-
-  } catch (error) {
-    console.error("❌ Failed to update expense:", error);
-    Alert.alert("Error", "Failed to update record.");
-  }
-};
+  };
 
 
-
+  // ---------- DELETE ----------
   const onDelete = () => {
     if (!dbReady) {
       return Alert.alert("Database not ready yet!");
@@ -343,41 +651,38 @@ const onUpdate = async () => {
         style: "destructive",
         onPress: async () => {
           try {
-            const oldType = expense.typeLabel.toLowerCase(); // 'income', 'expenses', 'transaction'
-            const oldAmount = parseFloat(expense.amount);
+            const oldType = String(expense.typeLabel || "").toLowerCase();
+            const oldAmount = parseFloat(expense.amount) || 0;
 
-            // 1️⃣ Delete expense locally
-            await deleteExpenseLocal(expense.id);
+            await deleteExpenseLocal(userId, expense.id);
 
-            // 2️⃣ Update user summary (always)
             if (oldType === "income") {
-              await updateUserSummaryOnDelete(expense.userId, "income", oldAmount);
+              await updateUserSummaryOnDelete(userId, "income", oldAmount);
             } else {
-              await updateUserSummaryOnDelete(expense.userId, "expense", oldAmount);
+              await updateUserSummaryOnDelete(userId, "expense", oldAmount);
             }
 
-            // 3️⃣ Update goal allocation if needed
-            if (oldType === "transaction" && expense.goalId) {
-              // Subtract deleted amount from the goal with protection >= 0
-              await updateGoalAmount(expense.goalId, -oldAmount, true);
+            // Update goal amount if this was allocated to a goal
+            if (expense.goalId) {
+              await updateGoalAmount(userId, expense.goalId, -oldAmount);
             }
 
-            // 4️⃣ Fetch updated summary for logging/debugging
-            const updatedSummary = await getUserSummary(expense.userId);
+            const updatedSummary = await getUserSummary(userId);
             console.log("✅ Updated summary after delete:", updatedSummary);
 
-            Alert.alert("🗑️ Deleted", "Record removed successfully!");
-            navigation.goBack();
+            Alert.alert("🗑️ Deleted", "Record removed successfully!", [
+              { text: "OK", onPress: () => navigation.goBack() }
+            ]);
           } catch (error) {
             console.error("❌ Failed to delete expense:", error);
-            Alert.alert("❌ Error", "Failed to delete record.");
+            Alert.alert("❌ Error", "Failed to delete record: " + error.message);
           }
         },
       },
     ]);
   };
 
-
+  // ---------- RENDER ----------
   return (
     <View style={styles.container}>
       <AppHeader
@@ -389,7 +694,7 @@ const onUpdate = async () => {
         contentContainerStyle={{ flexGrow: 1 }}
         resetScrollToCoords={{ x: 0, y: 0 }}
         enableOnAndroid={true}
-        extraScrollHeight={Platform.OS === 'ios' ? 120 : 80}
+        extraScrollHeight={Platform.OS === "ios" ? 120 : 80}
         keyboardShouldPersistTaps="handled"
       >
         <ScrollView style={styles.scrollContainer}>
@@ -401,14 +706,16 @@ const onUpdate = async () => {
                   key={index}
                   style={[
                     styles.typeButton,
-                    selectedOption.toLowerCase() === option.toLowerCase() && styles.typeButtonActive,
+                    selectedOption.toLowerCase() === option.toLowerCase() &&
+                    styles.typeButtonActive,
                   ]}
                   onPress={() => handleTypeChange(option)}
                 >
                   <Text
                     style={[
                       styles.typeButtonText,
-                      selectedOption.toLowerCase() === option.toLowerCase() && styles.typeButtonActive,
+                      selectedOption.toLowerCase() === option.toLowerCase() &&
+                      styles.typeButtonTextActive,
                     ]}
                   >
                     {option}
@@ -418,49 +725,83 @@ const onUpdate = async () => {
             </View>
 
             {/* Payee Input */}
-            <View style={styles.inputRow}>
+            <Animated.View
+              style={[
+                styles.inputRow,
+                payeeError && styles.inputError,
+                { transform: [{ translateX: payeeShake }] },
+              ]}
+            >
               <Ionicons name="person-outline" size={20} color="#6c757d" />
               <TextInput
                 style={styles.input}
                 value={payee}
-                onChangeText={setPayee}
+                onChangeText={(text) => {
+                  setPayee(text);
+                  if (text.trim()) setPayeeError(false);
+                }}
                 placeholder="Payee or purchased project"
+                placeholderTextColor={"#c5c5c5ff"}
               />
-            </View>
+            </Animated.View>
 
-            {/* Amount Input or Total Balance Display */}
+            {/* Amount Input / Total Balance */}
             {selectedOption === "Transaction" && allocateToGoal ? (
-              <View style={[styles.inputRow, { justifyContent: "space-between", height: 45 }]}>
+              <View
+                style={[
+                  styles.inputRow,
+                  { justifyContent: "space-between", height: 45 },
+                ]}
+              >
                 <Ionicons name="wallet-outline" size={20} color="#6c757d" />
-                <Text style={{ flex: 1, marginLeft: 8, fontSize: 16, color: "#2E5E4E" }}>
-                  Total Balance: RM {userSummary.total_balance?.toFixed(2) || "0.00"}
+                <Text
+                  style={{
+                    flex: 1,
+                    marginLeft: 8,
+                    fontSize: 16,
+                    color: "#2E5E4E",
+                  }}
+                >
+                  Total Balance: RM{" "}
+                  {userSummary.total_balance?.toFixed(2) || "0.00"}
                 </Text>
               </View>
             ) : (
-              <View style={styles.inputRow}>
+              <Animated.View
+                style={[
+                  styles.inputRow,
+                  amountError && styles.inputError,
+                  { transform: [{ translateX: amountShake }] },
+                ]}
+              >
                 <Ionicons name="cash-outline" size={20} color="#6c757d" />
                 <TextInput
                   style={styles.input}
                   keyboardType="numeric"
                   value={amount}
-                  onChangeText={setAmount}
+                  onChangeText={(val) => {
+                    setAmount(val);
+                    setAmountError(false);
+                  }}
                   placeholder="Amount"
+                  placeholderTextColor={"#c5c5c5ff"}
                 />
-              </View>
+              </Animated.View>
             )}
 
             {/* Date Picker */}
-            <View style={styles.inputRow}>
+            <TouchableOpacity
+              style={[
+                styles.inputRow,
+                dateError && styles.inputError,
+              ]}
+              onPress={() => setShowDatePicker(true)}
+            >
               <Ionicons name="calendar-outline" size={20} color="#6c757d" />
-              <TouchableOpacity
-                style={styles.dateInput}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Text style={styles.dateText}>
-                  {date.toISOString().split("T")[0]}
-                </Text>
-              </TouchableOpacity>
-            </View>
+              <Text style={[styles.input, { color: '#333' }]}>
+                {date.toISOString().split("T")[0]}
+              </Text>
+            </TouchableOpacity>
 
             {showDatePicker && (
               <DateTimePicker
@@ -469,75 +810,108 @@ const onUpdate = async () => {
                 display="default"
                 onChange={(e, selectedDate) => {
                   setShowDatePicker(false);
-                  if (selectedDate) setDate(selectedDate);
+                  if (selectedDate) {
+                    setDate(selectedDate);
+                    setDateError(false);
+                  }
                 }}
-                maximumDate={new Date()} // only today or past date
+                maximumDate={new Date()}
               />
             )}
 
-
-            {/* Tag */}
+            {/* Tag Picker */}
             {selectedOption !== "Income" && (
-              <View style={styles.pickerContainer}>
-                <Ionicons name="pricetag-outline" size={20} color="#6c757d" style={styles.icon} />
-
-                {/* Read-only display of selected tag */}
+              <Animated.View
+                style={[
+                  styles.pickerContainer,
+                  tagError && styles.inputError,
+                  { transform: [{ translateX: tagShake }] },
+                ]}
+              >
+                <Ionicons
+                  name="pricetag-outline"
+                  size={20}
+                  color="#6c757d"
+                  style={styles.icon}
+                />
                 <TextInput
                   value={tag}
                   style={styles.dropdownContent}
                   placeholder="Select a tag"
+                  placeholderTextColor={"#c5c5c5ff"}
                   editable={false}
                   pointerEvents="none"
                 />
-
-                {/* Invisible picker overlay */}
                 <Picker
                   selectedValue={tag}
                   onValueChange={(itemValue) => {
-                    if (itemValue === '__add_new_tag__') {
-                      navigation.navigate('AddTag', {
+                    if (itemValue === "__add_new_tag__") {
+                      navigation.navigate("AddTag", {
                         onTagAdded: async (newTag) => {
-                          await fetchTag(); // reload user tags
-                          setTag(newTag);   // set the new tag as selected
-                        }
+                          setTag(newTag);
+                          setTagError(false);
+                        },
                       });
                     } else {
                       setTag(itemValue);
-                      // First, search in user tags. If you can't find it, then go to default tags
+                      setTagError(false);
                       const selectedTag =
                         tags.find((d) => d.name === itemValue) ||
                         DEFAULT_TAGS.find((d) => d.name === itemValue);
-                      setEssentialityLabel(selectedTag ? !!selectedTag.essentialityLabel : 0);
+                      setEssentialityLabel(
+                        selectedTag ? selectedTag.essentialityLabel : 0
+                      );
                     }
                   }}
-                  style={[styles.picker, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0 }]}
+                  style={[
+                    styles.picker,
+                    {
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      opacity: 0,
+                    },
+                  ]}
                   dropdownIconColor="#2E5E4E"
                 >
                   <Picker.Item label="Select a tag..." value="" />
-
-                  {/* user tags */}
                   {tags.map((item) => (
-                    <Picker.Item key={`user-${item.id}`} label={item.name} value={item.name} />
+                    <Picker.Item
+                      key={`user-${item.id}`}
+                      label={item.name}
+                      value={item.name}
+                    />
                   ))}
-
-                  {/* default tags */}
                   {DEFAULT_TAGS.map((item) => (
-                    <Picker.Item key={`default-${item.name}`} label={item.name} value={item.name} />
+                    <Picker.Item
+                      key={`default-${item.name}`}
+                      label={item.name}
+                      value={item.name}
+                    />
                   ))}
-
                   <Picker.Item label="➕ Add new tag" value="__add_new_tag__" />
                 </Picker>
-              </View>
+              </Animated.View>
             )}
 
-
             {/* Essentiality Switch */}
-            {tag && essentialityLabel !== null && selectedOption !== "Income" && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 25, marginBottom: 10 }}>
-                <Text style={{ marginRight: 10, color: "#555" }}>Essentiality:</Text>
+            {tag && selectedOption !== "Income" && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginLeft: 25,
+                  marginBottom: 10,
+                }}
+              >
+                <Text style={{ marginRight: 10, color: "#555" }}>
+                  Essentiality:
+                </Text>
                 <Switch
-                  value={essentialityLabel}
-                  onValueChange={(value) => setEssentialityLabel(value)}
+                  value={!!essentialityLabel}
+                  onValueChange={(value) => setEssentialityLabel(value ? 1 : 0)}
                   trackColor={{ false: "#ccc", true: "#4CAF50" }}
                   thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"}
                 />
@@ -548,26 +922,47 @@ const onUpdate = async () => {
             )}
 
             {/* Payment Type Picker */}
-            <View style={styles.pickerContainer}>
-              <FontAwesome6 name="money-bill-transfer" size={14} color="#6c757d" style={styles.icon} />
-              <TextInput
-                value={paymentType}
-                style={styles.pickerDisplay}
-                placeholder="Select payment type"
-                editable={false}
-                pointerEvents="none"
-              />
-              <Picker
-                selectedValue={paymentType}
-                onValueChange={setPaymentType}
-                style={styles.hiddenPicker}
+            {selectedOption !== "Income" && (
+              <Animated.View
+                style={[
+                  styles.pickerContainer,
+                  paymentTypeError && styles.inputError,
+                  { transform: [{ translateX: paymentTypeShake }] },
+                ]}
               >
-                <Picker.Item label="Select payment type..." value="" />
-                {paymentTypeData.map((item) => (
-                  <Picker.Item key={item.id} label={item.name} value={item.name} />
-                ))}
-              </Picker>
-            </View>
+                <FontAwesome6
+                  name="money-bill-transfer"
+                  size={14}
+                  color="#6c757d"
+                  style={styles.icon}
+                />
+                <TextInput
+                  value={paymentType}
+                  style={styles.pickerDisplay}
+                  placeholder="Select payment type"
+                  placeholderTextColor={"#c5c5c5ff"}
+                  editable={false}
+                  pointerEvents="none"
+                />
+                <Picker
+                  selectedValue={paymentType}
+                  onValueChange={(val) => {
+                    setPaymentType(val);
+                    setPaymentTypeError(false);
+                  }}
+                  style={styles.hiddenPicker}
+                >
+                  <Picker.Item label="Select payment type..." value="" />
+                  {paymentTypeData.map((item) => (
+                    <Picker.Item
+                      key={item.id}
+                      label={item.name}
+                      value={item.name}
+                    />
+                  ))}
+                </Picker>
+              </Animated.View>
+            )}
 
             {/* Event Tag Section */}
             <View style={styles.eventTagContainer}>
@@ -575,9 +970,9 @@ const onUpdate = async () => {
               {(() => {
                 const todayStr = new Date().toISOString().split("T")[0];
                 const filteredEvents = activeEventTags.filter(
-                  (tag) =>
-                    tag.startDate <= todayStr &&
-                    (!tag.endDate || tag.endDate >= todayStr)
+                  (tagItem) =>
+                    tagItem.startDate <= todayStr &&
+                    (!tagItem.endDate || tagItem.endDate >= todayStr)
                 );
 
                 if (filteredEvents.length === 0) {
@@ -587,10 +982,10 @@ const onUpdate = async () => {
                 }
 
                 if (filteredEvents.length === 1) {
-                  const tag = filteredEvents[0];
+                  const tagItem = filteredEvents[0];
                   return (
                     <Text style={styles.activeEventText}>
-                      🎉 {tag.name} ({tag.startDate})
+                      🎉 {tagItem.name} ({tagItem.startDate})
                     </Text>
                   );
                 }
@@ -600,13 +995,17 @@ const onUpdate = async () => {
                     <Picker
                       selectedValue={eventTag}
                       onValueChange={setEventTag}
+                      style={styles.picker}
                     >
-                      <Picker.Item label="-- Choose Active Event --" value="" />
-                      {filteredEvents.map((tag) => (
+                      <Picker.Item
+                        label="-- Choose Active Event --"
+                        value=""
+                      />
+                      {filteredEvents.map((tagItem) => (
                         <Picker.Item
-                          key={tag.id}
-                          label={`${tag.name} (${tag.startDate})`}
-                          value={tag.name}
+                          key={tagItem.id}
+                          label={`${tagItem.name} (${tagItem.startDate})`}
+                          value={tagItem.name}
                         />
                       ))}
                     </Picker>
@@ -629,28 +1028,27 @@ const onUpdate = async () => {
             {/* Period Type Selection */}
             {isPeriodic && (
               <View style={styles.periodicPicker}>
-                <View style={styles.periodicPicker}>
-                  <View style={styles.selectionBarContainer}>
-                    {periodType.map((type, index) => (
-                      <TouchableOpacity
-                        key={index}
+                <View style={styles.selectionBarContainer}>
+                  {periodType.map((type, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.typeButton,
+                        selectedPeriodType === type && styles.typeButtonActive,
+                      ]}
+                      onPress={() => setSelectedPeriodType(type)}
+                    >
+                      <Text
                         style={[
-                          styles.typeButton,
-                          selectedPeriodType === type && styles.typeButtonActive,
+                          styles.typeButtonText,
+                          selectedPeriodType === type &&
+                          styles.typeButtonTextActive,
                         ]}
-                        onPress={() => setSelectedPeriodType(type)}
                       >
-                        <Text
-                          style={[
-                            styles.typeButtonText,
-                            selectedPeriodType === type && styles.typeButtonTextActive,
-                          ]}
-                        >
-                          {type}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
                 <Text style={styles.label}>Repeat every:</Text>
@@ -669,10 +1067,17 @@ const onUpdate = async () => {
             {/* Allocate to Goal Switch */}
             {selectedOption === "Transaction" && (
               <View style={styles.switchContainer}>
-                <Text style={styles.switchLabel}>Allocate Income to Goal?</Text>
+                <Text style={styles.switchLabel}>Allocate to Goal?</Text>
                 <Switch
                   value={allocateToGoal}
-                  onValueChange={setAllocateToGoal}
+                  onValueChange={(value) => {
+                    setAllocateToGoal(value);
+                    if (!value) {
+                      setSelectedGoal(null);
+                      setSelectedSavingMethod(null);
+                      setSelectedSavingAccount(null);
+                    }
+                  }}
                   trackColor={{ false: "#ccc", true: "#9cd8b3" }}
                   thumbColor={allocateToGoal ? "#4CAF50" : "#f4f3f4"}
                 />
@@ -681,61 +1086,128 @@ const onUpdate = async () => {
 
             {/* Goal Allocation Section */}
             {selectedOption === "Transaction" && allocateToGoal && (
-              <View style={styles.goalCard}>
-                <Text style={styles.goalTitle}>Allocate Income to Goal</Text>
+              <Animated.View
+                style={[
+                  styles.goalCard,
+                  goalError && styles.inputError,
+                  { transform: [{ translateX: goalShake }] },
+                ]}
+              >
+                <Text style={styles.goalTitle}>Allocate Full Amount to Goal</Text>
 
-                {/* Goal selection */}
+                {/* GOAL LIST */}
                 <View style={styles.goalList}>
                   {goals.length > 0 ? (
-                    goals.map(goal => (
+                    goals.map((goal) => (
                       <TouchableOpacity
                         key={goal.id}
                         style={[
                           styles.goalButton,
-                          selectedGoal === goal.id && styles.goalButtonActive
+                          selectedGoal === goal.id && styles.goalButtonActive,
                         ]}
-                        onPress={() => setSelectedGoal(goal.id)}
+                        onPress={() => {
+                          setSelectedGoal(goal.id);
+                          setGoalError(false);
+                        }}
                       >
                         <Text
                           style={[
                             styles.goalButtonText,
-                            selectedGoal === goal.id && styles.goalButtonTextActive
+                            selectedGoal === goal.id && styles.goalButtonTextActive,
                           ]}
                         >
                           {goal.goalName}
                         </Text>
+                        <Text style={{ marginTop: 4, color: "#666", fontSize: 12 }}>
+                          Target: RM {(goal.targetAmount || 0).toFixed(2)}
+                        </Text>
                       </TouchableOpacity>
                     ))
                   ) : (
-                    <Text style={styles.noGoalsText}>
-                      No goals found.
-                    </Text>
+                    <Text style={styles.noGoalsText}>No goals found.</Text>
                   )}
                 </View>
 
-                {/* Slider */}
-                <View style={{ marginTop: 20 }}>
-                  <Text style={styles.label}>Select amount to save from income:</Text>
-                  <Slider
-                    style={{ width: '100%', height: 40 }}
-                    minimumValue={0}
-                    maximumValue={parseFloat(amount) || 0}
-                    step={1}
-                    value={sliderValue}
-                    onValueChange={(val) => {
-                      setSliderValue(val);
-                      const percent = amount ? ((val / parseFloat(amount)) * 100).toFixed(1) : 0;
-                      setSliderPercent(percent);
-                    }}
-                    minimumTrackTintColor="#2E5E4E"
-                    maximumTrackTintColor="#ccc"
-                    thumbTintColor="#2E5E4E"
-                  />
-                  <Text style={styles.sliderValueText}>
-                    Amount: RM {sliderValue.toFixed(2)} ({sliderPercent}% of income)
-                  </Text>
+                {/* Saving Method */}
+                <Text style={styles.subLabel}>Select Saving Method:</Text>
+                <View style={styles.methodList}>
+                  {savingMethods.map((method) => (
+                    <TouchableOpacity
+                      key={method.id}
+                      style={[
+                        styles.methodButton,
+                        selectedSavingMethod?.id === method.id && styles.methodButtonActive,
+                      ]}
+                      onPress={() => {
+                        setSelectedSavingMethod(method);
+                        setSelectedSavingAccount(null);
+                        setSavingMethodError(false);
+                      }}
+                    >
+                      <Text style={styles.methodIcon}>{method.icon_name || "🏦"}</Text>
+                      <View style={styles.methodInfo}>
+                        <Text style={styles.methodName}>{method.method_name}</Text>
+                        <Text style={styles.methodDetails}>
+                          Return: {method.expected_return}% • Risk:
+                          {"★".repeat(method.risk_level || 1)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              </View>
+
+                {/* Saving Account */}
+                {selectedSavingMethod && (
+                  <>
+                    <Text style={styles.subLabel}>Select Account:</Text>
+                    <View style={styles.accountSection}>
+                      {savingAccounts
+                        .filter((acc) => acc.method_id === selectedSavingMethod.id)
+                        .map((acc) => (
+                          <TouchableOpacity
+                            key={acc.id}
+                            style={[
+                              styles.accountButton,
+                              selectedSavingAccount?.id === acc.id &&
+                              styles.accountButtonActive,
+                            ]}
+                            onPress={() => {
+                              setSelectedSavingAccount(acc);
+                              setSavingAccountError(false);
+                            }}
+                          >
+                            <Text style={styles.accountName}>
+                              {acc.institution_name} - {acc.account_name}
+                            </Text>
+                            <Text style={styles.accountBalance}>
+                              Balance: RM {acc.current_balance?.toFixed(2) || "0.00"}
+                            </Text>
+                            <Text style={styles.accountRate}>
+                              Rate: {acc.interest_rate || 0}%
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+
+                      <TouchableOpacity
+                        style={styles.addAccountButton}
+                        onPress={() => setShowSavingAccountModal(true)}
+                      >
+                        <Ionicons
+                          name="add-circle-outline"
+                          size={20}
+                          color="#8AD0AB"
+                        />
+                        <Text style={styles.addAccountText}>Add New Account</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+
+                <Text style={{ marginTop: 12, color: "#666", fontSize: 13 }}>
+                  This will allocate the full amount (RM {parseFloat(amount || 0).toFixed(2)})
+                  to the selected goal and saving account.
+                </Text>
+              </Animated.View>
             )}
 
             {/* Action Buttons */}
@@ -753,15 +1225,33 @@ const onUpdate = async () => {
           </View>
         </ScrollView>
       </KeyboardAwareScrollView>
+
+      {/* Saving Account Modal */}
+      <AddSavingAccountModal
+        visible={showSavingAccountModal}
+        onClose={() => setShowSavingAccountModal(false)}
+        methodId={selectedSavingMethod?.id || null}
+        methodName={selectedSavingMethod?.method_name || ""}
+        savingMethods={savingMethods}
+        onAdded={async () => {
+          const updated = await getSavingAccounts(userId);
+          setSavingAccounts(updated);
+        }}
+      />
+
+
     </View>
   );
 }
 
-// Styles
+// ---------- STYLES ----------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff"
+    backgroundColor: "#fff",
+  },
+  scrollContainer: {
+    padding: 20,
   },
   card: {
     backgroundColor: "#fff",
@@ -771,9 +1261,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 3,
-  },
-  scrollContainer: {
-    padding: 20
+    marginBottom: 20,
   },
   selectionBarContainer: {
     flexDirection: "row",
@@ -813,16 +1301,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 8,
     fontSize: 16,
-  },
-  dateInput: {
-    flex: 1,
-    marginHorizontal: 8,
-    justifyContent: "center",
-    height: "100%",
-  },
-  dateText: {
-    fontSize: 16,
     color: "#333",
+  },
+  inputError: {
+    borderColor: "#ff6b6b",
+    borderWidth: 2,
   },
   pickerContainer: {
     flexDirection: "row",
@@ -841,6 +1324,11 @@ const styles = StyleSheet.create({
     color: "#6c757d",
     fontSize: 16,
   },
+  dropdownContent: {
+    flex: 1,
+    color: "#6c757d",
+    fontSize: 16,
+  },
   hiddenPicker: {
     position: "absolute",
     top: 0,
@@ -848,6 +1336,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     opacity: 0,
+  },
+  picker: {
+    width: "100%",
   },
   switchContainer: {
     flexDirection: "row",
@@ -857,11 +1348,6 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     marginRight: 10,
-    color: "#555",
-    fontSize: 16,
-  },
-  switchText: {
-    marginLeft: 10,
     color: "#555",
     fontSize: 16,
   },
@@ -896,6 +1382,12 @@ const styles = StyleSheet.create({
   periodicPicker: {
     marginTop: 10,
     marginBottom: 15,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
   },
   goalCard: {
     backgroundColor: "#fff",
@@ -948,16 +1440,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
   },
-  sliderValueText: {
-    marginTop: 5,
-    textAlign: "center",
-    color: "#333",
-  },
-  label: {
+  subLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: "#2E5E4E",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  methodList: {
+    marginTop: 5,
+    marginBottom: 10,
+  },
+  methodButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#f5f5f5",
     marginBottom: 8,
+  },
+  methodButtonActive: {
+    backgroundColor: "#9cd8b3",
+  },
+  methodIcon: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  methodInfo: {
+    flex: 1,
+  },
+  methodName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2E5E4E",
+  },
+  methodDetails: {
+    fontSize: 12,
+    color: "#555",
+  },
+  accountSection: {
+    marginTop: 8,
+  },
+  accountButton: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  accountButtonActive: {
+    backgroundColor: "#8AD0AB",
+  },
+  accountName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2E5E4E",
+  },
+  accountBalance: {
+    fontSize: 12,
+    color: "#555",
+  },
+  accountRate: {
+    fontSize: 12,
+    color: "#4CAF50",
+    marginTop: 2,
+  },
+  addAccountButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  addAccountText: {
+    marginLeft: 6,
+    color: "#2E5E4E",
+    fontWeight: "600",
   },
   actionButtons: {
     flexDirection: "row",

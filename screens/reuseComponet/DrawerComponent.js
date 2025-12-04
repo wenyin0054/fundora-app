@@ -24,6 +24,7 @@ import {
 import { Picker } from "@react-native-picker/picker";
 import { DeviceEventEmitter } from "react-native";
 import { useUser } from "../reuseComponet/UserContext";
+import AppHeader from "../reuseComponet/header";
 
 export default function CustomDrawerContent(props) {
   const [eventTagEnabled, setEventTagEnabled] = useState(false);
@@ -36,7 +37,7 @@ export default function CustomDrawerContent(props) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [activeEventTags, setActiveEventTags] = useState([]);
 
-  const { userId } = useUser(); 
+  const { userId } = useUser();
 
   const toggleEventTag = async (val) => {
     setEventTagEnabled(val);
@@ -390,6 +391,13 @@ export default function CustomDrawerContent(props) {
 
         {/* 📅 Modal Calendar */}
         <Modal visible={showCalendar} animationType="slide">
+          <AppHeader
+            title="Calendar"
+            showLeftButton={true}
+            onLeftPress={() => setShowCalendar(false)}
+            showBell={false}
+            showProfile={false}
+          />
           <View style={{ flex: 1 }}>
             <Calendar
               markingType="period"

@@ -9,7 +9,7 @@ export const initDB = async () => {
   try {
     console.log("⚙️ Initializing Fundora database...");
 
-    // 👤 Create Users Table
+    // 👤 Users Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS users (
         userId TEXT PRIMARY KEY,
@@ -19,7 +19,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 🧾 Create User Summary Table
+    // 🧾 User Summary Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS user_summary (
         userId TEXT PRIMARY KEY,
@@ -30,7 +30,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 🧾 Create Expenses Table
+    // 🧾 Expenses Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +51,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 🏦 Create Goals Table
+    // 🏦 Goals Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS goals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +65,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 🏷️ Create Tags Table
+    // 🏷️ Tags Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +76,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 🏷️ Create Event Tags Table
+    // 🏷️ Event Tags Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS eventTags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +99,7 @@ export const initDB = async () => {
       );
     `);
 
+    // 🧾 Bills Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS bills (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,6 +118,7 @@ export const initDB = async () => {
       );
     `);
 
+    // Reminders Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +133,7 @@ export const initDB = async () => {
       );
     `);
 
+    // Predictor Cache
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS predictor_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,9 +149,7 @@ export const initDB = async () => {
       );
     `);
 
-    // 在 initDB() 函數中添加以下表：
-
-    // 1. 儲蓄方式類型表
+    // Saving Methods
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS saving_methods (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,13 +161,13 @@ export const initDB = async () => {
         expected_return REAL,
         color_code TEXT,
         icon_name TEXT,
-        is_default INTEGER DEFAULT 0,  -- 0: custom, 1: default
+        is_default INTEGER DEFAULT 0,
         UNIQUE(userId, method_name),
         FOREIGN KEY (userId) REFERENCES users(userId)
       );
     `);
 
-    // 2. 具體賬戶表
+    // Saving Accounts Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS saving_accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,12 +185,13 @@ export const initDB = async () => {
       );
     `);
 
-    // 3. 目標資金分配表 (核心!)
+    // Goal Fund Allocations Table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS goal_fund_allocations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
         goalId INTEGER,
+        method_id INTEGER,
         account_id INTEGER,
         allocated_amount REAL,
         allocation_date TEXT,
@@ -197,7 +199,7 @@ export const initDB = async () => {
         maturity_date TEXT,
         current_value REAL,
         expected_value REAL,
-        status TEXT DEFAULT 'active', -- active, matured, withdrawn, reinvested
+        status TEXT DEFAULT 'active',
         notes TEXT,
         FOREIGN KEY (goalId) REFERENCES goals(id),
         FOREIGN KEY (account_id) REFERENCES saving_accounts(id),
@@ -206,6 +208,7 @@ export const initDB = async () => {
       );
     `);
 
+    // Withdrawal Records
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS withdrawal_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -216,7 +219,7 @@ export const initDB = async () => {
         principal_amount REAL,
         interest_amount REAL,
         withdrawal_date TEXT DEFAULT (datetime('now')),
-        status TEXT DEFAULT 'pending', -- pending, completed, cancelled
+        status TEXT DEFAULT 'pending',
         confirmed_amount REAL,
         confirmed_date TEXT,
         notes TEXT,
@@ -225,25 +228,6 @@ export const initDB = async () => {
         FOREIGN KEY (userId) REFERENCES users(userId)
       );
     `);
-
-    // Add new columns if not exist
-    try {
-      await db.execAsync(`ALTER TABLE bills ADD COLUMN periodType TEXT DEFAULT 'Yearly';`);
-      console.log("✅ Added periodType column to bills table");
-    } catch (error) {
-      if (!error.message.includes("duplicate column")) {
-        console.error(error);
-      }
-    }
-
-    try {
-      await db.execAsync(`ALTER TABLE bills ADD COLUMN periodInterval INTEGER DEFAULT 0;`);
-      console.log("✅ Added periodInterval column to bills table");
-    } catch (error) {
-      if (!error.message.includes("duplicate column")) {
-        console.error(error);
-      }
-    }
 
     console.log("✅ All database tables are ready with user isolation");
   } catch (error) {
@@ -282,6 +266,7 @@ export const getUserSummary = async (userId) => {
 };
 
 export const updateUserSummary = async (userId, type, amount) => {
+  await createUserSummary(userId);
   console.log("Updating user summary:", { userId, type, amount });
 
   if (type === "income") {
@@ -436,12 +421,12 @@ export const addExpenseLocal = async (
   periodInterval = 0
 ) => {
   try {
-    await db.runAsync(
+    const result = await db.runAsync(
       `INSERT INTO expenses (
-      userId, payee, amount, date, tag, eventTag,
-      paymentType, isPeriodic, type, typeLabel,
-      essentialityLabel, goalId, periodInterval
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        userId, payee, amount, date, tag, eventTag,
+        paymentType, isPeriodic, type, typeLabel,
+        essentialityLabel, goalId, periodInterval
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         payee,
@@ -455,7 +440,7 @@ export const addExpenseLocal = async (
         typeLabel,
         essentialityLabel,
         goalId,
-        periodInterval
+        periodInterval,
       ]
     );
 
@@ -464,8 +449,12 @@ export const addExpenseLocal = async (
       userId, payee, amount, date, tag, eventTag, paymentType,
       isPeriodic, typeLabel, essentialityLabel, goalId, periodInterval
     });
+
+    return result.lastInsertRowId;
+
   } catch (error) {
     console.error("❌ addExpenseLocal error:", error);
+    throw error;
   }
 };
 
@@ -516,8 +505,8 @@ export const deleteExpenseLocal = async (userId, id) => {
 
 // Update expense
 export const updateExpenseLocal = async (
-  userId,
-  id,
+  id,               // ❶ expense ID
+  userId,           // ❷ user ID
   payee,
   amount,
   date,
@@ -561,8 +550,8 @@ export const updateExpenseLocal = async (
         essentialityLabel ?? 0,
         goalId ?? null,
         periodInterval ?? 0,
-        id,
-        userId
+        id,         // correct
+        userId,     // correct
       ]
     );
 
@@ -571,6 +560,7 @@ export const updateExpenseLocal = async (
     console.error("❌ Error updating expense in local database:", error);
   }
 };
+
 
 export const getExpensesByTypeLabelLocal = async (userId, typeLabel) => {
   try {
@@ -711,6 +701,19 @@ export const updateGoalAmount = async (userId, goalId, amount) => {
     console.error("❌ Error updating goal amount:", error);
   }
 };
+export const isGoalNameDuplicate = async (userId, goalName) => {
+  try {
+    const result = await db.getFirstAsync(
+      `SELECT id FROM goals WHERE userId = ? AND LOWER(goalName) = LOWER(?) LIMIT 1`,
+      [userId, goalName.trim()]
+    );
+    return !!result;
+  } catch (error) {
+    console.error("❌ isGoalNameDuplicate error:", error);
+    return false;
+  }
+};
+
 
 // ------------------- TAGS CRUD -------------------
 export const createTagTable = async () => {
@@ -1008,6 +1011,19 @@ export const deleteBillLocal = async (userId, id) => {
     throw err;
   }
 };
+export const isBillNameDuplicate = async (userId, billName) => {
+  try {
+    const result = await db.getFirstAsync(
+      `SELECT id FROM bills WHERE userId = ? AND LOWER(billName) = LOWER(?) LIMIT 1`,
+      [userId, billName.trim()]
+    );
+    return !!result; // true = duplicate
+  } catch (error) {
+    console.error("❌ isBillNameDuplicate error:", error);
+    return false;
+  }
+};
+
 
 // ------------------- reminder CRUD -------------------
 export const getRemindersLocal = async (userId, limit = 5) => {
@@ -1244,12 +1260,12 @@ function normalize(payee) {
 // 初始化預設儲蓄方式
 export const initDefaultSavingMethods = async (userId) => {
   const defaultMethods = [
-    { method_name: "Fixed Deposit", method_type: "bank", risk_level: 1, liquidity_level: 3, expected_return: 3.2, color_code: "#4CAF50", icon_name: "🏦",is_default: 1 },
-    { method_name: "Gold Bar", method_type: "physical", risk_level: 2, liquidity_level: 2, expected_return: 5.0, color_code: "#FFD700", icon_name: "🥇",is_default: 1 },
-    { method_name: "Unit Trust", method_type: "investment", risk_level: 3, liquidity_level: 4, expected_return: 8.0, color_code: "#2196F3", icon_name: "📈",is_default: 1 },
-    { method_name: "Stocks", method_type: "investment", risk_level: 4, liquidity_level: 5, expected_return: 12.0, color_code: "#FF9800", icon_name: "📊",is_default: 1 },
-    { method_name: "Cash", method_type: "cash", risk_level: 1, liquidity_level: 5, expected_return: 0.0, color_code: "#9E9E9E", icon_name: "💵",is_default: 1 },
-    { method_name: "Digital Gold", method_type: "digital", risk_level: 2, liquidity_level: 5, expected_return: 6.0, color_code: "#FFC107", icon_name: "📱",is_default: 1 }
+    { method_name: "Fixed Deposit", method_type: "bank", risk_level: 1, liquidity_level: 3, expected_return: 3.2, color_code: "#4CAF50", icon_name: "🏦", is_default: 1 },
+    { method_name: "Gold Bar", method_type: "physical", risk_level: 2, liquidity_level: 2, expected_return: 5.0, color_code: "#FFD700", icon_name: "🥇", is_default: 1 },
+    { method_name: "Unit Trust", method_type: "investment", risk_level: 3, liquidity_level: 4, expected_return: 8.0, color_code: "#2196F3", icon_name: "📈", is_default: 1 },
+    { method_name: "Stocks", method_type: "investment", risk_level: 4, liquidity_level: 5, expected_return: 12.0, color_code: "#FF9800", icon_name: "📊", is_default: 1 },
+    { method_name: "Cash", method_type: "cash", risk_level: 1, liquidity_level: 5, expected_return: 0.0, color_code: "#9E9E9E", icon_name: "💵", is_default: 1 },
+    { method_name: "Digital Gold", method_type: "digital", risk_level: 2, liquidity_level: 5, expected_return: 6.0, color_code: "#FFC107", icon_name: "📱", is_default: 1 }
   ];
 
   for (const method of defaultMethods) {
@@ -1257,8 +1273,8 @@ export const initDefaultSavingMethods = async (userId) => {
       `INSERT OR IGNORE INTO saving_methods 
        (userId, method_name, method_type, risk_level, liquidity_level, expected_return, color_code, icon_name)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, method.method_name, method.method_type, method.risk_level, 
-       method.liquidity_level, method.expected_return, method.color_code, method.icon_name]
+      [userId, method.method_name, method.method_type, method.risk_level,
+        method.liquidity_level, method.expected_return, method.color_code, method.icon_name]
     );
   }
   console.log("✅ Default saving methods initialized");
@@ -1272,6 +1288,7 @@ export const addSavingAccount = async (userId, method_id, account_name, institut
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [userId, method_id, account_name, institution_name, account_number, interest_rate, maturity_date, notes]
   );
+  console.log(`✅ Saving account '${account_name}' added for user ${userId}`);
 };
 
 // 獲取儲蓄方式
@@ -1292,11 +1309,17 @@ export const getSavingAccounts = async (userId) => {
     [userId]
   );
 };
+export const getAllocationByTransaction = async (userId, transactionId) => {
+  return await db.getFirstAsync(
+    `SELECT * FROM goal_fund_allocations 
+     WHERE userId = ? AND transaction_id = ? 
+     LIMIT 1`,
+    [userId, transactionId]
+  );
+};
+
 
 // ------------------- GOAL FUND ALLOCATION -------------------
-// 在 SQLite.js 中添加這些函數
-
-// 添加儲蓄方式
 export const addSavingMethod = async (userId, methodData) => {
   try {
     await db.runAsync(
@@ -1324,7 +1347,6 @@ export const addSavingMethod = async (userId, methodData) => {
   }
 };
 
-// 更新儲蓄方式
 export const updateSavingMethod = async (userId, methodId, methodData) => {
   try {
     await db.runAsync(
@@ -1352,19 +1374,17 @@ export const updateSavingMethod = async (userId, methodId, methodData) => {
   }
 };
 
-// 刪除儲蓄方式
 export const deleteSavingMethod = async (userId, methodId) => {
   try {
-    // 檢查是否有賬戶使用這個方法
     const accounts = await db.getAllAsync(
       `SELECT id FROM saving_accounts WHERE method_id = ? AND userId = ?`,
       [methodId, userId]
     );
-    
+
     if (accounts.length > 0) {
       throw new Error("Cannot delete method with existing accounts");
     }
-    
+
     await db.runAsync(
       `DELETE FROM saving_methods WHERE id = ? AND userId = ? AND is_default = 0`,
       [methodId, userId]
@@ -1377,32 +1397,29 @@ export const deleteSavingMethod = async (userId, methodId) => {
   }
 };
 
-// 分配資金到具體賬戶
-export const allocateFundToGoal = async (userId, goalId, account_id, allocated_amount, allocation_date, transaction_id, maturity_date, notes = "") => {
+export const allocateFundToGoal = async (userId, goalId, account_id, allocated_amount, allocation_date, transaction_id, maturity_date, notes = "", method_id) => {
   try {
-    // 計算預期價值
     const account = await db.getFirstAsync(
       `SELECT interest_rate FROM saving_accounts WHERE id = ? AND userId = ?`,
       [account_id, userId]
     );
-    
+
     const interest_rate = account?.interest_rate || 0;
     const expected_value = allocated_amount * (1 + interest_rate / 100);
-    
+
     await db.runAsync(
       `INSERT INTO goal_fund_allocations 
-       (userId, goalId, account_id, allocated_amount, allocation_date, transaction_id, maturity_date, current_value, expected_value, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, goalId, account_id, allocated_amount, allocation_date, transaction_id, 
-       maturity_date, allocated_amount, expected_value, notes]
+       (userId, goalId, account_id, method_id, allocated_amount, allocation_date, transaction_id, maturity_date, current_value, expected_value, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, goalId, account_id, method_id, allocated_amount, allocation_date, transaction_id,
+        maturity_date, allocated_amount, expected_value, notes]
     );
-    
-    // 更新賬戶餘額
+
     await db.runAsync(
       `UPDATE saving_accounts SET current_balance = current_balance + ? WHERE id = ? AND userId = ?`,
       [allocated_amount, account_id, userId]
     );
-    
+
     console.log(`✅ Fund allocated to goal: ${allocated_amount} to account ${account_id}`);
   } catch (error) {
     console.error("❌ allocateFundToGoal error:", error);
@@ -1410,24 +1427,18 @@ export const allocateFundToGoal = async (userId, goalId, account_id, allocated_a
   }
 };
 
-// 獲取目標的資金分配詳情
 export const getGoalFundAllocations = async (userId, goalId) => {
   return await db.getAllAsync(
     `SELECT gfa.*, 
-            sa.account_name, 
-            sa.institution_name, 
-            sa.interest_rate,  
-            sa.maturity_date,
-            sm.method_name, 
-            sm.icon_name, 
-            sm.color_code
-     FROM goal_fund_allocations gfa
-     JOIN saving_accounts sa ON gfa.account_id = sa.id
-     JOIN saving_methods sm ON sa.method_id = sm.id
-     WHERE gfa.userId = ? AND gfa.goalId = ? AND gfa.status = 'active'
-     ORDER BY gfa.allocation_date DESC;`,
-    [userId, goalId] 
-  );
+       sa.account_name, sa.institution_name, sa.interest_rate,
+       sm.method_name, sm.icon_name, sm.color_code
+      FROM goal_fund_allocations gfa
+      JOIN saving_accounts sa ON gfa.account_id = sa.id
+      JOIN saving_methods sm ON gfa.method_id = sm.id
+      WHERE gfa.userId = ? AND gfa.goalId = ?
+      ORDER BY gfa.allocation_date DESC;`,
+    [userId, goalId]
+  ); 
 };
 
 // ------------------- WITHDRAWAL MANAGEMENT -------------------
@@ -1440,12 +1451,12 @@ export const createWithdrawalRecord = async (userId, goalId, allocation_id, with
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [userId, goalId, allocation_id, withdrawal_amount, principal_amount, interest_amount, notes]
     );
-    
+
     console.log(`✅ Withdrawal record created for allocation ${allocation_id}`);
-    return { success: true, id: result.insertId }; 
+    return { success: true, id: result.insertId };
   } catch (error) {
     console.error("❌ createWithdrawalRecord error:", error);
-    return { success: false, error: error.message }; 
+    return { success: false, error: error.message };
   }
 };
 
@@ -1453,7 +1464,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
   try {
     console.log("🔄 Starting withdrawal confirmation...", { userId, withdrawal_id, confirmed_amount });
 
-    // 驗證輸入
+
     if (!withdrawal_id || !confirmed_amount || confirmed_amount <= 0) {
       throw new Error("Invalid withdrawal confirmation parameters");
     }
@@ -1462,7 +1473,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
       `SELECT * FROM withdrawal_records WHERE id = ? AND userId = ? AND status = 'pending'`,
       [withdrawal_id, userId]
     );
-    
+
     if (!withdrawal) {
       throw new Error("Withdrawal record not found or already processed");
     }
@@ -1474,9 +1485,9 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
       interest: withdrawal.interest_amount
     });
 
-    // 開始事務
+
     await db.execAsync('BEGIN TRANSACTION');
-    
+
     try {
       // 1. 更新提取記錄狀態
       console.log("1. Updating withdrawal record status...");
@@ -1486,7 +1497,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
          WHERE id = ? AND userId = ?`,
         [confirmed_amount, withdrawal_id, userId]
       );
-      
+
       if (updateResult.rowsAffected === 0) {
         throw new Error("Failed to update withdrawal record");
       }
@@ -1497,7 +1508,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         `UPDATE goal_fund_allocations SET status = 'withdrawn' WHERE id = ? AND userId = ?`,
         [withdrawal.allocation_id, userId]
       );
-      
+
       if (allocationResult.rowsAffected === 0) {
         throw new Error("Failed to update fund allocation status");
       }
@@ -1508,12 +1519,12 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
       if (!accountId) {
         throw new Error("Could not find account for allocation");
       }
-      
+
       const accountResult = await db.runAsync(
         `UPDATE saving_accounts SET current_balance = current_balance - ? WHERE id = ? AND userId = ?`,
         [withdrawal.principal_amount, accountId, userId]
       );
-      
+
       if (accountResult.rowsAffected === 0) {
         throw new Error("Failed to update account balance");
       }
@@ -1524,7 +1535,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         `UPDATE goals SET currentAmount = currentAmount - ? WHERE id = ? AND userId = ?`,
         [withdrawal.principal_amount, withdrawal.goalId, userId]
       );
-      
+
       if (goalResult.rowsAffected === 0) {
         throw new Error("Failed to update goal current amount");
       }
@@ -1533,15 +1544,15 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
       console.log("5. Updating user summary...");
       console.log("   - Releasing expense:", -withdrawal.principal_amount);
       console.log("   - Adding interest income:", withdrawal.interest_amount);
-      
+
       await updateUserSummary(userId, "expense", -withdrawal.principal_amount);
       await updateUserSummary(userId, "income", withdrawal.interest_amount);
 
       // 提交事務
       await db.execAsync('COMMIT');
-      
+
       console.log(`✅ Withdrawal confirmed successfully: ${withdrawal_id}, amount: ${confirmed_amount}`);
-      
+
       return {
         success: true,
         withdrawal_id: withdrawal_id,
@@ -1549,14 +1560,14 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         principal: withdrawal.principal_amount,
         interest: withdrawal.interest_amount
       };
-      
+
     } catch (error) {
       // 回滾事務
       await db.execAsync('ROLLBACK');
       console.error("❌ Transaction failed, rolling back...", error);
       throw error;
     }
-    
+
   } catch (error) {
     console.error("❌ confirmWithdrawal error:", error);
     throw error;
@@ -1627,12 +1638,73 @@ const getAllocationAccountId = async (allocation_id) => {
   return result?.account_id;
 };
 
+export const updateAllocationAfterWithdraw = async (
+  userId,
+  allocationId,
+  withdrawAmount
+) => {
+  try {
+    // 1. Get original allocation data
+    const alloc = await db.getFirstAsync(
+      `SELECT allocated_amount, expected_value, account_id, goalId
+       FROM goal_fund_allocations
+       WHERE id = ? AND userId = ?`,
+      [allocationId, userId]
+    );
+
+    if (!alloc) throw new Error("Allocation not found");
+
+    // 2. Get interest rate of this account
+    const account = await db.getFirstAsync(
+      `SELECT interest_rate FROM saving_accounts WHERE id = ? AND userId = ?`,
+      [alloc.account_id, userId]
+    );
+
+    if (!account) throw new Error("Account not found");
+
+    const r = account.interest_rate / 100;
+
+    // 3. Reverse interest calculation
+    const expected_new = alloc.expected_value - withdrawAmount;
+
+    if (expected_new < 0) throw new Error("Withdraw amount exceeds total balance");
+
+    const allocated_new = expected_new / (1 + r);
+
+    // 4. Update new allocated & expected values
+    await db.runAsync(
+      `UPDATE goal_fund_allocations
+       SET allocated_amount = ?, expected_value = ?, current_value = ?
+       WHERE id = ? AND userId = ?`,
+      [allocated_new, expected_new, expected_new, allocationId, userId]
+    );
+
+    // 5. Increase available saving account balance
+    await db.runAsync(
+      `UPDATE saving_accounts
+       SET current_balance = current_balance + ?
+       WHERE id = ? AND userId = ?`,
+      [withdrawAmount, alloc.account_id, userId]
+    );
+
+    // 6. Recalculate goal total
+    await recalculateGoalCurrentAmount(userId, alloc.goalId);
+
+    return true;
+
+  } catch (err) {
+    console.error("❌ updateAllocationAfterWithdraw error:", err);
+    throw err;
+  }
+};
+
+
 // ------------------- MATURITY MANAGEMENT -------------------
 
 // 檢查到期的分配
 export const checkMaturedAllocations = async (userId) => {
   const today = new Date().toISOString().split('T')[0];
-  
+
   const maturedAllocations = await db.getAllAsync(
     `SELECT gfa.*, g.goalName, sa.account_name, sa.institution_name
      FROM goal_fund_allocations gfa
@@ -1641,7 +1713,7 @@ export const checkMaturedAllocations = async (userId) => {
      WHERE gfa.userId = ? AND gfa.status = 'active' AND gfa.maturity_date <= ?`,
     [userId, today]
   );
-  
+
   return maturedAllocations;
 };
 
@@ -1649,22 +1721,22 @@ export const checkMaturedAllocations = async (userId) => {
 export const processMaturedAllocations = async (userId) => {
   try {
     const maturedAllocations = await checkMaturedAllocations(userId);
-    
+
     for (const allocation of maturedAllocations) {
       // 計算利息
       const interest_amount = allocation.current_value - allocation.allocated_amount;
-      
+
       // 創建提取記錄（自動確認）
       await createWithdrawalRecord(
-        userId, 
-        allocation.goalId, 
-        allocation.id, 
+        userId,
+        allocation.goalId,
+        allocation.id,
         allocation.current_value,
         allocation.allocated_amount,
         interest_amount,
         "Auto-processed upon maturity"
       );
-      
+
       // 自動確認提取
       const withdrawal = await db.getFirstAsync(
         `SELECT id FROM withdrawal_records 
@@ -1672,14 +1744,14 @@ export const processMaturedAllocations = async (userId) => {
          ORDER BY id DESC LIMIT 1`,
         [allocation.id]
       );
-      
+
       if (withdrawal) {
         await confirmWithdrawal(userId, withdrawal.id, allocation.current_value);
       }
-      
+
       console.log(`✅ Matured allocation processed: ${allocation.id}`);
     }
-    
+
     return maturedAllocations.length;
   } catch (error) {
     console.error("❌ processMaturedAllocations error:", error);
@@ -1695,7 +1767,7 @@ export const updateAllocationCurrentValue = async (userId, allocation_id, new_cu
     `UPDATE goal_fund_allocations SET current_value = ? WHERE id = ? AND userId = ?`,
     [new_current_value, allocation_id, userId]
   );
-  
+
   // 重新計算目標總金額
   await recalculateGoalCurrentAmount(userId, await db.getFirstAsync(
     `SELECT goalId FROM goal_fund_allocations WHERE id = ?`, [allocation_id]
@@ -1709,9 +1781,9 @@ const recalculateGoalCurrentAmount = async (userId, goalId) => {
      WHERE userId = ? AND goalId = ? AND status = 'active'`,
     [userId, goalId]
   );
-  
+
   const totalCurrentValue = allocations.reduce((sum, alloc) => sum + (alloc.current_value || 0), 0);
-  
+
   await db.runAsync(
     `UPDATE goals SET currentAmount = ? WHERE id = ? AND userId = ?`,
     [totalCurrentValue, goalId, userId]

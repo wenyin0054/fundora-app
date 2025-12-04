@@ -297,6 +297,27 @@ export default function ProfileScreen({ navigation }) {
           editable={isEditing}
         />
       </View>
+
+      {/* Face ID Card */}
+      <View style={styles.faceCard}>
+        <View style={styles.faceCardLeft}>
+          <Ionicons name="scan-outline" size={28} color="#57C0A1" />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={styles.faceCardTitle}>Face ID Registration</Text>
+            <Text style={styles.faceCardSubtitle}>
+              Register your face for secure login
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.faceCardButton}
+          onPress={() => navigation.navigate("FaceRegistration")}
+        >
+          <Text style={styles.faceCardButtonText}>Register</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.switchRow}>
         <Text style={styles.label}>Daily Quizzes</Text>
         <Switch
@@ -531,5 +552,53 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 10,
   },
+faceCard: {
+  backgroundColor: "#fff",
+  borderRadius: 14,
+  padding: 16,
+  marginBottom: 16,
+  marginTop: 10,
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  borderWidth: 1,
+  borderColor: "#E5E7EB",
+  shadowColor: "#000",
+  shadowOpacity: 0.05,
+  shadowRadius: 4,
+  elevation: 2,
+},
+
+faceCardLeft: {
+  flexDirection: "row",
+  alignItems: "center",
+  flex: 1,
+},
+
+faceCardTitle: {
+  fontSize: 16,
+  fontWeight: "700",
+  color: "#1f2937",
+},
+
+faceCardSubtitle: {
+  fontSize: 12,
+  color: "#6b7280",
+  marginTop: 2,
+},
+
+faceCardButton: {
+  width: 80,
+  backgroundColor: "#57C0A1",
+  paddingHorizontal: 11,
+  paddingVertical: 10,
+  borderRadius: 10,
+},
+
+faceCardButtonText: {
+  color: "#fff",
+  fontWeight: "600",
+  fontSize: 14,
+},
 
 });

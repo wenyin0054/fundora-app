@@ -7,36 +7,32 @@
     "icon": "./assets/fundora_Logo.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-
     "splash": {
       "image": "./assets/fundora_Logo-removebg-preview.png",
       "resizeMode": "contain",
       "backgroundColor": "#f5efe1"
     },
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/fundora_Logo.jpg",
         "backgroundColor": "#f5efe1"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.FundoraApp"
+      "package": "com.anonymous.FundoraApp",
+      "userInterfaceStyle": "light",
+      "forceDarkMode": false
     },
-
     "web": {
       "favicon": "./assets/fundora_Logo-removebg-preview.png"
     },
-
     "plugins": [
       "expo-sqlite",
       "expo-camera",
       "react-native-vision-camera"
     ],
-
     "extra": {
       "eas": {
         "projectId": "394d1485-87d8-4cd7-822d-9614995faa13"

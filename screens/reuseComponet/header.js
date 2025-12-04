@@ -172,5 +172,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 35, 
+    placeholderTextColor:"#c5c5c5ff",
   },
 });

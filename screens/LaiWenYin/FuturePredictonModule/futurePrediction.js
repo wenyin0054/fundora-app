@@ -1,4 +1,4 @@
-import React, { useState, useRef ,useEffect} from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import { MotiView } from "moti";
 import { Ionicons } from '@expo/vector-icons';
 import { getUserIncome } from "../../../database/userAuth";
 import { getTotalExpensesLocal } from "../../../database/SQLite"
-import { LineChart} from "react-native-chart-kit" ;
+import { LineChart } from "react-native-chart-kit";
 const screenWidth = Dimensions.get("window").width;
 
 // Validation limits
@@ -55,33 +55,33 @@ export default function FuturePredictionScreen() {
   const [showIncomeDropdown, setShowIncomeDropdown] = useState(false);
   const [showInflationDropdown, setShowInflationDropdown] = useState(false);
   const { userLevel, userId } = useUser();
-const [data, setData] = useState({
-  currentIncome: "",
-  currentExpenses: "",
-  incomeGrowth: 10,
-  inflation: 2.5,
-  years: 5,
-});
+  const [data, setData] = useState({
+    currentIncome: "",
+    currentExpenses: "",
+    incomeGrowth: 10,
+    inflation: 2.5,
+    years: 5,
+  });
 
   useEffect(() => {
     loadData();
   }, []);
 
   //String() makes input editable
-const loadData = async () => {
-  try {
-    const income = await getUserIncome(userId);
-    const expenses = await getTotalExpensesLocal(userId);
-    console.log("Loaded income and expenses:", income, expenses);
-    setData(prev => ({
-      ...prev,
-      currentIncome: income ? String(Number(income)) : "",
-      currentExpenses: expenses ? String(Number(expenses)) : "",
-    }));
-  } catch (err) {
-    console.log("Failed loading data:", err);
-  }
-};
+  const loadData = async () => {
+    try {
+      const income = await getUserIncome(userId);
+      const expenses = await getTotalExpensesLocal(userId);
+      console.log("Loaded income and expenses:", income, expenses);
+      setData(prev => ({
+        ...prev,
+        currentIncome: income ? String(Number(income)) : "",
+        currentExpenses: expenses ? String(Number(expenses)) : "",
+      }));
+    } catch (err) {
+      console.log("Failed loading data:", err);
+    }
+  };
 
 
 
@@ -98,13 +98,13 @@ const loadData = async () => {
   const showSavingsComparisonTips = () => {
     showTip('futurePrediction', 'SavingsComparison');
   };
-    const showYearlyBreakdownTips = () => {
+  const showYearlyBreakdownTips = () => {
     showTip('futurePrediction', 'YearlyBreakdown');
   };
-    const showRiskAssessmentTips = () => {
+  const showRiskAssessmentTips = () => {
     showTip('futurePrediction', 'riskAnalysis');
   };
-  
+
   const [calculationLoading, setCalculationLoading] = useState(false);
   const [incomeError, setIncomeError] = useState('');
   const [expensesError, setExpensesError] = useState('');
@@ -297,95 +297,95 @@ const loadData = async () => {
 
   // Core calculation function - implements your original formula
   const calculateProjection = async () => {
-  // Validate inputs
-  const incomeError = validateIncome(data.currentIncome);
-  const expensesError = validateExpenses(data.currentExpenses);
-  const yearsError = validateYears(data.years);
-  const incomeGrowthError = validateIncomeGrowth(data.incomeGrowth);
-  const inflationError = validateInflation(data.inflation);
+    // Validate inputs
+    const incomeError = validateIncome(data.currentIncome);
+    const expensesError = validateExpenses(data.currentExpenses);
+    const yearsError = validateYears(data.years);
+    const incomeGrowthError = validateIncomeGrowth(data.incomeGrowth);
+    const inflationError = validateInflation(data.inflation);
 
-  setIncomeError(incomeError);
-  setExpensesError(expensesError);
-  setYearsError(yearsError);
-  setIncomeGrowthError(incomeGrowthError);
-  setInflationError(inflationError);
+    setIncomeError(incomeError);
+    setExpensesError(expensesError);
+    setYearsError(yearsError);
+    setIncomeGrowthError(incomeGrowthError);
+    setInflationError(inflationError);
 
-  const errors = [incomeError, expensesError, yearsError, incomeGrowthError, inflationError]
-    .filter(e => e !== null);
+    const errors = [incomeError, expensesError, yearsError, incomeGrowthError, inflationError]
+      .filter(e => e !== null);
 
-  if (errors.length > 0) {
-    runShake(cardShakeAnim);
-    showToast("Please fix the errors before generating projection", "error");
-    return;
-  }
-
-  setCalculationLoading(true);
-  await new Promise(r => setTimeout(r, 600));
-
-  try {
-    const income = Number(data.currentIncome);
-    const expenses = Number(data.currentExpenses);
-    const growth = Number(data.incomeGrowth) / 100;
-    const inflation = Number(data.inflation) / 100;
-    const years = Number(data.years);
-
-    let yearlyBreakdown = [];
-
-    for (let year = 1; year <= years; year++) {
-      const futureIncome = income * Math.pow(1 + growth, year);
-      const futureExpenses = expenses * Math.pow(1 + inflation, year);
-      const futureNetSavings = futureIncome - futureExpenses;
-
-      yearlyBreakdown.push({
-        year,
-        futureIncome: Number(futureIncome.toFixed(2)),
-        futureExpenses: Number(futureExpenses.toFixed(2)),
-        futureSavings: Number(futureNetSavings.toFixed(2)),
-      });
+    if (errors.length > 0) {
+      runShake(cardShakeAnim);
+      showToast("Please fix the errors before generating projection", "error");
+      return;
     }
 
-    /** FINAL YEAR RESULT */
-    const last = yearlyBreakdown[yearlyBreakdown.length - 1];
+    setCalculationLoading(true);
+    await new Promise(r => setTimeout(r, 600));
 
-    /** REAL (INFLATION-ADJUSTED) VALUE LOSS */
-    const inflationLoss =
-      last.futureSavings -
-      last.futureSavings / Math.pow(1 + inflation, years);
+    try {
+      const income = Number(data.currentIncome);
+      const expenses = Number(data.currentExpenses);
+      const growth = Number(data.incomeGrowth) / 100;
+      const inflation = Number(data.inflation) / 100;
+      const years = Number(data.years);
 
-    /** MONTHS OF COVERAGE (Realistic emergency approximation) */
-    const monthlySurplus = Math.max(income - expenses, 0);
-    const monthsOfExpenses =
-      monthlySurplus === 0 ? 0 : Number((monthlySurplus / expenses).toFixed(1));
+      let yearlyBreakdown = [];
 
-    /** EMERGENCY FUND GOAL */
-    const emergencyTarget = expenses * 6;
-    const emergencyEstimate = Math.min(monthlySurplus, emergencyTarget);
+      for (let year = 1; year <= years; year++) {
+        const futureIncome = income * Math.pow(1 + growth, year);
+        const futureExpenses = expenses * Math.pow(1 + inflation, year);
+        const futureNetSavings = futureIncome - futureExpenses;
 
-    /** NET GROWTH RATE */
-    const netGrowthRate = Number(((data.incomeGrowth - data.inflation)).toFixed(1));
+        yearlyBreakdown.push({
+          year,
+          futureIncome: Number(futureIncome.toFixed(2)),
+          futureExpenses: Number(futureExpenses.toFixed(2)),
+          futureSavings: Number(futureNetSavings.toFixed(2)),
+        });
+      }
 
-    setResult({
-      yearlyBreakdown,
-      futureSavings: last.futureSavings,
-      inflationLoss: Number(inflationLoss.toFixed(2)),
-      monthsOfExpenses,
-      emergencyTarget: Math.round(emergencyTarget),
-      emergencyGoal: Math.round(emergencyEstimate),
-      netGrowthRate,
-      currentNetSavings: Math.round(income - expenses),
-      financialHealth: calculateFinancialHealth(monthsOfExpenses, netGrowthRate, income, expenses),
-      recommendation: generateRecommendation(monthsOfExpenses, netGrowthRate, inflationLoss, income, expenses),
-    });
+      /** FINAL YEAR RESULT */
+      const last = yearlyBreakdown[yearlyBreakdown.length - 1];
 
-    showToast("Projection generated successfully!", "success");
+      /** REAL (INFLATION-ADJUSTED) VALUE LOSS */
+      const inflationLoss =
+        last.futureSavings -
+        last.futureSavings / Math.pow(1 + inflation, years);
 
-  } catch (err) {
-    console.log("Calculation error:", err);
-    showToast("Error generating projection.", "error");
-  } finally {
-    setCalculationLoading(false);
-  }
-};
+      /** MONTHS OF COVERAGE (Realistic emergency approximation) */
+      const monthlySurplus = Math.max(income - expenses, 0);
+      const monthsOfExpenses =
+        monthlySurplus === 0 ? 0 : Number((monthlySurplus / expenses).toFixed(1));
+
+      /** EMERGENCY FUND GOAL */
+      const emergencyTarget = expenses * 6;
+      const emergencyEstimate = Math.min(monthlySurplus, emergencyTarget);
+
+      /** NET GROWTH RATE */
+      const netGrowthRate = Number(((data.incomeGrowth - data.inflation)).toFixed(1));
+
+      setResult({
+        yearlyBreakdown,
+        futureSavings: last.futureSavings,
+        inflationLoss: Number(inflationLoss.toFixed(2)),
+        monthsOfExpenses,
+        emergencyTarget: Math.round(emergencyTarget),
+        emergencyGoal: Math.round(emergencyEstimate),
+        netGrowthRate,
+        currentNetSavings: Math.round(income - expenses),
+        financialHealth: calculateFinancialHealth(monthsOfExpenses, netGrowthRate, income, expenses),
+        recommendation: generateRecommendation(monthsOfExpenses, netGrowthRate, inflationLoss, income, expenses),
+      });
+
+      showToast("Projection generated successfully!", "success");
+
+    } catch (err) {
+      console.log("Calculation error:", err);
+      showToast("Error generating projection.", "error");
+    } finally {
+      setCalculationLoading(false);
+    }
+  };
 
 
   const calculateFinancialHealth = (monthsOfExpenses, growthRate, income, expenses) => {
@@ -448,7 +448,7 @@ const loadData = async () => {
     <View style={styles.card}>
       <View style={styles.sectionHeader}>
         <Text style={styles.subtitle}>📊 Yearly Breakdown</Text>
-         <TouchableOpacity onPress={showYearlyBreakdownTips} style={styles.infoIconTouchable}>
+        <TouchableOpacity onPress={showYearlyBreakdownTips} style={styles.infoIconTouchable}>
           <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
         </TouchableOpacity>
       </View>
@@ -505,8 +505,8 @@ const loadData = async () => {
         <View style={styles.healthHeader}>
           <Text style={styles.healthLabel}>Financial Health Score</Text>
           <TouchableOpacity onPress={showFinancialHealthTips} style={styles.infoIconTouchable}>
-          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
-        </TouchableOpacity>
+            <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+          </TouchableOpacity>
         </View>
         <Progress.Bar
           progress={score / 100}
@@ -636,8 +636,8 @@ const loadData = async () => {
         <View style={styles.sectionHeader}>
           <Text style={styles.subtitle}>📊 Risk Assessment</Text>
           <TouchableOpacity onPress={showRiskAssessmentTips} style={styles.infoIconTouchable}>
-          <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
-        </TouchableOpacity>
+            <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+          </TouchableOpacity>
         </View>
 
         {riskFactors.map((factor, index) => (
@@ -656,135 +656,135 @@ const loadData = async () => {
   };
 
 
-// 6. Formula Explanation Card (Short & Attractive)
-const FormulaExplanation = () => (
-  <View style={styles.card}>
-    <View style={styles.sectionHeader}>
-      <Text style={styles.subtitle}>🧮 How Your Projection Is Calculated</Text>
-    </View>
-
-    <Text style={styles.formulaTitle}>📈 1. Future Income</Text>
-    <Text style={styles.formulaText}>
-      Monthly Income × (1 + Growth Rate)ⁿ
-    </Text>
-    <Text style={styles.formulaExample}>
-      e.g. RM3000 → Year 2 at 10% = RM3630
-    </Text>
-
-    <Text style={styles.formulaTitle}>💸 2. Future Expenses</Text>
-    <Text style={styles.formulaText}>
-      Monthly Expenses × (1 + Inflation Rate)ⁿ
-    </Text>
-    <Text style={styles.formulaExample}>
-      e.g. RM2000 → Year 2 at 3% = RM2121.80
-    </Text>
-
-    <Text style={styles.formulaTitle}>💰 3. Future Savings</Text>
-    <Text style={styles.formulaText}>
-      Future Income − Future Expenses
-    </Text>
-
-    <Text style={styles.formulaTitle}>🛡 4. Emergency Coverage</Text>
-    <Text style={styles.formulaText}>
-      (Income − Expenses) ÷ Expenses
-    </Text>
-  </View>
-);
-
-// 7. Recommendations Card
-const RecommendationsCard = () => {
-  if (!result) return null;   // prevent crash
-
-  return (
-    <View style={styles.recommendationCard}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.recommendationTitle}>💡 Recommendations</Text>
-      </View>
-      {result.recommendation.map((rec, index) => (
-        <View key={`rec-${index}`} style={styles.recommendationItem}>
-          <Text style={styles.recommendationText}>{rec}</Text>
-        </View>
-      ))}
-    </View>
-  );
-};
-
-  // 8. Formula Diagram (Line Chart)
-const FormulaDiagram = () => {
-  if (!result) return null;
-
-  const labels = result.yearlyBreakdown.map(item => `Y${item.year}`);
-
-  const incomeData = result.yearlyBreakdown.map(item => item.futureIncome);
-  const expensesData = result.yearlyBreakdown.map(item => item.futureExpenses);
-  const savingsData = result.yearlyBreakdown.map(item => item.futureSavings);
-
-  return (
+  // 6. Formula Explanation Card (Short & Attractive)
+  const FormulaExplanation = () => (
     <View style={styles.card}>
-      {/* Title */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.subtitle}>📉 Projection Diagram</Text>
+        <Text style={styles.subtitle}>🧮 How Your Projection Is Calculated</Text>
       </View>
 
-      {/* Line Chart */}
-      <LineChart
-        data={{
-          labels,
-          datasets: [
-            {
-              data: incomeData,
-              color: () => "#22c55e", // green
-              strokeWidth: 2,
-            },
-            {
-              data: expensesData,
-              color: () => "#ef4444", // red
-              strokeWidth: 2,
-            },
-            {
-              data: savingsData,
-              color: () => "#3b82f6", // blue
-              strokeWidth: 2,
-            },
-          ],
-          legend: ["Income", "Expenses", "Savings"],
-        }}
-        width={screenWidth * 0.9}
-        height={260}
-        withDots={true}
-        withShadow={false}
-        withInnerLines={false}
-        fromZero={true}
-        segments={4}
-        showDataPointLabel={true}   // ⭐ SHOWS THE RM VALUES
-        chartConfig={{
-          backgroundGradientFrom: "#ffffff",
-          backgroundGradientTo: "#ffffff",
-          decimalPlaces: 0,
-          color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
-          labelColor: () => "#6b7280",
-          propsForDots: {
-            r: "5",
-            strokeWidth: "2",
-            stroke: "#ffffff"
-          },
-        }}
-        style={{
-          borderRadius: 16,
-          alignSelf: "center",
-        }}
-      />
+      <Text style={styles.formulaTitle}>📈 1. Future Income</Text>
+      <Text style={styles.formulaText}>
+        Monthly Income × (1 + Growth Rate)ⁿ
+      </Text>
+      <Text style={styles.formulaExample}>
+        e.g. RM3000 → Year 2 at 10% = RM3630
+      </Text>
 
-  
-      {/* Explanation */}
-      <Text style={styles.chartExplanation}>
-        {"\n"}• <Text style={{ color: "#22c55e", fontWeight: "700" }}>Income</Text> grows each year
-        {"\n"}• <Text style={{ color: "#ef4444", fontWeight: "700" }}>Expenses</Text> rise due to inflation
-        {"\n"}• <Text style={{ color: "#3b82f6", fontWeight: "700" }}>Savings</Text> show if you're improving or falling 
+      <Text style={styles.formulaTitle}>💸 2. Future Expenses</Text>
+      <Text style={styles.formulaText}>
+        Monthly Expenses × (1 + Inflation Rate)ⁿ
+      </Text>
+      <Text style={styles.formulaExample}>
+        e.g. RM2000 → Year 2 at 3% = RM2121.80
+      </Text>
+
+      <Text style={styles.formulaTitle}>💰 3. Future Savings</Text>
+      <Text style={styles.formulaText}>
+        Future Income − Future Expenses
+      </Text>
+
+      <Text style={styles.formulaTitle}>🛡 4. Emergency Coverage</Text>
+      <Text style={styles.formulaText}>
+        (Income − Expenses) ÷ Expenses
       </Text>
     </View>
   );
-};
+
+  // 7. Recommendations Card
+  const RecommendationsCard = () => {
+    if (!result) return null;   // prevent crash
+
+    return (
+      <View style={styles.recommendationCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.recommendationTitle}>💡 Recommendations</Text>
+        </View>
+        {result.recommendation.map((rec, index) => (
+          <View key={`rec-${index}`} style={styles.recommendationItem}>
+            <Text style={styles.recommendationText}>{rec}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  // 8. Formula Diagram (Line Chart)
+  const FormulaDiagram = () => {
+    if (!result) return null;
+
+    const labels = result.yearlyBreakdown.map(item => `Y${item.year}`);
+
+    const incomeData = result.yearlyBreakdown.map(item => item.futureIncome);
+    const expensesData = result.yearlyBreakdown.map(item => item.futureExpenses);
+    const savingsData = result.yearlyBreakdown.map(item => item.futureSavings);
+
+    return (
+      <View style={styles.card}>
+        {/* Title */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.subtitle}>📉 Projection Diagram</Text>
+        </View>
+
+        {/* Line Chart */}
+        <LineChart
+          data={{
+            labels,
+            datasets: [
+              {
+                data: incomeData,
+                color: () => "#22c55e", // green
+                strokeWidth: 2,
+              },
+              {
+                data: expensesData,
+                color: () => "#ef4444", // red
+                strokeWidth: 2,
+              },
+              {
+                data: savingsData,
+                color: () => "#3b82f6", // blue
+                strokeWidth: 2,
+              },
+            ],
+            legend: ["Income", "Expenses", "Savings"],
+          }}
+          width={screenWidth * 0.9}
+          height={260}
+          withDots={true}
+          withShadow={false}
+          withInnerLines={false}
+          fromZero={true}
+          segments={4}
+          showDataPointLabel={true}   // ⭐ SHOWS THE RM VALUES
+          chartConfig={{
+            backgroundGradientFrom: "#ffffff",
+            backgroundGradientTo: "#ffffff",
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
+            labelColor: () => "#6b7280",
+            propsForDots: {
+              r: "5",
+              strokeWidth: "2",
+              stroke: "#ffffff"
+            },
+          }}
+          style={{
+            borderRadius: 16,
+            alignSelf: "center",
+          }}
+        />
+
+
+        {/* Explanation */}
+        <Text style={styles.chartExplanation}>
+          {"\n"}• <Text style={{ color: "#22c55e", fontWeight: "700" }}>Income</Text> grows each year
+          {"\n"}• <Text style={{ color: "#ef4444", fontWeight: "700" }}>Expenses</Text> rise due to inflation
+          {"\n"}• <Text style={{ color: "#3b82f6", fontWeight: "700" }}>Savings</Text> show if you're improving or falling
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -816,7 +816,8 @@ const FormulaDiagram = () => {
                   keyboardType="numeric"
                   value={data.currentIncome === "" ? "" : String(data.currentIncome)}
                   onChangeText={updateCurrentIncome}
-                placeholder={data.currentIncome ? String(data.currentIncome) : "0"}
+                  placeholder={data.currentIncome ? String(data.currentIncome) : "0"}
+                  placeholderTextColor={"#c5c5c5ff"}
                   editable={!calculationLoading}
                 />
                 {incomeError ? <Text style={styles.errorText}>{incomeError}</Text> : null}
@@ -832,6 +833,7 @@ const FormulaDiagram = () => {
                   value={data.currentExpenses}
                   onChangeText={updateCurrentExpenses}
                   placeholder={data.currentExpenses ? String(data.currentExpenses) : "0"}
+                  placeholderTextColor={"#c5c5c5ff"}
                   editable={!calculationLoading}
                 />
 
@@ -863,6 +865,7 @@ const FormulaDiagram = () => {
                   style={[styles.input, { marginTop: 8 }, incomeGrowthError ? styles.inputError : null]}
                   keyboardType="numeric"
                   placeholder="Enter custom income growth rate (%)"
+                  placeholderTextColor={"#c5c5c5ff"}
                   value={data.incomeGrowth === "" ? "" : String(data.incomeGrowth)}
                   onChangeText={updateIncomeGrowth}
                   editable={!calculationLoading}
@@ -930,6 +933,7 @@ const FormulaDiagram = () => {
                   style={[styles.input, { marginTop: 8 }, inflationError ? styles.inputError : null]}
                   keyboardType="numeric"
                   placeholder="Enter custom inflation rate (%)"
+                  placeholderTextColor={"#c5c5c5ff"}
                   value={data.inflation === "" ? "" : String(data.inflation)}
                   onChangeText={updateInflation}
                   editable={!calculationLoading}
@@ -983,6 +987,7 @@ const FormulaDiagram = () => {
                 value={data.years === "" ? "" : String(data.years)}
                 onChangeText={updateYears}
                 placeholder="Enter number of years"
+                placeholderTextColor={"#c5c5c5ff"}
                 editable={!calculationLoading}
               />
               {yearsError ? <Text style={styles.errorText}>{yearsError}</Text> : null}
@@ -1045,11 +1050,11 @@ const FormulaDiagram = () => {
               </>
             )}
             {/* AI Recommendations */}
-             <FormulaExplanation />
-       
+            <FormulaExplanation />
+
           </>
         )}
-            <RecommendationsCard />
+        <RecommendationsCard />
       </ScrollView>
 
       {/* Loading Overlay */}
@@ -1535,32 +1540,32 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   formulaTitle: {
-  fontSize: 14,
-  fontWeight: "700",
-  marginTop: 12,
-  color: "#2c3e50",
-},
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 12,
+    color: "#2c3e50",
+  },
 
-formulaText: {
-  fontSize: 13,
-  lineHeight: 18,
-  color: "#34495e",
-  marginTop: 4,
-},
+  formulaText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#34495e",
+    marginTop: 4,
+  },
 
-formulaExample: {
-  fontSize: 12,
-  color: "#7f8c8d",
-  marginTop: 4,
-  backgroundColor: "#f8f9fa",
-  padding: 8,
-  borderRadius: 8,
-},
+  formulaExample: {
+    fontSize: 12,
+    color: "#7f8c8d",
+    marginTop: 4,
+    backgroundColor: "#f8f9fa",
+    padding: 8,
+    borderRadius: 8,
+  },
 
-formulaFootnote: {
-  fontSize: 11,
-  color: "#7f8c8d",
-  marginTop: 12,
-  fontStyle: "italic",
-},
+  formulaFootnote: {
+    fontSize: 11,
+    color: "#7f8c8d",
+    marginTop: 12,
+    fontStyle: "italic",
+  },
 });

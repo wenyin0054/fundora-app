@@ -1,4 +1,6 @@
+import Constants from "expo-constants";
+
 export const getApiBase = () => {
-  const local = "http://192.168.1.33:5000";
-  return  local ;
+  const ip = Constants.expoConfig.hostUri.split(":")[0];
+  return `http://${ip}:5000`;
 };

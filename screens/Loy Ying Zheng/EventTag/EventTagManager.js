@@ -175,6 +175,7 @@ export default function EventTagManager({ route, navigation }) {
       <View style={styles.inputSection}>
         <TextInput
           placeholder="Enter tag name"
+          placeholderTextColor={"#c5c5c5ff"}
           value={newTag}
           onChangeText={setNewTag}
           style={styles.input}
@@ -183,6 +184,7 @@ export default function EventTagManager({ route, navigation }) {
 
         <TextInput
           placeholder="Enter description (optional)"
+          placeholderTextColor={"#c5c5c5ff"}
           value={description}
           onChangeText={setDescription}
           style={[styles.input, { height: 80, textAlignVertical: "top" }]}

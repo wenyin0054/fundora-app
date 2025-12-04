@@ -71,6 +71,7 @@ export default function ForgotPassword({ navigation }) {
             <TextInput
               style={[styles.input, emailError && styles.inputError]}
               placeholder="you@example.com"
+              placeholderTextColor={"#c5c5c5ff"}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}

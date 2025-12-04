@@ -1,32 +1,41 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../reuseComponet/header";
 import { addTagLocal, getTagsLocal } from "../../../database/SQLite";
-import { useUser } from "../../reuseComponet/UserContext"; 
+import { useUser } from "../../reuseComponet/UserContext";
+import ValidatedInput from "../../reuseComponet/ValidatedInput";
 
 export default function AddTag({ navigation, route }) {
   const [tagName, setTagName] = useState("");
   const [essentiality, setEssentiality] = useState(null);
   const [existingTags, setExistingTags] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  
-  const { userId, isLoading: userLoading } = useUser(); 
+
+  const tagNameRef = useRef(null);
+  const { userId, isLoading: userLoading } = useUser();
   const { onTagAdded } = route.params || {};
 
+  // Load existing tags once user is available
   useEffect(() => {
-    if (userId) {
-      fetchTags();
-    }
+    if (userId) loadExistingTags();
   }, [userId]);
 
-  const fetchTags = async () => {
+  const loadExistingTags = async () => {
     try {
       setIsLoading(true);
       const tags = await getTagsLocal(userId);
-      setExistingTags(tags.map(t => t.name.toLowerCase()));
+
+      // Lowercase existing tags for quick duplicate detection
+      setExistingTags(tags.map((t) => t.name.trim().toLowerCase()));
     } catch (error) {
-      console.error("Error fetching tags:", error);
       Alert.alert("Error", "Failed to load existing tags");
     } finally {
       setIsLoading(false);
@@ -34,43 +43,46 @@ export default function AddTag({ navigation, route }) {
   };
 
   const handleAddTag = async () => {
-    if (!tagName || essentiality === null) {
-      Alert.alert("Missing info", "Please fill in all fields.");
+    const trimmed = tagName.trim();
+
+    // 1️⃣ Empty check
+    if (!trimmed) {
+      tagNameRef.current?.shake();
+      tagNameRef.current?.setError(true);
       return;
     }
 
-    if (!userId) {
-      Alert.alert("Error", "User not logged in");
-      return;
-    }
-
-    const duplicate = existingTags.includes(tagName.trim().toLowerCase());
-    if (duplicate) {
-      Alert.alert(
+    // 2️⃣ Duplicate check
+    if (existingTags.includes(trimmed.toLowerCase())) {
+      tagNameRef.current?.shake();
+      tagNameRef.current?.setError(true);
+      return Alert.alert(
         "Tag Exists",
-        `The tag "${tagName}" already exists. Do you want to manage existing tags?`,
-        [
-          { text: "No", onPress: () => console.log("Enter unique name"), style: "cancel" },
-          { text: "Yes", onPress: () => navigation.navigate("TagManagerScreen") }
-        ]
+        `The tag "${tagName}" already exists.`
       );
-      return;
+    }
+
+    // 3️⃣ Essentiality missing
+    if (essentiality === null) {
+      return Alert.alert(
+        "Missing Info",
+        "Please select Essential or Non-Essential."
+      );
     }
 
     try {
-      await addTagLocal(userId, tagName, essentiality);
-      Alert.alert("✅ Success", "Tag added successfully!");
-      if (onTagAdded) {
-        onTagAdded(tagName);
-      }
+      await addTagLocal(userId, trimmed, essentiality);
+
+      Alert.alert("Success", "Tag added successfully!");
+      if (onTagAdded) onTagAdded(trimmed);
+
       navigation.goBack();
-    } catch (error) {
-      console.error("❌ Add tag error:", error);
-      Alert.alert("Error", "Failed to add tag. Try again.");
+    } catch (err) {
+      Alert.alert("Error", "Failed to add tag.");
     }
   };
 
-  // 加载状态处理
+  // Loading state (user)
   if (userLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -80,15 +92,11 @@ export default function AddTag({ navigation, route }) {
     );
   }
 
-  // 用户未登录处理
+  // Not logged in
   if (!userId) {
     return (
       <View style={styles.container}>
-        <AppHeader
-          title="Add New Tag"
-          showLeftButton={true}
-          onLeftPress={() => navigation.goBack()}
-        />
+        <AppHeader title="Add New Tag" showLeftButton onLeftPress={() => navigation.goBack()} />
         <View style={styles.errorContainer}>
           <Ionicons name="person-circle-outline" size={64} color="#6B7280" />
           <Text style={styles.errorTitle}>Please Log In</Text>
@@ -100,28 +108,35 @@ export default function AddTag({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      <AppHeader
-        title="Add New Tag"
-        showLeftButton={true}
-        onLeftPress={() => navigation.goBack()}
-      />
+      <AppHeader title="Add New Tag" showLeftButton onLeftPress={() => navigation.goBack()} />
 
       <View style={styles.card}>
-        <Text style={styles.label}>Tag Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter tag name (e.g. Food)"
+        {/* Validated Input */}
+        <ValidatedInput
+          ref={tagNameRef}
+          label="Tag Name"
           value={tagName}
           onChangeText={setTagName}
+          placeholder="Enter tag name (e.g. Food)"
+          placeholderTextColor={"#c5c5c5ff"}
+          validate={(v) => v.trim().length > 0}
+          errorMessage="Tag name cannot be empty"
+          icon={<Ionicons name="pricetag-outline" size={20} color="#6c757d" />}
         />
 
+        {/* Essentiality Selector */}
         <Text style={styles.label}>Essentiality</Text>
         <View style={styles.row}>
           <TouchableOpacity
             style={[styles.optionBtn, essentiality === 1 && styles.optionActive]}
             onPress={() => setEssentiality(1)}
           >
-            <Text style={[styles.optionText, essentiality === 1 && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                essentiality === 1 && styles.optionTextActive,
+              ]}
+            >
               Essential
             </Text>
           </TouchableOpacity>
@@ -130,28 +145,28 @@ export default function AddTag({ navigation, route }) {
             style={[styles.optionBtn, essentiality === 0 && styles.optionActive]}
             onPress={() => setEssentiality(0)}
           >
-            <Text style={[styles.optionText, essentiality === 0 && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                essentiality === 0 && styles.optionTextActive,
+              ]}
+            >
               Non-Essential
             </Text>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
+        {/* Save Button */}
+        <TouchableOpacity
           style={[
-            styles.saveBtn, 
-            (isLoading || !tagName || essentiality === null) && styles.saveBtnDisabled
-          ]} 
+            styles.saveBtn,
+            (!tagName.trim() || essentiality === null) && styles.saveBtnDisabled,
+          ]}
+          disabled={!tagName.trim() || essentiality === null}
           onPress={handleAddTag}
-          disabled={isLoading || !tagName || essentiality === null}
         >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.saveText}>Save Tag</Text>
-            </>
-          )}
+          <Ionicons name="save-outline" size={18} color="#fff" />
+          <Text style={styles.saveText}>Save Tag</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -159,34 +174,8 @@ export default function AddTag({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#f9f9fb" 
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9f9fb',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#64748B',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: "#f9f9fb" },
+
   card: {
     backgroundColor: "#fff",
     margin: 16,
@@ -197,25 +186,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  label: { 
-    fontSize: 14, 
-    fontWeight: "600", 
-    marginTop: 12, 
-    color: "#333" 
-  },
-  input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 6,
-    fontSize: 14,
-  },
-  row: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    marginTop: 6 
-  },
+
+  label: { fontSize: 14, fontWeight: "600", marginTop: 12, color: "#333" },
+
+  row: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
+
   optionBtn: {
     flex: 1,
     marginHorizontal: 5,
@@ -226,17 +201,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
   },
-  optionActive: { 
-    backgroundColor: "#8AD0AB" 
-  },
-  optionText: { 
-    color: "#2E5E4E", 
-    fontSize: 14 
-  },
-  optionTextActive: { 
-    color: "#fff", 
-    fontWeight: "600" 
-  },
+  optionActive: { backgroundColor: "#8AD0AB" },
+
+  optionText: { color: "#2E5E4E", fontSize: 14 },
+  optionTextActive: { color: "#fff", fontWeight: "600" },
+
   saveBtn: {
     flexDirection: "row",
     backgroundColor: "#8AD0AB",
@@ -246,13 +215,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 20,
   },
-  saveBtnDisabled: {
-    backgroundColor: "#cccccc",
-    opacity: 0.6,
-  },
-  saveText: { 
-    color: "#fff", 
-    fontWeight: "600", 
-    marginLeft: 6 
-  },
+  saveBtnDisabled: { backgroundColor: "#ccc", opacity: 0.6 },
+  saveText: { color: "#fff", fontWeight: "600", marginLeft: 6 },
+
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  errorContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  errorTitle: { fontSize: 20, fontWeight: "700", marginTop: 10 },
+  errorMessage: { fontSize: 14, color: "#777" },
 });
