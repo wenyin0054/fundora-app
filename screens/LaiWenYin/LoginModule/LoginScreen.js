@@ -28,7 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useUser } from '../../reuseComponet/UserContext.js';
 export default function LoginScreen({ navigation }) {
-   const { setUserId } = useUser();  
+  const { setUserId } = useUser();
   // form fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -68,11 +68,11 @@ export default function LoginScreen({ navigation }) {
     };
   }, []);
 
-useFocusEffect(
-  React.useCallback(() => {
-    setFaceLoginLoading(false);
-  }, [])
-);
+  useFocusEffect(
+    React.useCallback(() => {
+      setFaceLoginLoading(false);
+    }, [])
+  );
   // validate when fields change
   useEffect(() => {
     const eErr = validateEmail(email);
@@ -360,6 +360,7 @@ useFocusEffect(
               autoCapitalize="none"
               keyboardType="email-address"
               placeholder="Enter your email"
+              placeholderTextColor={"#c5c5c5ff"}
               editable={!loading && !navigationLoading}
               returnKeyType="next"
             />
@@ -376,6 +377,7 @@ useFocusEffect(
                 }}
                 secureTextEntry={!showPassword}
                 placeholder="Enter your password"
+                placeholderTextColor={"#c5c5c5ff"}
                 maxLength={20}
                 editable={!loading && !navigationLoading}
                 returnKeyType="done"

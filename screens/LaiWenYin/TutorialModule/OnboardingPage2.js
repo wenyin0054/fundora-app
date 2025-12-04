@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { 
-  View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, Alert, Dimensions 
+  View, Text, StyleSheet, Image, TouchableOpacity, Alert, Dimensions 
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { updateUserExperienceLevel,completeOnboarding } from "../../../database/userAuth";
@@ -52,16 +53,6 @@ export default function OnboardingPage2({ navigation }) {
       setIsLoading(false);
     }
   };
-const handleSkip = async () => {
-  try {
-    console.log("⏭️ Skipping onboarding - marking as completed");
-   await completeOnboarding(currentUser.userId);
-    navigation.replace("MainApp");
-  } catch (error) {
-    console.log("Error during skip:", error);
-    navigation.replace("MainApp");
-  }
-};
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.card}>
@@ -118,14 +109,6 @@ const handleSkip = async () => {
       >
         <Text style={styles.nextButtonText}>{isLoading ? "Saving..." : "Next"}</Text>
       </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.skipButton}
-        onPress={handleSkip}
-      >
-        <Text style={styles.skipButtonText}>Skip</Text>
-      </TouchableOpacity>
-
    
     </SafeAreaView>
   );
@@ -216,18 +199,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
-    fontSize: 16,
-  },
-  skipButton: {
-    backgroundColor: "#F9FAFB",
-    width: width * 0.85,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  skipButtonText: {
-    color: "#111827",
-    fontWeight: "500",
     fontSize: 16,
   },
   debugText: {

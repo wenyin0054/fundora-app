@@ -206,6 +206,8 @@ export default function BillTracker({ navigation }) {
 
   // group upcoming bills (we'll show next 3)
   const upcoming = bills.slice(0, 3);
+  console.log(upcoming);
+  
 
   return (
     <View style={styles.container}>
@@ -327,6 +329,7 @@ export default function BillTracker({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Monthly Gross Income (RM)"
+              placeholderTextColor={"#c5c5c5ff"}
               keyboardType="numeric"
               value={income}
               onChangeText={setIncome}
@@ -339,6 +342,7 @@ export default function BillTracker({ navigation }) {
               keyboardType="numeric"
               value={autoCommitment > 0 ? autoCommitment.toString() : ""}
               placeholder="Monthly Commitments (RM)"
+              placeholderTextColor={"#c5c5c5ff"}
               onChangeText={text => {
                 const numericValue = Number(text.replace(/[^0-9]/g, ""));
                 if (!isNaN(numericValue)) setCommitment(numericValue);

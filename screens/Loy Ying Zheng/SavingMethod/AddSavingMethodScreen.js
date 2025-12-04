@@ -199,6 +199,7 @@ export default function AddSavingMethodScreen({ navigation, route }) {
           <TextInput
             style={styles.input}
             placeholder="e.g., Cryptocurrency, Real Estate, Bonds"
+            placeholderTextColor={"#c5c5c5ff"}
             value={methodName}
             onChangeText={setMethodName}
           />
@@ -266,6 +267,7 @@ export default function AddSavingMethodScreen({ navigation, route }) {
           <TextInput
             style={styles.input}
             placeholder="e.g., 5.0"
+            placeholderTextColor={"#c5c5c5ff"}
             value={expectedReturn}
             onChangeText={setExpectedReturn}
             keyboardType="numeric"

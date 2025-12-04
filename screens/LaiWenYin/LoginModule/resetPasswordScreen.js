@@ -95,6 +95,7 @@ export default function ResetPassword({ route, navigation }) {
           <TextInput
             style={styles.input}
             placeholder="Enter new password"
+            placeholderTextColor={"#c5c5c5ff"}
             secureTextEntry={!showPassword}
             value={newPassword}
             onChangeText={setNewPassword}
@@ -124,6 +125,7 @@ export default function ResetPassword({ route, navigation }) {
           <TextInput
             style={styles.input}
             placeholder="Confirm new password"
+            placeholderTextColor={"#c5c5c5ff"}
             secureTextEntry={!showConfirmPassword}
             value={confirmPassword}
             onChangeText={setConfirmPassword}

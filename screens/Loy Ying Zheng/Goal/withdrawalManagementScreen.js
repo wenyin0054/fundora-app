@@ -251,6 +251,7 @@ export default function WithdrawalManagementScreen({ navigation }) {
                 <TextInput
                   style={styles.amountInput}
                   placeholder="Enter confirmed amount"
+                  placeholderTextColor={"#c5c5c5ff"}
                   keyboardType="numeric"
                   value={confirmedAmount}
                   onChangeText={setConfirmedAmount}

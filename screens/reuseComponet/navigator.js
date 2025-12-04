@@ -8,6 +8,7 @@ import CustomDrawerContent from "./DrawerComponent";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // 导入所有 screens
 import DashboardScreen from "../Loy Ying Zheng/dashboard";
@@ -50,9 +51,42 @@ import FaceLoginScreen from "../LaiWenYin/FaceAuthModule/FaceLogin";
 import QuizIntroductionScreen from "../LaiWenYin/TutorialModule/QuizIntroductionScreen";
 import { UserProvider, useUser } from "./UserContext";
 
+
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
+
+const AppTheme = {
+  dark: false,
+  colors: {
+    primary: "#57C0A1",
+    background: "#ffffff",
+    card: "#ffffff",
+    text: "#000000",
+    border: "#E5E7EB",
+    notification: "#57C0A1",
+  },
+  fonts: {
+    regular: {
+      fontFamily: "System",
+      fontWeight: "400",
+    },
+    medium: {
+      fontFamily: "System",
+      fontWeight: "500",
+    },
+    bold: {
+      fontFamily: "System",
+      fontWeight: "700",
+    },
+    heavy: {
+      fontFamily: "System",
+      fontWeight: "800",
+    },
+  },
+};
+
+
 
 const linking = {
   prefixes: ["myapp://"],
@@ -62,6 +96,7 @@ const linking = {
     },
   },
 };
+
 
 // --------- BOTTOM TABS ----------
 function MainTabs() {
@@ -153,9 +188,8 @@ export default function Navigator() {
     );
   }
 
-  return (
-    <UserProvider>    
-      <NavigationContainer linking={linking}>
+  return ( 
+      <NavigationContainer linking={linking} theme={AppTheme}>
         <Stack.Navigator initialRouteName={firstLaunch ? "OnboardingScreen" : "Login"}>
           
           {/* 1. Onboarding & Authentication */}
@@ -217,6 +251,8 @@ export default function Navigator() {
           <Stack.Screen name="AddBill" component={AddBill} options={{ headerShown: false }} />
           <Stack.Screen name="BillDetail" component={BillDetail} options={{ headerShown: false }} />
           <Stack.Screen name="SeeAllBill" component={SeeAllBills} options={{ headerShown: false }} />
+          <Stack.Screen name="WithdrawalManagement" component={WithdrawalManagementScreen} options={{ headerShown: false }} />
+          
 
           {/* 5. Saving Method Management */}
           <Stack.Screen name="AddSavingMethod" component={AddSavingMethodScreen} options={{ headerShown: false }} />
@@ -256,9 +292,9 @@ export default function Navigator() {
 
         </Stack.Navigator>
       </NavigationContainer>
-    </UserProvider>
   );
 }
+
 
 const styles = StyleSheet.create({
   drawerContainer: { flex: 1, paddingBottom: 20 },

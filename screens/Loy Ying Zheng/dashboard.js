@@ -41,23 +41,36 @@ export default function DashboardScreen({ navigation }) {
   const { userId, userLevel, isLoading: userLoading } = useUser();
   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
 
-  // User summary
   useFocusEffect(
     useCallback(() => {
-      const loadSummary = async () => {
+      const refreshDashboard = async () => {
         try {
           if (!userId) return;
-          console.log("User Summary UserID:", userId);
 
+          console.log("🔄 Dashboard Focused — refreshing all data");
+          await processPeriodicExpenses(userId);
+          await checkDueBillsAndGenerateReminders(userId);
+          await processPeriodicBills(userId);
+          await loadAllData();
+          await loadGoals();
           const summary = await getUserSummary(userId);
           if (summary) setUserSummary(summary);
+
         } catch (err) {
-          console.error("❌ loadSummary error:", err);
+          console.error("❌ Dashboard refresh error:", err);
         }
       };
-      loadSummary();
+
+      refreshDashboard();
+
+      // Cleanup
+      return () => {
+        console.log("📌 Dashboard unfocused");
+      };
+
     }, [userId])
   );
+
 
   // Load bills
   const loadAllData = async () => {
@@ -94,24 +107,6 @@ export default function DashboardScreen({ navigation }) {
       setLoadingGoals(false);
     }
   };
-
-  // Init checks and load data
-  useEffect(() => {
-    const initChecks = async () => {
-      try {
-        if (!userId) return;
-        await processPeriodicExpenses(userId);
-        await checkDueBillsAndGenerateReminders();
-        await processPeriodicBills(userId);
-        await loadAllData();
-        await loadGoals();
-      } catch (err) {
-        console.error("❌ Dashboard initChecks error:", err);
-      }
-    };
-
-    initChecks();
-  }, [userId]);
 
   const showBalanceTip = () => {
     if (userSummary.total_balance < 0) {

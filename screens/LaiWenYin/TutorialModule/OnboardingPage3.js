@@ -8,8 +8,8 @@ import {
   Alert,
   Image,
   Dimensions,
-  SafeAreaView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
 import { updateUserOnboardingInfo,completeOnboarding } from "../../../database/userAuth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -89,24 +89,6 @@ const handleFinish = async () => {
   }
 };
 
-
-  // Safe skip function that doesn't rely on database
-  const handleSkip = async () => {
-    try {
-      console.log("⏭️ Skipping onboarding - marking as completed");
-      // Mark onboarding as completed without database operations
-      await AsyncStorage.setItem("onboardingCompleted", "true");
-      await AsyncStorage.setItem("hasLaunched", "true");
-      
-      // Navigate directly without any database calls
-      navigation.replace("MainApp");
-    } catch (error) {
-      console.log("Error during skip:", error);
-      // Even if there's an error, still navigate to Home
-      navigation.replace("MainApp");
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.card}>
@@ -172,7 +154,7 @@ const handleFinish = async () => {
               <TextInput
                 style={styles.input}
                 placeholder="Enter your occupation"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={"#c5c5c5ff"}
                 value={customOccupation}
                 onChangeText={setCustomOccupation}
               />
@@ -191,13 +173,6 @@ const handleFinish = async () => {
       {/* Buttons */}
       <TouchableOpacity style={styles.nextButton} onPress={handleFinish}>
         <Text style={styles.nextButtonText}>Finish</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.skipButton}
-        onPress={handleSkip}  // Use the safe skip function
-      >
-        <Text style={styles.skipButtonText}>Skip</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -290,18 +265,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
-    fontSize: 16,
-  },
-  skipButton: {
-    backgroundColor: "#F9FAFB",
-    width: width * 0.85,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  skipButtonText: {
-    color: "#111827",
-    fontWeight: "500",
     fontSize: 16,
   },
 });

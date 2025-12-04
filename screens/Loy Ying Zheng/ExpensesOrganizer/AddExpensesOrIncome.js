@@ -1,4 +1,4 @@
-import React, { useState, useEffect,useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { View, Text, TextInput, TouchableOpacity, Switch, StyleSheet, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { Platform } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Animated } from "react-native";
+import AddSavingAccountModal from "./AddSavingAccountModal";
 
 import {
   initDB,
@@ -24,7 +25,6 @@ import {
   getSavingMethods,
   getSavingAccounts,
   allocateFundToGoal,
-  addSavingAccount
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
 import Slider from '@react-native-community/slider';
@@ -66,12 +66,10 @@ export default function AddExpenseScreen({ route, navigation }) {
   const [selectedSavingMethod, setSelectedSavingMethod] = useState(null);
   const [selectedSavingAccount, setSelectedSavingAccount] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [newAccountName, setNewAccountName] = useState("");
-  const [newInstitutionName, setNewInstitutionName] = useState("");
-  const [newAccountNumber, setNewAccountNumber] = useState("");
-  const [newInterestRate, setNewInterestRate] = useState("");
-  const [newMaturityDate, setNewMaturityDate] = useState(new Date());
-  const [showMaturityPicker, setShowMaturityPicker] = useState(false);
+  const [goalError, setGoalError] = useState(false);
+  const [methodError, setMethodError] = useState(false);
+  const [accountError, setAccountError] = useState(false);
+
   // for auto tag 
   const [predInfo, setPredInfo] = useState(null);
 
@@ -104,19 +102,19 @@ export default function AddExpenseScreen({ route, navigation }) {
     { name: "Miscellaneous", essentialityLabel: 3 },
   ];
 
-  
-const shakeAnim = useRef(new Animated.Value(0)).current;
 
-// Reusable shake animation
-const triggerShake = () => {
-  shakeAnim.setValue(0);
-  Animated.sequence([
-    Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-    Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-    Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: true }),
-    Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-  ]).start();
-};
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  // Reusable shake animation
+  const triggerShake = () => {
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -306,159 +304,180 @@ const triggerShake = () => {
   };
 
   const validateAmount = (value, fieldName = "Amount") => {
-  if (!value || value === "") {
-    triggerShake();
-    Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
-    return false;
-  }
-
-  if (isNaN(value)) {
-    triggerShake();
-    Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
-    return false;
-  }
-
-  const num = parseFloat(value);
-  if (num <= 0) {
-    triggerShake();
-    Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
-    return false;
-  }
-
-  if (num > 9999999999999999) {
-    triggerShake();
-    Alert.alert(
-      `Invalid ${fieldName}`,
-      `${fieldName} cannot exceed 9,999,999,999,999,999.`
-    );
-    return false;
-  }
-
-  return true;
-};
-
-const resetInputs = () => {
-  setAmount("");
-  setPayee("");
-  setTag("");
-  setEventTag("");
-  setPaymentType("Cash");
-  setIsPeriodic(false);
-  setSelectedType("Yearly");
-  setEssentialityLabel(null);
-  setSliderValue(0);
-  setSliderPercent(0);
-  setSelectedGoal(null);
-  setAllocateToGoal(false);
-  setPeriodInterval(1);
-};
-
-const onSave = async ({ amount: overrideAmount } = {}) => {
-  console.log("🔥 Save triggered");
-
-  if (!dbReady) return Alert.alert("Database not ready yet!");
-  if (!userId) return Alert.alert("Error", "User not logged in");
-
-  // Normalize data
-  const trimmedPayee = payee?.trim() || "";
-  const amt = overrideAmount !== undefined ? overrideAmount : parseFloat(amount);
-  const isIncome = selectedOption === "Income";
-  const isExpense = selectedOption === "Expenses";
-  const isTransaction = selectedOption === "Transaction";
-  const isGoalAllocation = isTransaction && allocateToGoal;
-
-  const currentTag = isGoalAllocation ? "Allocate to Goal" : tag;
-
-  // ------------------ VALIDATION ------------------
-  // 1️⃣ VALIDATE AMOUNT (Income / Expense / Transaction without allocation)
-  if (!isGoalAllocation) {
-    if (!validateAmount(amount, "Amount")) return;
-  }
-
-  // 2️⃣ VALIDATE GOAL ALLOCATION AMOUNT
-  if (isGoalAllocation) {
-    if (!validateAmount(sliderValue, "Goal Amount")) return;
-    if (!selectedGoal) return Alert.alert("Missing Goal", "Please select a goal.");
-    if (sliderValue <= 0) return Alert.alert("Invalid Amount", "Please select amount to allocate.");
-  }
-
-  // 3️⃣ VALIDATE EXPENSE TAG
-  if ((isExpense || (isTransaction && !isGoalAllocation)) && !currentTag) {
-    triggerShake();
-    return Alert.alert("Missing Tag", "Please select a tag.");
-  }
-
-  // 4️⃣ VALIDATE PAYMENT TYPE
-  if ((isExpense || (isTransaction && !isGoalAllocation)) && !paymentType) {
-    triggerShake();
-    return Alert.alert("Missing Payment Type", "Please select a payment type.");
-  }
-
-  // 5️⃣ VALIDATE PAYEE (Only Expense / Transaction)
-  if ((isExpense || isTransaction) && !isGoalAllocation) {
-    if (!trimmedPayee) {
+    if (!value || value === "") {
       triggerShake();
-      return Alert.alert("Missing Payee", "Please enter a payee or project.");
-    }
-  }
-
-  // ------------------ AUTO TAG SAVE ------------------
-  if (trimmedPayee && currentTag && !isGoalAllocation) {
-    console.log("🔖 Saving auto-tag data");
-    handleTagSelect(currentTag);
-  }
-
-  try {
-    setIsLoading(true);
-    await initDB();
-
-    const finalDate = date.toISOString().split("T")[0];
-    const goalId = isGoalAllocation ? selectedGoal : null;
-    const finalAmount = isGoalAllocation ? sliderValue : amt;
-
-    // ===================== INCOME =====================
-    if (isIncome) {
-      await createUserSummary(userId);
-      await addExpenseLocal(
-        userId, trimmedPayee, finalAmount, finalDate,
-        "income", eventTag, paymentType, isPeriodic,
-        selectedType, "income", essentialityLabel ? 1 : 0,
-        null, periodInterval
-      );
-
-      await updateUserSummary(userId, "income", finalAmount);
-      Alert.alert("Success", "Income recorded successfully!");
+      Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
+      return false;
     }
 
-    // ==================== EXPENSE / TRANSACTION ====================
-    if (isExpense || isTransaction) {
-      if (goalId) await updateGoalAmount(goalId, finalAmount);
+    if (isNaN(value)) {
+      triggerShake();
+      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
+      return false;
+    }
 
-      await addExpenseLocal(
-        userId, trimmedPayee, finalAmount, finalDate,
-        currentTag, eventTag, paymentType, isPeriodic,
-        selectedType, isTransaction ? "transaction" : "expense",
-        essentialityLabel ? 1 : 0, goalId, periodInterval
-      );
+    const num = parseFloat(value);
+    if (num <= 0) {
+      triggerShake();
+      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
+      return false;
+    }
 
-      await updateUserSummary(userId, "expense", finalAmount);
-
+    if (num > 9999999999999999) {
+      triggerShake();
       Alert.alert(
-        "Success",
-        goalId ? "Amount allocated to goal & expense recorded!" : "Expense saved!"
+        `Invalid ${fieldName}`,
+        `${fieldName} cannot exceed 9,999,999,999,999,999.`
       );
+      return false;
     }
 
-    // ------------------ RESET INPUTS ------------------
-    resetInputs();
+    return true;
+  };
 
-  } catch (error) {
-    console.error("❌ Error saving:", error);
-    Alert.alert("Error", "Failed to save record.");
-  } finally {
-    setIsLoading(false);
-  }
-};
+  const resetInputs = () => {
+    setAmount("");
+    setPayee("");
+    setTag("");
+    setEventTag("");
+    setPaymentType("Cash");
+    setIsPeriodic(false);
+    setSelectedType("Yearly");
+    setEssentialityLabel(null);
+    setSliderValue(0);
+    setSliderPercent(0);
+    setSelectedGoal(null);
+    setAllocateToGoal(false);
+    setPeriodInterval(1);
+  };
+
+  const onSave = async (overrideAmount) => {
+    console.log("🔥 Save triggered");
+
+    if (!dbReady) return Alert.alert("Database not ready yet!");
+    if (!userId) return Alert.alert("Error", "User not logged in");
+
+    // Normalize data
+    const trimmedPayee = payee?.trim() || "";
+    const amt = overrideAmount !== undefined ? overrideAmount : parseFloat(amount);
+    const isIncome = selectedOption === "Income";
+    const isExpense = selectedOption === "Expenses";
+    const isTransaction = selectedOption === "Transaction";
+    const isGoalAllocation = isTransaction && allocateToGoal;
+
+    const currentTag = isGoalAllocation ? "Allocate to Goal" : tag;
+
+    // ------------------ VALIDATION ------------------
+    // 1️⃣ VALIDATE AMOUNT (Income / Expense / Transaction without allocation)
+    if (!isGoalAllocation) {
+      if (!validateAmount(amount, "Amount")) return;
+    }
+
+    // 2️⃣ VALIDATE GOAL ALLOCATION AMOUNT
+    if (isGoalAllocation) {
+      if (!validateAmount(sliderValue, "Goal Amount")) return;
+      if (!selectedGoal) return Alert.alert("Missing Goal", "Please select a goal.");
+      if (sliderValue <= 0) return Alert.alert("Invalid Amount", "Please select amount to allocate.");
+    }
+
+    // 3️⃣ VALIDATE EXPENSE TAG
+    if ((isExpense || (isTransaction && !isGoalAllocation)) && !currentTag) {
+      triggerShake();
+      return Alert.alert("Missing Tag", "Please select a tag.");
+    }
+
+    // 4️⃣ VALIDATE PAYMENT TYPE
+    if ((isExpense || (isTransaction && !isGoalAllocation)) && !paymentType) {
+      triggerShake();
+      return Alert.alert("Missing Payment Type", "Please select a payment type.");
+    }
+
+    // 5️⃣ VALIDATE PAYEE (Only Expense / Transaction)
+    if ((isExpense || isTransaction) && !isGoalAllocation) {
+      if (!trimmedPayee) {
+        triggerShake();
+        return Alert.alert("Missing Payee", "Please enter a payee or project.");
+      }
+    }
+
+    // ------------------ AUTO TAG SAVE ------------------
+    if (trimmedPayee && currentTag && !isGoalAllocation) {
+      console.log("🔖 Saving auto-tag data");
+      handleTagSelect(currentTag);
+    }
+
+    try {
+      setIsLoading(true);
+      await initDB();
+
+      const finalDate = date.toISOString().split("T")[0];
+      const goalId = isGoalAllocation ? selectedGoal : null;
+      const finalAmount = isGoalAllocation ? sliderValue : amt;
+
+      // ===================== INCOME =====================
+      if (isIncome) {
+        await createUserSummary(userId);
+        await addExpenseLocal(
+          userId, trimmedPayee, finalAmount, finalDate,
+          "income", eventTag, paymentType, isPeriodic,
+          selectedType, "income", essentialityLabel ? 1 : 0,
+          null, periodInterval
+        );
+
+        await updateUserSummary(userId, "income", finalAmount);
+        Alert.alert("Success", "Income recorded successfully!");
+      }
+
+      // ==================== EXPENSE / TRANSACTION ====================
+      if (isExpense || isTransaction) {
+
+        // 1️⃣ UPDATE GOAL AMOUNT
+        if (goalId) await updateGoalAmount(userId, goalId, finalAmount);
+
+        // 2️⃣ ADD EXPENSE / TRANSACTION AND GET NEW ID
+        const newTransactionId = await addExpenseLocal(
+          userId, trimmedPayee, finalAmount, finalDate,
+          currentTag, eventTag, paymentType, isPeriodic,
+          selectedType, isTransaction ? "transaction" : "expense",
+          essentialityLabel ? 1 : 0, goalId, periodInterval
+        );
+        console.log("🔥 newTransactionId =", newTransactionId);
+
+        // 3️⃣ IF ALLOCATION → RECORD SOURCE + ACCOUNT
+        if (isGoalAllocation && selectedSavingAccount) {
+          await allocateFundToGoal(
+            userId,
+            goalId,
+            selectedSavingAccount.id,  // account_id
+            finalAmount,               // allocated_amount
+            finalDate,                 // allocation_date
+            newTransactionId,          // transaction_id (FOREIGN KEY)
+            null,                      // maturity_date
+            "",                         // notes
+            selectedSavingMethod.id
+          );
+        }
+
+        // 4️⃣ UPDATE SUMMARY
+        await updateUserSummary(userId, "expense", finalAmount);
+
+        Alert.alert(
+          "Success",
+          goalId ? "Amount allocated to goal & expense recorded!" : "Expense saved!"
+        );
+      }
+
+
+      // ------------------ RESET INPUTS ------------------
+      resetInputs();
+
+    } catch (error) {
+      console.error("❌ Error saving:", error);
+      Alert.alert("Error", "Failed to save record.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
 
   if (userLoading) {
@@ -531,19 +550,20 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
 
           {/* Payee */}
           <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-          <View style={styles.inputRow}>
-            <Ionicons name="person-outline" size={20} color="#6c757d" />
-            <TextInput
-              placeholder="Payee or purchased project"
-              style={styles.input}
-              value={payee}
-              onChangeText={onPayeeChange}
-            />
-            <TouchableOpacity onPress={() => navigation.navigate("ScanReceipt")}>
-              <Ionicons name="camera-outline" size={22} color="#6c757d" />
-            </TouchableOpacity>
-          </View>
-</Animated.View>
+            <View style={styles.inputRow}>
+              <Ionicons name="person-outline" size={20} color="#6c757d" />
+              <TextInput
+                placeholder="Payee or purchased project"
+                placeholderTextColor={"#c5c5c5ff"}
+                style={styles.input}
+                value={payee}
+                onChangeText={onPayeeChange}
+              />
+              <TouchableOpacity onPress={() => navigation.navigate("ScanReceipt")}>
+                <Ionicons name="camera-outline" size={22} color="#6c757d" />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
           {/* Amount or Total Balance */}
           {selectedOption === "Transaction" && allocateToGoal ? (
             <View style={[styles.inputRow, { justifyContent: "space-between", height: 45 }]}>
@@ -553,18 +573,19 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
               </Text>
             </View>
           ) : (
-              <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-                <View style={styles.inputRow}>
-                  <Ionicons name="cash-outline" size={20} color="#6c757d" />
-                  <TextInput
-                    placeholder="Amount"
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={amount}
-                    onChangeText={setAmount}
-                  />
-                </View>
-              </Animated.View>
+            <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
+              <View style={styles.inputRow}>
+                <Ionicons name="cash-outline" size={20} color="#6c757d" />
+                <TextInput
+                  placeholder="Amount"
+                  placeholderTextColor={"#c5c5c5ff"}
+                  style={styles.input}
+                  keyboardType="numeric"
+                  value={amount}
+                  onChangeText={setAmount}
+                />
+              </View>
+            </Animated.View>
 
           )}
 
@@ -610,6 +631,7 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                     value={tag}
                     style={styles.dropdownContent}
                     placeholder="Select a tag"
+                    placeholderTextColor={"#c5c5c5ff"}
                     editable={false}
                     pointerEvents="none"
                   />
@@ -678,6 +700,7 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                   value={paymentType}
                   style={styles.dropdownContent}
                   placeholder="Select payment type"
+                  placeholderTextColor={"#c5c5c5ff"}
                   editable={false}
                   pointerEvents="none"
                 />
@@ -821,7 +844,7 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                   styles.saveButton,
                   isLoading && styles.saveButtonDisabled
                 ]}
-                onPress={onSave}
+                onPress={() => onSave()}
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -842,26 +865,37 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
             <View style={styles.goalCard}>
               <Text style={styles.goalTitle}>Allocate Income to Goal</Text>
 
-              {/* Goal selection */}
+              {/* ------------------ GOAL LIST ------------------ */}
               <Text style={styles.subLabel}>Select your goal:</Text>
-              <View style={styles.goalList}>
+              <Animated.View
+                style={[
+                  styles.goalList,
+                  goalError && styles.errorBorder,     // 红框
+                  { transform: [{ translateX: shakeAnim }] }
+                ]}
+              >
                 {goals.length > 0 ? (
-                  goals.map(goal => (
+                  goals.map((goal) => (
                     <TouchableOpacity
                       key={goal.id}
                       style={[
                         styles.goalButton,
-                        selectedGoal === goal.id && styles.goalButtonActive
+                        selectedGoal === goal.id && styles.goalButtonActive,
                       ]}
-                      onPress={() => setSelectedGoal(goal.id)}
+                      onPress={() => {
+                        setSelectedGoal(goal.id);
+                      }}
                     >
                       <Text
                         style={[
                           styles.goalButtonText,
-                          selectedGoal === goal.id && styles.goalButtonTextActive
+                          selectedGoal === goal.id && styles.goalButtonTextActive,
                         ]}
                       >
                         {goal.goalName}
+                      </Text>
+                      <Text style={{ color: "#555", fontSize: 12, marginTop: 4 }}>
+                        Target: RM {(goal.targetAmount || 0).toFixed(2)}
                       </Text>
                     </TouchableOpacity>
                   ))
@@ -870,21 +904,31 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                     No goals found. Please add one in Savings Planner.
                   </Text>
                 )}
-              </View>
+              </Animated.View>
 
               <View style={styles.divider} />
 
-              {/* 🆕 儲蓄方式選擇 */}
+              {/* ------------------ SAVING METHOD LIST ------------------ */}
               <Text style={styles.subLabel}>Select Saving Method:</Text>
-              <View style={styles.methodList}>
-                {savingMethods.map(method => (
+              <Animated.View
+                style={[
+                  styles.methodList,
+                  methodError && styles.errorBorder,
+                  { transform: [{ translateX: shakeAnim }] }
+                ]}
+              >
+
+                {savingMethods.map((method) => (
                   <TouchableOpacity
                     key={method.id}
                     style={[
                       styles.methodButton,
-                      selectedSavingMethod?.id === method.id && styles.methodButtonActive
+                      selectedSavingMethod?.id === method.id && styles.methodButtonActive,
                     ]}
-                    onPress={() => setSelectedSavingMethod(method)}
+                    onPress={() => {
+                      setSelectedSavingMethod(method);
+                      setSelectedSavingAccount(null);
+                    }}
                   >
                     <Text style={styles.methodIcon}>{method.icon_name}</Text>
                     <View style={styles.methodInfo}>
@@ -895,30 +939,42 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                     </View>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </Animated.View>
 
-              {/* 🆕 儲蓄賬戶選擇 */}
+              {/* ------------------ SAVING ACCOUNT LIST ------------------ */}
               {selectedSavingMethod && (
                 <>
                   <Text style={styles.subLabel}>Select Account:</Text>
-                  <View style={styles.accountSection}>
+                  <Animated.View
+                    style={[
+                      styles.accountSection,
+                      accountError && styles.errorBorder,
+                      { transform: [{ translateX: shakeAnim }] }
+                    ]}
+                  >
+
                     {savingAccounts
-                      .filter(account => account.method_id === selectedSavingMethod.id)
-                      .map(account => (
+                      .filter((a) => a.method_id === selectedSavingMethod.id)
+                      .map((account) => (
                         <TouchableOpacity
                           key={account.id}
                           style={[
                             styles.accountButton,
-                            selectedSavingAccount?.id === account.id && styles.accountButtonActive
+                            selectedSavingAccount?.id === account.id &&
+                            styles.accountButtonActive,
                           ]}
-                          onPress={() => setSelectedSavingAccount(account)}
+                          onPress={() => {
+                            setSelectedSavingAccount(account);
+                          }}
                         >
                           <Text style={styles.accountName}>
                             {account.institution_name} - {account.account_name}
                           </Text>
+
                           <Text style={styles.accountBalance}>
                             Balance: RM {account.current_balance.toFixed(2)}
                           </Text>
+
                           {account.interest_rate > 0 && (
                             <Text style={styles.accountRate}>
                               Rate: {account.interest_rate}%
@@ -927,20 +983,26 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                         </TouchableOpacity>
                       ))}
 
+                    {/* Add New Account Button */}
                     <TouchableOpacity
                       style={styles.addAccountButton}
                       onPress={() => setShowAccountModal(true)}
                     >
-                      <Ionicons name="add-circle-outline" size={20} color="#8AD0AB" />
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={20}
+                        color="#8AD0AB"
+                        style={{ marginRight: 6 }}
+                      />
                       <Text style={styles.addAccountText}>Add New Account</Text>
                     </TouchableOpacity>
-                  </View>
+                  </Animated.View>
                 </>
               )}
 
               <View style={styles.divider} />
 
-              {/* Slider + Manual Input */}
+              {/* ------------------ SLIDER + MANUAL INPUT ------------------ */}
               <View style={styles.amountSection}>
                 <Text style={styles.subLabel}>Select amount to save:</Text>
 
@@ -954,39 +1016,42 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                       let val = parseFloat(text);
                       if (isNaN(val)) val = 0;
                       if (val > userSummary.total_balance) val = userSummary.total_balance;
+
                       setSliderValue(val);
                       const percent = ((val / userSummary.total_balance) * 100).toFixed(1);
                       setSliderPercent(percent);
                     }}
                     placeholder="Enter amount"
+                    placeholderTextColor={"#c5c5c5ff"}
                   />
                   <Text style={styles.balanceText}>
                     / {userSummary.total_balance.toFixed(2)}
                   </Text>
                 </View>
 
-                {/* Dynamic risk alert */}
+                {/* ------------- WARNING LOGIC (保留你的逻辑) ------------- */}
                 {lastMonthExpenses && userSummary.total_balance > 0 && (
                   <View style={{ marginTop: 8 }}>
-                    {sliderValue > userSummary.total_balance - lastMonthExpenses.essentialTotal ? (
+                    {sliderValue >
+                      userSummary.total_balance - lastMonthExpenses.essentialTotal ? (
                       <Text style={{ color: "#D32F2F", fontWeight: "600" }}>
-                        ❌ Allocating this will leave only ${(userSummary.total_balance - sliderValue).toFixed(2)} for essential expenses!
-                        Consider reducing the amount to stay safe.
+                        ❌ Allocating this will leave only{" "}
+                        {(userSummary.total_balance - sliderValue).toFixed(2)}{" "}
+                        for essential expenses!
                       </Text>
-                    ) : sliderValue > userSummary.total_balance - lastMonthExpenses.total ? (
+                    ) : sliderValue >
+                      userSummary.total_balance - lastMonthExpenses.total ? (
                       <Text style={{ color: "#F57C00", fontWeight: "600" }}>
-                        ⚠️ Allocating this will leave only ${(userSummary.total_balance - sliderValue).toFixed(2)} for total expenses.
-                        You may want to reduce it.
+                        ⚠️ You may not have enough for last month's total spending.
                       </Text>
                     ) : sliderValue > userSummary.total_balance / 2 ? (
                       <Text style={{ color: "#FBC02D", fontWeight: "600" }}>
-                        ⚠️ Allocation exceeds 50% of your balance. Consider saving less to maintain safety.
+                        ⚠️ Allocation exceeds 50% of your total balance.
                       </Text>
                     ) : null}
                   </View>
                 )}
 
-                {/* Slider */}
                 <Slider
                   style={{ width: "100%", height: 40, marginTop: 6 }}
                   minimumValue={0}
@@ -1004,37 +1069,73 @@ const onSave = async ({ amount: overrideAmount } = {}) => {
                 />
 
                 <Text style={styles.sliderValueText}>
-                  Amount: {sliderValue} ({sliderPercent}% of income)
+                  Amount: {sliderValue} ({sliderPercent}% of balance)
                 </Text>
               </View>
+
+              {/* ------------------ ADD SAVING ACCOUNT MODAL ------------------ */}
+              <AddSavingAccountModal
+                visible={showAccountModal}
+                onClose={() => setShowAccountModal(false)}
+                methodId={selectedSavingMethod?.id || null}
+                methodName={selectedSavingMethod?.method_name || ""}
+                savingMethods={savingMethods}
+                onSaved={async () => {
+                  const accounts = await getSavingAccounts(userId);
+                  setSavingAccounts(accounts);
+                }}
+                userId={userId}
+              />
 
               {/* Save Button */}
               <TouchableOpacity
                 style={[
                   styles.goalSaveButton,
-                  (!selectedSavingMethod || !selectedSavingAccount || isLoading) && styles.disabledButton
+                  isLoading && styles.saveButtonDisabled
                 ]}
+                disabled={isLoading}
                 onPress={() => {
-                  if (!selectedSavingMethod || !selectedSavingAccount) {
-                    Alert.alert("Missing Information", "Please select both saving method and account.");
+
+                  let hasError = false;
+
+                  if (!selectedGoal) {
+                    setGoalError(true);
+                    hasError = true;
+                  } else setGoalError(false);
+
+                  if (!selectedSavingMethod) {
+                    setMethodError(true);
+                    hasError = true;
+                  } else setMethodError(false);
+
+                  if (!selectedSavingAccount) {
+                    setAccountError(true);
+                    hasError = true;
+                  } else setAccountError(false);
+
+                  if (hasError) {
+                    triggerShake();  // <-- 使用你现成的 shake 动画
+                    Alert.alert("Missing Information", "Please complete all required fields.");
                     return;
                   }
-                  onSave({
-                    amount: sliderValue,
-                  });
+
+                  onSave(sliderValue);
                 }}
-                disabled={!selectedSavingMethod || !selectedSavingAccount || isLoading}
               >
                 {isLoading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.goalSaveText}>
-                    Save to {selectedSavingMethod?.method_name || "Goal"}
+                    Save to {selectedGoal ? goals.find(g => g.id === selectedGoal).goalName : 'Goal'}
                   </Text>
                 )}
               </TouchableOpacity>
+
             </View>
           )}
+
+
+
 
 
         </ScrollView>
@@ -1056,7 +1157,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
   },
-   errorContainer: {
+  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1401,5 +1502,89 @@ const styles = StyleSheet.create({
     color: "#2E5E4E",
     fontWeight: "bold",
   },
+  subLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2E5E4E",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+
+  /* Saving Method Styles */
+  methodList: {
+    marginTop: 5,
+    marginBottom: 10,
+  },
+  methodButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#f5f5f5",
+    marginBottom: 8,
+  },
+  methodButtonActive: {
+    backgroundColor: "#9cd8b3",
+  },
+  methodIcon: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  methodInfo: {
+    flex: 1,
+  },
+  methodName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2E5E4E",
+  },
+  methodDetails: {
+    fontSize: 12,
+    color: "#555",
+  },
+
+  /* Account Styles */
+  accountSection: {
+    marginTop: 8,
+  },
+  accountButton: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  accountButtonActive: {
+    backgroundColor: "#8AD0AB",
+  },
+  accountName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2E5E4E",
+  },
+  accountBalance: {
+    fontSize: 12,
+    color: "#555",
+  },
+  accountRate: {
+    fontSize: 12,
+    color: "#4CAF50",
+    marginTop: 2,
+  },
+
+  addAccountButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  addAccountText: {
+    marginLeft: 6,
+    color: "#2E5E4E",
+    fontWeight: "600",
+  },
+  errorBorder: {
+    borderWidth: 1.5,
+    borderColor: "#D9534F",
+    borderRadius: 8,
+  }
 
 });

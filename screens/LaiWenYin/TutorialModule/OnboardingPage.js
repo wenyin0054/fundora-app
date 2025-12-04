@@ -10,6 +10,8 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {completeOnboarding } from "../../../database/userAuth";
 const { width } = Dimensions.get("window");
+import { SafeAreaView } from "react-native-safe-area-context";
+
 
 export default function OnboardingScreen({ navigation }) {
 const [currentUser, setCurrentUser] = useState(null);
@@ -29,17 +31,9 @@ const [currentUser, setCurrentUser] = useState(null);
     };
     fetchUser();
   }, []);
-  const handleGetStarted = async () => {
-    try {
-      await completeOnboarding(currentUser.userId);
-      navigation.replace("MainApp");
-    } catch (error) {
-      console.log("Error saving onboarding flag:", error);
-    }
-  };
  
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.card}>
         <Image
           source={require('../../../assets/financialstart.jpg')}
@@ -70,13 +64,7 @@ const [currentUser, setCurrentUser] = useState(null);
         <Text style={styles.nextButtonText}>Next</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.skipButton}
-        onPress={handleGetStarted}
-      >
-        <Text style={styles.skipButtonText}>Skip</Text>
-      </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -150,18 +138,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
-    fontSize: 16,
-  },
-  skipButton: {
-    backgroundColor: "#F9FAFB",
-    width: width * 0.85,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  skipButtonText: {
-    color: "#111827",
-    fontWeight: "500",
     fontSize: 16,
   },
 });

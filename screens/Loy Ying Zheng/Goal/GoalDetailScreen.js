@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
@@ -24,8 +24,11 @@ import {
   createWithdrawalRecord,
   getSavingAccounts,
   hasPendingWithdrawal,
-  updateSavingAccountInterestRate
 } from "../../../database/SQLite";
+import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import { Animated } from "react-native";
+
+
 
 export default function GoalDetailScreen({ route, navigation }) {
   const { goal } = route.params;
@@ -36,17 +39,33 @@ export default function GoalDetailScreen({ route, navigation }) {
   const [currentAmount, setCurrentAmount] = useState("");
   const [deadline, setDeadline] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
-  const [selectedGoalAmount, setSelectedGoalAmount] = useState(0);
-  const [adjustMode, setAdjustMode] = useState("add"); // "add" or "subtract"
   const [progress, setProgress] = useState(0);
 
   const [fundAllocations, setFundAllocations] = useState([]);
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [selectedAllocation, setSelectedAllocation] = useState(null);
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [availableAccounts, setAvailableAccounts] = useState([]);
 
-  const { userId } = useUser(); 
+
+  const [deadlineError, setDeadlineError] = useState(false);
+  const deadlineShake = useRef(new Animated.Value(0)).current;
+
+  const triggerDeadlineShake = () => {
+    deadlineShake.setValue(0);
+    Animated.sequence([
+      Animated.timing(deadlineShake, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(deadlineShake, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(deadlineShake, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(deadlineShake, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  };
+
+
+  const nameRef = useRef();
+  const amountRef = useRef();
+
+
+  const { userId } = useUser();
 
   const loadGoalData = useCallback(async () => {
     if (!goal) return;
@@ -56,7 +75,6 @@ export default function GoalDetailScreen({ route, navigation }) {
     setTargetAmount(goal.targetAmount?.toString() || goal.target?.toString() || "");
     setCurrentAmount(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
     setDeadline(goal.deadline ? new Date(goal.deadline + "T00:00:00") : new Date());
-    setSelectedGoalAmount(0);
 
     const current = parseFloat(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
     const target = parseFloat(goal.targetAmount?.toString() || goal.target?.toString() || "0");
@@ -103,7 +121,6 @@ export default function GoalDetailScreen({ route, navigation }) {
 
       console.log("📊 Allocations with current value:", allocationsWithCurrentValue);
       setFundAllocations(allocationsWithCurrentValue);
-      setAvailableAccounts(accounts);
     } catch (error) {
       console.error("❌ loadGoalData error:", error);
     }
@@ -115,149 +132,61 @@ export default function GoalDetailScreen({ route, navigation }) {
     }, [loadGoalData])
   );
 
-const onUpdate = async () => {
-  if (!dbReady) {
-    return Alert.alert("Database not ready yet!");
-  }
 
-  // 🟢 1️⃣ VALIDATIONS
-  if (!payee || !payee.trim()) {
-    triggerShake();
-    return Alert.alert("Missing Payee", "Please enter a valid payee or project.");
-  }
 
-  if (!validateAmount(amount, "Amount")) return;
+  const onUpdate = async () => {
+    // -------- 1️⃣ No Changes Check --------
+    const oldDeadline = goal.deadline;
+    const currentDeadline = deadline.toISOString().split("T")[0];
 
-  if (!date) {
-    return Alert.alert("Missing Date", "Please select a valid date.");
-  }
+    const noChange =
+      goalName === goal.goalName &&
+      targetAmount === goal.targetAmount.toString() &&
+      currentDeadline === oldDeadline;
 
-  if (!selectedOption) {
-    return Alert.alert("Missing Type", "Please select a type.");
-  }
-
-  if (selectedOption !== "Income" && !tag) {
-    return Alert.alert("Missing Tag", "Please select a tag.");
-  }
-
-  if (selectedOption !== "Income" && !paymentType) {
-    return Alert.alert("Missing Payment Type", "Please select a payment type.");
-  }
-
-  // validate goal allocation
-  if (selectedOption === "Transaction" && allocateToGoal) {
-    if (!selectedGoal) {
-      return Alert.alert("Missing Goal", "Please select a goal to allocate to.");
+    if (noChange) {
+      return Alert.alert("No Changes", "You didn't modify any information.");
     }
-    if (sliderValue <= 0) {
-      return Alert.alert("Invalid Amount", "Please select an amount to allocate.");
-    }
-    if (sliderValue > parseFloat(amount)) {
-      return Alert.alert("Error", "Allocated amount cannot exceed transaction amount.");
-    }
-  }
 
-  // 🟡 Normalized values
-  const newAmount = selectedOption === "Transaction" && allocateToGoal
-    ? sliderValue
-    : parseFloat(amount);
+    // -------- 2️⃣ Validate Inputs --------
+    // Goal Name
+    if (!nameRef.current.validate()) return;
 
-  const newData = {
-    payee: payee.trim(),
-    amount: newAmount,
-    date: date.toISOString().split("T")[0],
-    tag,
-    eventTag,
-    paymentType,
-    isPeriodic,
-    selectedType,
-    typeLabel: selectedOption.toLowerCase(),
-    essentialityLabel: essentialityLabel ? 1 : 0,
-    goalId: selectedOption === "Transaction" && allocateToGoal ? selectedGoal : null,
-    periodInterval
+    // Target Amount
+    if (!amountRef.current.validate()) return;
+
+    // -------- 3️⃣ Validate Deadline (future only) --------
+    const today = new Date();
+    const picked = new Date(deadline);
+
+    if (picked <= today) {
+      setDeadlineError(true);
+      triggerDeadlineShake();
+      return Alert.alert("Invalid Deadline", "Please choose a future date.");
+    }
+
+    setDeadlineError(false);
+
+    // -------- 4️⃣ Save to DB --------
+    try {
+      await updateGoalLocal(
+        userId,
+        goal.id,
+        goalName.trim(),
+        description.trim(),
+        parseFloat(targetAmount),
+        parseFloat(currentAmount),
+        currentDeadline
+      );
+
+      Alert.alert("Success", "Goal updated successfully!");
+      navigation.goBack();
+
+    } catch (err) {
+      console.error("❌ Failed to update goal:", err);
+      Alert.alert("Error", "Failed to update this goal.");
+    }
   };
-
-  const oldData = {
-    payee: expense.payee,
-    amount: parseFloat(expense.amount),
-    date: expense.date,
-    tag: expense.tag,
-    eventTag: expense.eventTag,
-    paymentType: expense.paymentType,
-    isPeriodic: expense.isPeriodic,
-    selectedType: expense.selectedType,
-    typeLabel: expense.typeLabel.toLowerCase(),
-    essentialityLabel: expense.essentialityLabel,
-    goalId: expense.goalId,
-    periodInterval: expense.periodInterval
-  };
-
-  // 🟢 2️⃣ COMPARE — check if anything actually changed
-  const changed = JSON.stringify(newData) !== JSON.stringify(oldData);
-
-  if (!changed) {
-    return Alert.alert("No Changes", "You didn’t modify any information.");
-  }
-
-  try {
-    // 🟠 3️⃣ HANDLE GOAL ALLOCATION ADJUSTMENTS
-    const oldAmount = oldData.amount;
-    const oldType = oldData.typeLabel;
-    const newType = newData.typeLabel;
-    const hadGoalBefore = oldData.goalId !== null;
-    const hasGoalNow = newData.goalId !== null;
-
-    // Case 1: removed goal allocation
-    if (hadGoalBefore && !hasGoalNow) {
-      await updateGoalAmount(oldData.goalId, -oldAmount, true);
-    }
-
-    // Case 2: newly added goal allocation
-    if (!hadGoalBefore && hasGoalNow) {
-      await updateGoalAmount(newData.goalId, newData.amount, true);
-    }
-
-    // Case 3: same goal but amount changed
-    if (hadGoalBefore && hasGoalNow && oldData.goalId === newData.goalId) {
-      const diff = newData.amount - oldAmount;
-      if (diff !== 0) {
-        await updateGoalAmount(newData.goalId, diff, true);
-      }
-    }
-
-    // 🟠 4️⃣ UPDATE EXPENSE LOCAL
-    await updateExpenseLocal(
-      expense.id,
-      newData.payee,
-      newData.amount,
-      newData.date,
-      newData.tag,
-      newData.eventTag,
-      newData.paymentType,
-      newData.isPeriodic,
-      newData.selectedType,
-      newData.typeLabel,
-      newData.essentialityLabel,
-      newData.goalId,
-      newData.periodInterval
-    );
-
-    // 🟠 5️⃣ UPDATE USER SUMMARY
-    if (oldType === newType) {
-      await updateUserSummaryOnEdit(userId, newType, oldAmount, newData.amount);
-    } else {
-      await updateUserSummaryOnDelete(userId, oldType, oldAmount);
-      await updateUserSummaryOnAdd(userId, newType, newData.amount);
-    }
-
-    Alert.alert("✅ Success", "Record updated successfully!");
-    navigation.goBack();
-
-  } catch (error) {
-    console.error("❌ Failed to update expense:", error);
-    Alert.alert("Error", "Failed to update this record.");
-  }
-};
 
 
 
@@ -272,8 +201,7 @@ const onUpdate = async () => {
           style: "destructive",
           onPress: async () => {
             try {
-              const oldAmount = goal.amount || 0;
-              await deleteGoalLocal(goal.id);
+              await deleteGoalLocal(userId, goal.id);
               Alert.alert("Deleted", "Goal has been deleted successfully.");
               navigation.goBack();
             } catch (error) {
@@ -352,9 +280,9 @@ const onUpdate = async () => {
     const currentDate = new Date();
     const timeInDays = Math.max((currentDate - startDate) / (1000 * 60 * 60 * 24), 0.1); // 最少0.1天避免除以0
     const timeInYears = timeInDays / 365;
-    
+
     const absoluteReturn = ((finalAmount - principal) / principal) * 100;
-    
+
     // 根據時間長度決定顯示方式
     if (timeInDays < 7) {
       // 少於7天：顯示絕對收益率
@@ -380,54 +308,51 @@ const onUpdate = async () => {
 
     // 計算實際收益（可能為負數）
     const actualProfit = amount - principal;
+    const profitPercentage = ((actualProfit / principal) * 100).toFixed(2);
 
-    // 反向計算真實年化收益率
+    // 計算持有時間
     const startDate = new Date(selectedAllocation.allocation_date);
     const currentDate = new Date();
     const timeInDays = Math.max((currentDate - startDate) / (1000 * 60 * 60 * 24), 0.1);
     const timeInYears = timeInDays / 365;
 
-    let actualInterestRate = 0;
-    if (timeInYears > 0 && principal > 0) {
-      actualInterestRate = (Math.pow(amount / principal, 1 / timeInYears) - 1) * 100;
-    }
-
     try {
-      // 首先更新 saving_accounts 表的利率
-      await updateSavingAccountInterestRate(userId, selectedAllocation.account_id, actualInterestRate);
-
-      // 然後創建提取記錄
-      await createWithdrawalRecord(
+      // 只創建提取記錄，不更新其他表
+      const result = await createWithdrawalRecord(
         userId,
         goal.id,
         selectedAllocation.id,
         amount,
         principal,
-        Math.max(actualProfit, 0), // 利息不能為負數
+        actualProfit,
         `Withdrawal from ${selectedAllocation.account_name}`
       );
 
-      setWithdrawModalVisible(false);
+      if (result && result.success) {
+        setWithdrawModalVisible(false);
 
-      // 顯示計算結果
-      const profitText = actualProfit >= 0 ?
-        `Profit: +RM ${actualProfit.toFixed(2)}` :
-        `Loss: RM ${actualProfit.toFixed(2)}`;
+        // 顯示計算結果
+        const profitText = actualProfit >= 0 ?
+          `Profit: +RM ${actualProfit.toFixed(2)} (+${profitPercentage}%)` :
+          `Loss: -RM ${Math.abs(actualProfit).toFixed(2)} (-${Math.abs(parseFloat(profitPercentage))}%)`;
 
-      Alert.alert(
-        "Withdrawal Request Created",
-        `Your withdrawal request has been created.\n\n${profitText}\nCalculated return: ${actualInterestRate.toFixed(2)}%`,
-        [
-          {
-            text: "Go to Management",
-            onPress: () => navigation.navigate('WithdrawalManagement')
-          },
-          {
-            text: "Stay Here",
-            style: "cancel"
-          }
-        ]
-      );
+        Alert.alert(
+          "Withdrawal Request Created",
+          `Your withdrawal request has been created successfully.\n\n${profitText}\nHeld for: ${timeInDays.toFixed(1)} days`,
+          [
+            {
+              text: "Go to Management",
+              onPress: () => navigation.navigate('WithdrawalManagement')
+            },
+            {
+              text: "Stay Here",
+              style: "cancel"
+            }
+          ]
+        );
+      } else {
+        Alert.alert("Error", "Failed to create withdrawal request");
+      }
     } catch (error) {
       console.error("❌ confirmWithdrawal error:", error);
       Alert.alert("Error", "Failed to create withdrawal request");
@@ -595,16 +520,17 @@ const onUpdate = async () => {
               </View>
             )}
 
-            <Text style={styles.label}>Goal Name</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="clipboard-outline" size={20} color="#6c757d" />
-              <TextInput
-                value={goalName}
-                onChangeText={setGoalName}
-                style={styles.input}
-                placeholder="Enter goal name"
-              />
-            </View>
+            <ValidatedInput
+              label="Goal Name"
+              value={goalName}
+              onChangeText={setGoalName}
+              placeholder="Enter goal name"
+              placeholderTextColor={"#c5c5c5ff"}
+              validate={(v) => v.trim().length >= 2}
+              errorMessage="Goal name must be at least 2 characters"
+              ref={nameRef}
+            />
+
 
             <Text style={styles.label}>Description</Text>
             <TextInput
@@ -614,27 +540,32 @@ const onUpdate = async () => {
               multiline
             />
 
-            <Text style={styles.label}>Target Amount (RM)</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="cash-outline" size={20} color="#6c757d" />
-              <TextInput
-                value={targetAmount}
-                onChangeText={setTargetAmount}
-                style={styles.input}
-                keyboardType="numeric"
-              />
-            </View>
+            <ValidatedInput
+              label="Target Amount (RM)"
+              value={targetAmount}
+              onChangeText={setTargetAmount}
+              keyboardType="numeric"
+              validate={(v) => {
+                const num = parseFloat(v);
+                if (isNaN(num)) return false;
+                return num >= parseFloat(currentAmount);
+              }}
+              errorMessage={`Amount must be ≥ RM ${currentAmount}`}
+              ref={amountRef}
+            />
+
 
             <Text style={styles.label}>Current Saved Amount (RM)</Text>
             <View style={styles.inputRow}>
               <Ionicons name="wallet-outline" size={20} color="#6c757d" />
               <TextInput
-                value={currentAmount}
+                value={Number(currentAmount).toFixed(2)}
                 style={styles.input}
                 editable={false}
                 showSoftInputOnFocus={false}
-              />
+              /> 
             </View>
+
 
             {/* 資金分配部分 */}
             {fundAllocations.length > 0 && (
@@ -653,13 +584,19 @@ const onUpdate = async () => {
             )}
 
             <Text style={styles.label}>Deadline</Text>
-            <TouchableOpacity
-              style={styles.dateInput}
-              onPress={() => setShowPicker(true)}
+            <Animated.View
+              style={[
+                styles.dateInput,
+                deadlineError && { borderColor: "#ff6b6b", borderWidth: 2 },
+                { transform: [{ translateX: deadlineShake }] }
+              ]}
             >
-              <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-              <Text style={styles.dateText}>{deadline.toDateString().slice(4)}</Text>
-            </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="calendar-outline" size={18} color="#6c757d" />
+                <Text style={styles.dateText}>{deadline.toDateString().slice(4)}</Text>
+              </TouchableOpacity>
+            </Animated.View>
+
 
             {showPicker && (
               <DateTimePicker
@@ -673,7 +610,7 @@ const onUpdate = async () => {
               />
             )}
 
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+            <TouchableOpacity style={styles.saveButton} onPress={onUpdate}>
               <Text style={styles.saveText}>Save Changes</Text>
             </TouchableOpacity>
 
@@ -725,6 +662,7 @@ const onUpdate = async () => {
                   value={withdrawAmount}
                   onChangeText={setWithdrawAmount}
                   placeholder={`Enter actual amount (max: RM ${selectedAllocation.current_value.toFixed(2)})`}
+                  placeholderTextColor={"#c5c5c5ff"}
                 />
 
                 {/* 實時計算顯示 */}

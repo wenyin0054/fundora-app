@@ -432,25 +432,7 @@ export default function FaceRegistrations({ navigation, route }) {
             </View>
           )}
 
-          {/* Settings Card */}
-          <View style={styles.settingsCard}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Ionicons name="face-recognition" size={22} color="#57C0A1" />
-                <Text style={styles.settingLabel}>Face Recognition</Text>
-              </View>
-              <Switch
-                trackColor={{ false: '#e5e7eb', true: '#a7f3d0' }}
-                thumbColor={isEnabled ? '#57C0A1' : '#f8fafc'}
-                ios_backgroundColor="#e5e7eb"
-                onValueChange={toggleSwitch}
-                value={isEnabled}
-              />
-            </View>
-            <Text style={styles.settingDescription}>
-              Enable AI-powered face recognition for secure and convenient authentication
-            </Text>
-          </View>
+ 
 
           {/* Action Buttons */}
           <View style={styles.actionsContainer}>

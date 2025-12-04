@@ -214,6 +214,7 @@ export default function Register({ navigation }) {
             <TextInput
               style={[styles.input, fullNameError && styles.inputError]}
               placeholder="Enter your full name"
+              placeholderTextColor={"#c5c5c5ff"}
               value={fullName}
               onChangeText={(text) => {
                 setFullName(text);
@@ -231,6 +232,7 @@ export default function Register({ navigation }) {
             <TextInput
               style={[styles.input, emailError && styles.inputError]}
               placeholder="Please enter email"
+              placeholderTextColor={"#c5c5c5ff"}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -250,6 +252,7 @@ export default function Register({ navigation }) {
               <TextInput
                 style={styles.passwordInput}
                 placeholder="Please enter password"
+                placeholderTextColor={"#c5c5c5ff"}
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={(text) => {
@@ -282,6 +285,7 @@ export default function Register({ navigation }) {
               <TextInput
                 style={styles.passwordInput}
                 placeholder="Please confirm password"
+                placeholderTextColor={"#c5c5c5ff"}
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={(text) => {
