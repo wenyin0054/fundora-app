@@ -673,6 +673,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingRight: 8,
+    color: "#000",
   },
   forgot: {
     color: '#57C0A1',

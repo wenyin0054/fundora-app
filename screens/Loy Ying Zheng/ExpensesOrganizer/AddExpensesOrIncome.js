@@ -652,11 +652,14 @@ export default function AddExpenseScreen({ route, navigation }) {
                         navigation.navigate("AddTag", {
                           onTagAdded: async (newTag) => {
                             await fetchTag();
-                            setTag(newTag.name);
-                            setEssentialityLabel(newTag.essentialityLabel);
                             setTimeout(() => {
-                              console.log("tag =", itemValue, " essential =", selectedTag.essentialityLabel);
-                            });
+                              // Apply the new tag AFTER tags list is updated
+                              setTag(newTag.name);
+
+                              // Set essentiality
+                              setEssentialityLabel(Number(newTag.essentialityLabel));
+                              console.log("New tag ", newTag.name);
+                            }, 50);
                           }
                         });
                       } else {

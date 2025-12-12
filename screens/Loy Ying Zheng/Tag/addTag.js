@@ -79,7 +79,12 @@ export default function AddTag({ navigation, route }) {
       await addTagLocal(userId, trimmed, essentiality);
 
       Alert.alert("Success", "Tag added successfully!");
-      if (onTagAdded) onTagAdded(trimmed);
+      if (onTagAdded) {
+        onTagAdded({
+          name: trimmed,
+          essentialityLabel: essentiality,
+        });
+      }
 
       navigation.goBack();
     } catch (err) {

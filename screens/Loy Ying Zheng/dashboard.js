@@ -212,13 +212,6 @@ export default function DashboardScreen({ navigation }) {
                   🟢 Monthly Income: RM {monthlyIncome.toFixed(2)}
                 </Text>
 
-                {incomeGrowth && (
-                  <Text style={{ color: incomeGrowth.rate >= 0 ? "#d4ffdd" : "#ffeaea" }}>
-                    {incomeGrowth.rate >= 0 ? "📈 Growth: +" : "📉 Growth: "}
-                    {(incomeGrowth.rate * 100).toFixed(1)}%
-                  </Text>
-                )}
-
                 <Text style={styles.expenseText}>
                   🔴 Expenses: RM {userSummary.total_expense.toFixed(2)}
                 </Text>
