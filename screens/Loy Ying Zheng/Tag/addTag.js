@@ -11,7 +11,13 @@ import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../reuseComponet/header";
 import { addTagLocal, getTagsLocal } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
-import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSButton,
+  FDSLabel,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function AddTag({ navigation, route }) {
   const [tagName, setTagName] = useState("");
@@ -64,11 +70,10 @@ export default function AddTag({ navigation, route }) {
 
     // 3️⃣ Essentiality missing
     if (essentiality === null) {
-      return Alert.alert(
-        "Missing Info",
-        "Please select Essential or Non-Essential."
-      );
+      Alert.alert("Missing Info", "Please select Essential or Non-Essential.");
+      return;
     }
+
 
     try {
       await addTagLocal(userId, trimmed, essentiality);
@@ -110,18 +115,17 @@ export default function AddTag({ navigation, route }) {
     <View style={styles.container}>
       <AppHeader title="Add New Tag" showLeftButton onLeftPress={() => navigation.goBack()} />
 
-      <View style={styles.card}>
+      <FDSCard>
         {/* Validated Input */}
-        <ValidatedInput
+        <FDSValidatedInput
           ref={tagNameRef}
           label="Tag Name"
           value={tagName}
           onChangeText={setTagName}
           placeholder="Enter tag name (e.g. Food)"
-          placeholderTextColor={"#c5c5c5ff"}
-          validate={(v) => v.trim().length > 0}
+          validate={(v) => v && v.trim().length > 0}
           errorMessage="Tag name cannot be empty"
-          icon={<Ionicons name="pricetag-outline" size={20} color="#6c757d" />}
+          icon={<Ionicons name="pricetag-outline" size={18} color={FDSColors.textGray} />}
         />
 
         {/* Essentiality Selector */}
@@ -157,18 +161,13 @@ export default function AddTag({ navigation, route }) {
         </View>
 
         {/* Save Button */}
-        <TouchableOpacity
-          style={[
-            styles.saveBtn,
-            (!tagName.trim() || essentiality === null) && styles.saveBtnDisabled,
-          ]}
+        <FDSButton
+          title="Save Tag"
+          icon="save-outline"
           disabled={!tagName.trim() || essentiality === null}
           onPress={handleAddTag}
-        >
-          <Ionicons name="save-outline" size={18} color="#fff" />
-          <Text style={styles.saveText}>Save Tag</Text>
-        </TouchableOpacity>
-      </View>
+        />
+      </FDSCard>
     </View>
   );
 }

@@ -229,6 +229,20 @@ export const initDB = async () => {
       );
     `);
 
+    // ------------------- Income Snapshots Table -------------------
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS income_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        month TEXT,
+        income_amount REAL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(userId, month),
+        FOREIGN KEY (userId) REFERENCES users(userId)
+      );
+    `);
+
+
     console.log("✅ All database tables are ready with user isolation");
   } catch (error) {
     console.error("❌ initDB error:", error);
@@ -619,6 +633,44 @@ export const getLastMonthTotalExpense = async (userId) => {
     return { total: 0, essentialTotal: 0 };
   }
 };
+
+export const getCurrentMonthlyIncome = async (userId) => {
+  try {
+    const result = await db.getFirstAsync(
+      `SELECT SUM(amount) AS totalIncome
+       FROM expenses
+       WHERE userId = ?
+       AND typeLabel = 'income'
+       AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now');`,
+      [userId]
+    );
+
+    return result?.totalIncome ? parseFloat(result.totalIncome) : 0;
+  } catch (error) {
+    console.error("❌ getCurrentMonthlyIncome error:", error);
+    return 0;
+  }
+};
+
+export const getCurrentMonthlyExpenses = async (userId) => {
+  try {
+    const result = await db.getFirstAsync(
+      `SELECT SUM(amount) AS totalExpenses
+       FROM expenses
+       WHERE userId = ?
+       AND typeLabel = 'expense'
+       AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now');`,
+      [userId]
+    );
+    console.log("✅ Current monthly expenses for user", userId, ":", result?.totalExpenses);
+
+    return result?.totalExpenses ? parseFloat(result.totalExpenses) : 0;
+  } catch (error) {
+    console.error("❌ getCurrentMonthlyExpenses error:", error);
+    return 0;
+  }
+};
+
 
 // ------------------- GOALS CRUD -------------------
 export const createGoalTable = async (userId) => {
@@ -1438,7 +1490,7 @@ export const getGoalFundAllocations = async (userId, goalId) => {
       WHERE gfa.userId = ? AND gfa.goalId = ?
       ORDER BY gfa.allocation_date DESC;`,
     [userId, goalId]
-  ); 
+  );
 };
 
 // ------------------- WITHDRAWAL MANAGEMENT -------------------
@@ -1788,4 +1840,119 @@ const recalculateGoalCurrentAmount = async (userId, goalId) => {
     `UPDATE goals SET currentAmount = ? WHERE id = ? AND userId = ?`,
     [totalCurrentValue, goalId, userId]
   );
+};
+
+export const hasSnapshotForMonth = async (userId, month) => {
+  const row = await db.getFirstAsync(
+    `SELECT id FROM income_snapshots WHERE userId = ? AND month = ? LIMIT 1`,
+    [userId, month]
+  );
+  return !!row;
+};
+
+
+export const saveMonthlyIncomeSnapshot = async (userId, date) => {
+  try {
+    const month = date.slice(0, 7); // YYYY-MM
+
+    // 计算 当月 total income（而不是累计）
+    const result = await db.getFirstAsync(
+      `SELECT SUM(amount) AS monthlyIncome
+       FROM expenses
+       WHERE userId = ?
+       AND typeLabel = 'income'
+       AND strftime('%Y-%m', date) = ?`,
+      [userId, month]
+    );
+
+    const monthlyIncome = result?.monthlyIncome ? parseFloat(result.monthlyIncome) : 0;
+
+    // 存入 snapshots
+    await db.runAsync(
+      `INSERT OR REPLACE INTO income_snapshots (userId, month, income_amount)
+       VALUES (?, ?, ?)`,
+      [userId, month, monthlyIncome]
+    );
+
+    console.log(`📌 Snapshot saved for ${month}: RM${monthlyIncome}`);
+  } catch (err) {
+    console.error("❌ saveMonthlyIncomeSnapshot error:", err);
+  }
+};
+
+
+export const getIncomeGrowthRate = async (userId) => {
+  const rows = await db.getAllAsync(
+    `SELECT month, income_amount 
+     FROM income_snapshots 
+     WHERE userId = ?
+     ORDER BY month DESC 
+     LIMIT 2`,
+    [userId]
+  );
+
+  if (rows.length < 2) {
+    return { rate: 0, current: rows[0]?.income_amount || 0, previous: 0 };
+  }
+
+  const current = rows[0].income_amount;
+  const previous = rows[1].income_amount;
+
+  if (previous === 0) {
+    return { rate: 1, current, previous }; // 100% growth if previous was 0
+  }
+
+  const rate = (current - previous) / previous;
+
+  return { rate, current, previous };
+};
+
+export const recalculateMonthlyIncomeSnapshot = async (userId, date) => {
+  const month = date.slice(0, 7);
+
+  const result = await db.getFirstAsync(
+    `SELECT SUM(amount) AS total
+     FROM expenses
+     WHERE userId = ?
+     AND typeLabel = 'income'
+     AND strftime('%Y-%m', date) = ?`,
+    [userId, month]
+  );
+
+  const income = result?.total ? parseFloat(result.total) : 0;
+
+  await db.runAsync(
+    `INSERT OR REPLACE INTO income_snapshots (userId, month, income_amount)
+     VALUES (?, ?, ?)`,
+    [userId, month, income]
+  );
+
+  console.log("📌 Snapshot recalculated for", month, ": RM", income);
+};
+
+export const getCurrentMonthSnapshotIncome = async (userId) => {
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+
+  const row = await db.getFirstAsync(
+    `SELECT income_amount 
+     FROM income_snapshots
+     WHERE userId = ? AND month = ?
+     LIMIT 1`,
+    [userId, month]
+  );
+
+  return row?.income_amount || 0;
+};
+
+export const resetIncomeSnapshots = async (userId) => {
+  try {
+    await db.runAsync(
+      `DELETE FROM income_snapshots WHERE userId = ?`,
+      [userId]
+    );
+    console.log("🗑️ Income snapshots reset");
+  } catch (err) {
+    console.error("❌ resetIncomeSnapshots error:", err);
+  }
 };

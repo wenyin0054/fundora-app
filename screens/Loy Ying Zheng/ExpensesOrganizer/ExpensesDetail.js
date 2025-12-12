@@ -36,10 +36,18 @@ import {
   getSavingAccounts,
   allocateFundToGoal,
   getGoalFundAllocations,
-
+  recalculateMonthlyIncomeSnapshot
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
 import { useUser } from "../../reuseComponet/UserContext";
+import {
+  FDSCard,
+  FDSLabel,
+  FDSValidatedInput,
+  FDSValidatedPicker,
+  FDSButton,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function ExpenseDetail({ route, navigation }) {
   const { expense } = route.params;
@@ -167,66 +175,66 @@ export default function ExpenseDetail({ route, navigation }) {
   ];
 
   // ---------- INIT DB & LOAD DATA ----------
-useEffect(() => {
-  const init = async () => {
-    console.log("🚀 [init] start");
-    try {
-      await initDB();
-      setDbReady(true);
+  useEffect(() => {
+    const init = async () => {
+      console.log("🚀 [init] start");
+      try {
+        await initDB();
+        setDbReady(true);
 
-      const [
-        loadedTags,
-        loadedEventTags,
-        active,
-        goalsData,
-        summary,
-        methods,
-        accounts,
-        allocations
-      ] = await Promise.all([
-        getTagsLocal(userId),
-        getEventTagsLocal(userId),
-        getActiveEventTagsLocal(userId),
-        getGoalsLocal(userId),
-        getUserSummary(userId),
-        getSavingMethods(userId),
-        getSavingAccounts(userId),
-        getGoalFundAllocations(userId, expense.goalId),
-      ]);
+        const [
+          loadedTags,
+          loadedEventTags,
+          active,
+          goalsData,
+          summary,
+          methods,
+          accounts,
+          allocations
+        ] = await Promise.all([
+          getTagsLocal(userId),
+          getEventTagsLocal(userId),
+          getActiveEventTagsLocal(userId),
+          getGoalsLocal(userId),
+          getUserSummary(userId),
+          getSavingMethods(userId),
+          getSavingAccounts(userId),
+          getGoalFundAllocations(userId, expense.goalId),
+        ]);
 
 
-      setTags(loadedTags);
-      setActiveEventTags(active);
-      setGoals(goalsData);
-      setUserSummary(summary);
-      setSavingMethods(methods);
-      setSavingAccounts(accounts);
+        setTags(loadedTags);
+        setActiveEventTags(active);
+        setGoals(goalsData);
+        setUserSummary(summary);
+        setSavingMethods(methods);
+        setSavingAccounts(accounts);
 
-      console.log("Allocation", allocations);
+        console.log("Allocation", allocations);
 
-      const allocation = allocations.find(a => a.transaction_id === expense.id);
-      console.log("🔍 Found allocation?", allocation);
+        const allocation = allocations.find(a => a.transaction_id === expense.id);
+        console.log("🔍 Found allocation?", allocation);
 
-      if (allocation) {
-        const method = methods.find(m => m.id === allocation.method_id);
-        const account = accounts.find(a => a.id === allocation.account_id);
+        if (allocation) {
+          const method = methods.find(m => m.id === allocation.method_id);
+          const account = accounts.find(a => a.id === allocation.account_id);
 
-        setSelectedSavingMethod(method || null);
-        setSelectedSavingAccount(account || null);
-      } else {
-        console.log("⚠️ No allocation found for this expense");
+          setSelectedSavingMethod(method || null);
+          setSelectedSavingAccount(account || null);
+        } else {
+          console.log("⚠️ No allocation found for this expense");
+        }
+
+        console.log("⚡ [init] all data loaded successfully");
+
+      } catch (err) {
+        console.error("❌ [init] error:", err);
       }
+    };
 
-      console.log("⚡ [init] all data loaded successfully");
+    if (userId) init();
 
-    } catch (err) {
-      console.error("❌ [init] error:", err);
-    }
-  };
-
-  if (userId) init();
-
-}, [userId, expense.id]);
+  }, [userId, expense.id]);
 
 
   // ---------- TYPE MAPPING ----------
@@ -616,6 +624,7 @@ useEffect(() => {
           );
       } else {
         if (oldType === newType)
+
           await updateUserSummaryOnEdit(
             userId,
             oldType,
@@ -626,6 +635,10 @@ useEffect(() => {
           await updateUserSummaryOnDelete(userId, oldType, oldAmount);
           await updateUserSummaryOnAdd(userId, newType, newData.amount);
         }
+      }
+
+      if (newType === "income" || oldType === "income") {
+        await recalculateMonthlyIncomeSnapshot(userId, newData.date);
       }
 
       Alert.alert("Success", "Record updated successfully!", [
@@ -651,13 +664,14 @@ useEffect(() => {
         style: "destructive",
         onPress: async () => {
           try {
-            const oldType = String(expense.typeLabel || "").toLowerCase();
+            const oldType = expense.type;
             const oldAmount = parseFloat(expense.amount) || 0;
 
             await deleteExpenseLocal(userId, expense.id);
 
             if (oldType === "income") {
               await updateUserSummaryOnDelete(userId, "income", oldAmount);
+              await recalculateMonthlyIncomeSnapshot(userId, expense.date);
             } else {
               await updateUserSummaryOnDelete(userId, "expense", oldAmount);
             }
@@ -698,107 +712,83 @@ useEffect(() => {
         keyboardShouldPersistTaps="handled"
       >
         <ScrollView style={styles.scrollContainer}>
-          <View style={styles.card}>
-            {/* Type Selection Bar */}
-            <View style={styles.selectionBarContainer}>
-              {options.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.typeButton,
-                    selectedOption.toLowerCase() === option.toLowerCase() &&
-                    styles.typeButtonActive,
-                  ]}
-                  onPress={() => handleTypeChange(option)}
-                >
-                  <Text
-                    style={[
-                      styles.typeButtonText,
-                      selectedOption.toLowerCase() === option.toLowerCase() &&
-                      styles.typeButtonTextActive,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Payee Input */}
-            <Animated.View
-              style={[
-                styles.inputRow,
-                payeeError && styles.inputError,
-                { transform: [{ translateX: payeeShake }] },
-              ]}
-            >
-              <Ionicons name="person-outline" size={20} color="#6c757d" />
-              <TextInput
-                style={styles.input}
-                value={payee}
-                onChangeText={(text) => {
-                  setPayee(text);
-                  if (text.trim()) setPayeeError(false);
-                }}
-                placeholder="Payee or purchased project"
-                placeholderTextColor={"#c5c5c5ff"}
-              />
-            </Animated.View>
-
-            {/* Amount Input / Total Balance */}
-            {selectedOption === "Transaction" && allocateToGoal ? (
-              <View
+          <View style={styles.selectionBarContainer}>
+            {options.map((option, index) => (
+              <TouchableOpacity
+                key={index}
                 style={[
-                  styles.inputRow,
-                  { justifyContent: "space-between", height: 45 },
+                  styles.typeButton,
+                  selectedOption.toLowerCase() === option.toLowerCase() &&
+                  styles.typeButtonActive,
                 ]}
+                onPress={() => handleTypeChange(option)}
               >
-                <Ionicons name="wallet-outline" size={20} color="#6c757d" />
                 <Text
-                  style={{
-                    flex: 1,
-                    marginLeft: 8,
-                    fontSize: 16,
-                    color: "#2E5E4E",
-                  }}
+                  style={[
+                    styles.typeButtonText,
+                    selectedOption.toLowerCase() === option.toLowerCase() &&
+                    styles.typeButtonTextActive,
+                  ]}
                 >
-                  Total Balance: RM{" "}
-                  {userSummary.total_balance?.toFixed(2) || "0.00"}
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <FDSCard>
+
+            {/* PAYEE */}
+            <FDSValidatedInput
+              label="Payee / Project"
+              value={payee}
+              onChangeText={(t) => {
+                setPayee(t);
+                if (t.trim()) setPayeeError(false);
+              }}
+              validate={(v) => v && v.trim().length > 0}
+              errorMessage="Payee is required"
+              icon={<Ionicons name="person-outline" size={18} color={FDSColors.textGray} />}
+            />
+
+            {/* AMOUNT 或 TOTAL BALANCE */}
+            {selectedOption === "Transaction" && allocateToGoal ? (
+              <View style={{ marginTop: 12 }}>
+                <FDSLabel>Total Balance</FDSLabel>
+                <Text style={{ fontSize: 16, color: "#2E5E4E", marginTop: 4 }}>
+                  RM {userSummary.total_balance?.toFixed(2)}
                 </Text>
               </View>
             ) : (
-              <Animated.View
-                style={[
-                  styles.inputRow,
-                  amountError && styles.inputError,
-                  { transform: [{ translateX: amountShake }] },
-                ]}
-              >
-                <Ionicons name="cash-outline" size={20} color="#6c757d" />
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={amount}
-                  onChangeText={(val) => {
-                    setAmount(val);
-                    setAmountError(false);
-                  }}
-                  placeholder="Amount"
-                  placeholderTextColor={"#c5c5c5ff"}
-                />
-              </Animated.View>
+              <FDSValidatedInput
+                label="Amount"
+                value={amount}
+                onChangeText={(t) => {
+                  setAmount(t);
+                  setAmountError(false);
+                }}
+                keyboardType="numeric"
+                validate={(v) => v && !isNaN(v) && parseFloat(v) > 0}
+                errorMessage="Amount must be greater than 0"
+                icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
+              />
             )}
 
-            {/* Date Picker */}
+            {/* DATE */}
+            <FDSLabel>Date</FDSLabel>
             <TouchableOpacity
-              style={[
-                styles.inputRow,
-                dateError && styles.inputError,
-              ]}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: FDSColors.bgLight,
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: FDSColors.border
+              }}
               onPress={() => setShowDatePicker(true)}
             >
-              <Ionicons name="calendar-outline" size={20} color="#6c757d" />
-              <Text style={[styles.input, { color: '#333' }]}>
+              <Ionicons name="calendar-outline" size={18} color={FDSColors.textGray} />
+              <Text style={{ marginLeft: 10 }}>
                 {date.toISOString().split("T")[0]}
               </Text>
             </TouchableOpacity>
@@ -819,29 +809,15 @@ useEffect(() => {
               />
             )}
 
-            {/* Tag Picker */}
+            {/* TAG */}
             {selectedOption !== "Income" && (
-              <Animated.View
-                style={[
-                  styles.pickerContainer,
-                  tagError && styles.inputError,
-                  { transform: [{ translateX: tagShake }] },
-                ]}
+              <FDSValidatedPicker
+                label="Tag"
+                value={tag}
+                validate={(v) => !!v}
+                errorMessage="Please select a tag"
+                icon={<Ionicons name="pricetag-outline" size={18} color={FDSColors.textGray} />}
               >
-                <Ionicons
-                  name="pricetag-outline"
-                  size={20}
-                  color="#6c757d"
-                  style={styles.icon}
-                />
-                <TextInput
-                  value={tag}
-                  style={styles.dropdownContent}
-                  placeholder="Select a tag"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  editable={false}
-                  pointerEvents="none"
-                />
                 <Picker
                   selectedValue={tag}
                   onValueChange={(itemValue) => {
@@ -849,379 +825,198 @@ useEffect(() => {
                       navigation.navigate("AddTag", {
                         onTagAdded: async (newTag) => {
                           setTag(newTag);
-                          setTagError(false);
                         },
                       });
                     } else {
                       setTag(itemValue);
                       setTagError(false);
-                      const selectedTag =
-                        tags.find((d) => d.name === itemValue) ||
-                        DEFAULT_TAGS.find((d) => d.name === itemValue);
-                      setEssentialityLabel(
-                        selectedTag ? selectedTag.essentialityLabel : 0
-                      );
                     }
                   }}
-                  style={[
-                    styles.picker,
-                    {
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      opacity: 0,
-                    },
-                  ]}
-                  dropdownIconColor="#2E5E4E"
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
                 >
                   <Picker.Item label="Select a tag..." value="" />
-                  {tags.map((item) => (
-                    <Picker.Item
-                      key={`user-${item.id}`}
-                      label={item.name}
-                      value={item.name}
-                    />
-                  ))}
-                  {DEFAULT_TAGS.map((item) => (
-                    <Picker.Item
-                      key={`default-${item.name}`}
-                      label={item.name}
-                      value={item.name}
-                    />
+                  {tags.map((t) => (
+                    <Picker.Item key={t.id} label={t.name} value={t.name} />
                   ))}
                   <Picker.Item label="➕ Add new tag" value="__add_new_tag__" />
                 </Picker>
-              </Animated.View>
+              </FDSValidatedPicker>
             )}
 
-            {/* Essentiality Switch */}
-            {tag && selectedOption !== "Income" && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginLeft: 25,
-                  marginBottom: 10,
-                }}
-              >
-                <Text style={{ marginRight: 10, color: "#555" }}>
-                  Essentiality:
-                </Text>
-                <Switch
-                  value={!!essentialityLabel}
-                  onValueChange={(value) => setEssentialityLabel(value ? 1 : 0)}
-                  trackColor={{ false: "#ccc", true: "#4CAF50" }}
-                  thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"}
-                />
-                <Text style={{ marginLeft: 10, color: "#555" }}>
-                  {essentialityLabel ? "Essential" : "Non-Essential"}
-                </Text>
-              </View>
-            )}
-
-            {/* Payment Type Picker */}
+            {/* PAYMENT TYPE */}
             {selectedOption !== "Income" && (
-              <Animated.View
-                style={[
-                  styles.pickerContainer,
-                  paymentTypeError && styles.inputError,
-                  { transform: [{ translateX: paymentTypeShake }] },
-                ]}
+              <FDSValidatedPicker
+                label="Payment Type"
+                value={paymentType}
+                validate={(v) => !!v}
+                errorMessage="Select payment method"
+                icon={<FontAwesome6 name="money-bill-transfer" size={16} color={FDSColors.textGray} />}
               >
-                <FontAwesome6
-                  name="money-bill-transfer"
-                  size={14}
-                  color="#6c757d"
-                  style={styles.icon}
-                />
-                <TextInput
-                  value={paymentType}
-                  style={styles.pickerDisplay}
-                  placeholder="Select payment type"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  editable={false}
-                  pointerEvents="none"
-                />
                 <Picker
                   selectedValue={paymentType}
-                  onValueChange={(val) => {
-                    setPaymentType(val);
-                    setPaymentTypeError(false);
-                  }}
-                  style={styles.hiddenPicker}
+                  onValueChange={(v) => setPaymentType(v)}
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
                 >
-                  <Picker.Item label="Select payment type..." value="" />
-                  {paymentTypeData.map((item) => (
-                    <Picker.Item
-                      key={item.id}
-                      label={item.name}
-                      value={item.name}
-                    />
+                  {paymentTypeData.map((p) => (
+                    <Picker.Item key={p.id} label={p.name} value={p.name} />
                   ))}
                 </Picker>
-              </Animated.View>
+              </FDSValidatedPicker>
             )}
 
-            {/* Event Tag Section */}
-            <View style={styles.eventTagContainer}>
-              <Text style={styles.eventTagTitle}>Active Event</Text>
-              {(() => {
-                const todayStr = new Date().toISOString().split("T")[0];
-                const filteredEvents = activeEventTags.filter(
-                  (tagItem) =>
-                    tagItem.startDate <= todayStr &&
-                    (!tagItem.endDate || tagItem.endDate >= todayStr)
-                );
+          </FDSCard>
 
-                if (filteredEvents.length === 0) {
-                  return (
-                    <Text style={styles.noEventText}>No active event</Text>
-                  );
-                }
+          <FDSCard>
 
-                if (filteredEvents.length === 1) {
-                  const tagItem = filteredEvents[0];
-                  return (
-                    <Text style={styles.activeEventText}>
-                      🎉 {tagItem.name} ({tagItem.startDate})
-                    </Text>
-                  );
-                }
-
-                return (
-                  <View style={styles.eventPickerWrapper}>
-                    <Picker
-                      selectedValue={eventTag}
-                      onValueChange={setEventTag}
-                      style={styles.picker}
-                    >
-                      <Picker.Item
-                        label="-- Choose Active Event --"
-                        value=""
-                      />
-                      {filteredEvents.map((tagItem) => (
-                        <Picker.Item
-                          key={tagItem.id}
-                          label={`${tagItem.name} (${tagItem.startDate})`}
-                          value={tagItem.name}
-                        />
-                      ))}
-                    </Picker>
-                  </View>
-                );
-              })()}
-            </View>
-
-            {/* Periodic Switch */}
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchLabel}>Is it periodic?</Text>
+            {/* PERIODIC SWITCH */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View>
+                <FDSLabel>Is it periodic?</FDSLabel>
+                <Text style={{ fontSize: 12, color: FDSColors.textGray }}>Recurring payment options</Text>
+              </View>
               <Switch
                 value={isPeriodic}
                 onValueChange={setIsPeriodic}
-                trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                thumbColor={isPeriodic ? "#4CAF50" : "#f4f3f4"}
+                trackColor={{ false: "#ccc", true: FDSColors.primary }}
+                thumbColor="#fff"
               />
             </View>
 
-            {/* Period Type Selection */}
+            {/* PERIODIC TYPE */}
             {isPeriodic && (
-              <View style={styles.periodicPicker}>
-                <View style={styles.selectionBarContainer}>
-                  {periodType.map((type, index) => (
+              <>
+                <FDSLabel>Repeat Type</FDSLabel>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  {periodType.map((p) => (
                     <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.typeButton,
-                        selectedPeriodType === type && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setSelectedPeriodType(type)}
+                      key={p}
+                      style={{
+                        paddingVertical: 8,
+                        paddingHorizontal: 12,
+                        borderRadius: 8,
+                        backgroundColor: selectedPeriodType === p ? FDSColors.primary : FDSColors.bgLight
+                      }}
+                      onPress={() => setSelectedPeriodType(p)}
                     >
-                      <Text
-                        style={[
-                          styles.typeButtonText,
-                          selectedPeriodType === type &&
-                          styles.typeButtonTextActive,
-                        ]}
-                      >
-                        {type}
-                      </Text>
+                      <Text style={{ color: selectedPeriodType === p ? "#fff" : FDSColors.textDark }}>{p}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                <Text style={styles.label}>Repeat every:</Text>
-                <Picker
-                  selectedValue={periodInterval}
-                  onValueChange={(val) => setPeriodInterval(val)}
-                  style={styles.picker}
+                {/* INTERVAL */}
+                <FDSValidatedPicker
+                  label="Repeat Every"
+                  value={periodInterval}
+                  validate={(v) => v > 0}
                 >
-                  {[1, 2, 3, 6, 12].map((n) => (
-                    <Picker.Item key={n} label={`${n}`} value={n} />
-                  ))}
-                </Picker>
-              </View>
+                  <Picker
+                    selectedValue={periodInterval}
+                    onValueChange={(v) => setPeriodInterval(v)}
+                    style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                  >
+                    {[1, 2, 3, 6, 12].map((n) => (
+                      <Picker.Item key={n} label={`${n}`} value={n} />
+                    ))}
+                  </Picker>
+                </FDSValidatedPicker>
+              </>
             )}
 
-            {/* Allocate to Goal Switch */}
+            {/* ALLOCATE TO GOAL SWITCH */}
             {selectedOption === "Transaction" && (
-              <View style={styles.switchContainer}>
-                <Text style={styles.switchLabel}>Allocate to Goal?</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
+                <View>
+                  <FDSLabel>Allocate to Goal?</FDSLabel>
+                  <Text style={{ fontSize: 12, color: FDSColors.textGray }}>Transfer savings into a goal</Text>
+                </View>
                 <Switch
                   value={allocateToGoal}
-                  onValueChange={(value) => {
-                    setAllocateToGoal(value);
-                    if (!value) {
-                      setSelectedGoal(null);
-                      setSelectedSavingMethod(null);
-                      setSelectedSavingAccount(null);
-                    }
-                  }}
-                  trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                  thumbColor={allocateToGoal ? "#4CAF50" : "#f4f3f4"}
+                  onValueChange={setAllocateToGoal}
+                  trackColor={{ false: "#ccc", true: FDSColors.primary }}
+                  thumbColor="#fff"
                 />
               </View>
             )}
 
-            {/* Goal Allocation Section */}
-            {selectedOption === "Transaction" && allocateToGoal && (
-              <Animated.View
-                style={[
-                  styles.goalCard,
-                  goalError && styles.inputError,
-                  { transform: [{ translateX: goalShake }] },
-                ]}
+          </FDSCard>
+          {selectedOption === "Transaction" && allocateToGoal && (
+            <FDSCard>
+
+              {/* SELECT GOAL */}
+              <FDSValidatedPicker
+                label="Target Goal"
+                value={selectedGoal ? goals.find((g) => g.id === selectedGoal)?.name : ""}
+                validate={(v) => !!selectedGoal}
+                errorMessage="Select a goal"
               >
-                <Text style={styles.goalTitle}>Allocate Full Amount to Goal</Text>
-
-                {/* GOAL LIST */}
-                <View style={styles.goalList}>
-                  {goals.length > 0 ? (
-                    goals.map((goal) => (
-                      <TouchableOpacity
-                        key={goal.id}
-                        style={[
-                          styles.goalButton,
-                          selectedGoal === goal.id && styles.goalButtonActive,
-                        ]}
-                        onPress={() => {
-                          setSelectedGoal(goal.id);
-                          setGoalError(false);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.goalButtonText,
-                            selectedGoal === goal.id && styles.goalButtonTextActive,
-                          ]}
-                        >
-                          {goal.goalName}
-                        </Text>
-                        <Text style={{ marginTop: 4, color: "#666", fontSize: 12 }}>
-                          Target: RM {(goal.targetAmount || 0).toFixed(2)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <Text style={styles.noGoalsText}>No goals found.</Text>
-                  )}
-                </View>
-
-                {/* Saving Method */}
-                <Text style={styles.subLabel}>Select Saving Method:</Text>
-                <View style={styles.methodList}>
-                  {savingMethods.map((method) => (
-                    <TouchableOpacity
-                      key={method.id}
-                      style={[
-                        styles.methodButton,
-                        selectedSavingMethod?.id === method.id && styles.methodButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedSavingMethod(method);
-                        setSelectedSavingAccount(null);
-                        setSavingMethodError(false);
-                      }}
-                    >
-                      <Text style={styles.methodIcon}>{method.icon_name || "🏦"}</Text>
-                      <View style={styles.methodInfo}>
-                        <Text style={styles.methodName}>{method.method_name}</Text>
-                        <Text style={styles.methodDetails}>
-                          Return: {method.expected_return}% • Risk:
-                          {"★".repeat(method.risk_level || 1)}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+                <Picker
+                  selectedValue={selectedGoal}
+                  onValueChange={(v) => setSelectedGoal(v)}
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                >
+                  <Picker.Item label="Select a Goal..." value={null} />
+                  {goals.map((g) => (
+                    <Picker.Item key={g.id} label={g.name} value={g.id} />
                   ))}
-                </View>
+                </Picker>
+              </FDSValidatedPicker>
 
-                {/* Saving Account */}
-                {selectedSavingMethod && (
-                  <>
-                    <Text style={styles.subLabel}>Select Account:</Text>
-                    <View style={styles.accountSection}>
-                      {savingAccounts
-                        .filter((acc) => acc.method_id === selectedSavingMethod.id)
-                        .map((acc) => (
-                          <TouchableOpacity
-                            key={acc.id}
-                            style={[
-                              styles.accountButton,
-                              selectedSavingAccount?.id === acc.id &&
-                              styles.accountButtonActive,
-                            ]}
-                            onPress={() => {
-                              setSelectedSavingAccount(acc);
-                              setSavingAccountError(false);
-                            }}
-                          >
-                            <Text style={styles.accountName}>
-                              {acc.institution_name} - {acc.account_name}
-                            </Text>
-                            <Text style={styles.accountBalance}>
-                              Balance: RM {acc.current_balance?.toFixed(2) || "0.00"}
-                            </Text>
-                            <Text style={styles.accountRate}>
-                              Rate: {acc.interest_rate || 0}%
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+              {/* SAVING METHOD */}
+              <FDSValidatedPicker
+                label="Saving Method"
+                value={selectedSavingMethod?.name}
+                validate={(v) => !!selectedSavingMethod}
+                errorMessage="Select a saving method"
+              >
+                <Picker
+                  selectedValue={selectedSavingMethod?.id}
+                  onValueChange={(id) => {
+                    const method = savingMethods.find((m) => m.id === id);
+                    setSelectedSavingMethod(method);
+                  }}
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                >
+                  <Picker.Item label="Select..." value={null} />
+                  {savingMethods.map((m) => (
+                    <Picker.Item key={m.id} label={m.name} value={m.id} />
+                  ))}
+                </Picker>
+              </FDSValidatedPicker>
+              {/* SAVING ACCOUNT */}
+              <FDSValidatedPicker
+                label="Saving Account"
+                value={selectedSavingAccount?.name}
+                validate={(v) => !!selectedSavingAccount}
+              >
+                <Picker
+                  selectedValue={selectedSavingAccount?.id}
+                  onValueChange={(id) => {
+                    const acc = savingAccounts.find((a) => a.id === id);
+                    setSelectedSavingAccount(acc);
+                  }}
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                >
+                  <Picker.Item label="Select account..." value={null} />
+                  {savingAccounts.map((a) => (
+                    <Picker.Item key={a.id} label={a.name} value={a.id} />
+                  ))}
+                </Picker>
+              </FDSValidatedPicker>
 
-                      <TouchableOpacity
-                        style={styles.addAccountButton}
-                        onPress={() => setShowSavingAccountModal(true)}
-                      >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={20}
-                          color="#8AD0AB"
-                        />
-                        <Text style={styles.addAccountText}>Add New Account</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
-
-                <Text style={{ marginTop: 12, color: "#666", fontSize: 13 }}>
-                  This will allocate the full amount (RM {parseFloat(amount || 0).toFixed(2)})
-                  to the selected goal and saving account.
-                </Text>
-              </Animated.View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
-                <Ionicons name="trash-outline" size={18} color="#fff" />
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.saveButton} onPress={onUpdate}>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.saveButtonText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
+            </FDSCard>
+          )}
+          <View style={{ paddingHorizontal: 16 }}>
+            <FDSButton
+              title="Save Changes"
+              onPress={onUpdate}
+              icon="save-outline"
+            />
+            <FDSButton
+              title="Delete"
+              onPress={onDelete}
+              mode="danger"
+              icon="trash-outline"
+            />
           </View>
         </ScrollView>
       </KeyboardAwareScrollView>
@@ -1253,50 +1048,34 @@ const styles = StyleSheet.create({
   scrollContainer: {
     padding: 20,
   },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 20,
-  },
   selectionBarContainer: {
     flexDirection: "row",
     backgroundColor: "#8CCFB1",
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 20,
+    borderRadius: 10,
+    padding: 6,
   },
   typeButton: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
     alignItems: "center",
+    borderRadius: 8,
   },
   typeButtonActive: {
     backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   typeButtonText: {
     color: "#2E5E4E",
-    fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   typeButtonTextActive: {
     color: "#2E5E4E",
-    fontWeight: "bold",
+    fontWeight: "800",
   },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    height: 45,
-  },
+
   input: {
     flex: 1,
     marginHorizontal: 8,
@@ -1307,203 +1086,7 @@ const styles = StyleSheet.create({
     borderColor: "#ff6b6b",
     borderWidth: 2,
   },
-  pickerContainer: {
-    flexDirection: "row",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    height: 45,
-    alignItems: "center",
-  },
-  icon: {
-    marginRight: 8,
-  },
-  pickerDisplay: {
-    flex: 1,
-    color: "#6c757d",
-    fontSize: 16,
-  },
-  dropdownContent: {
-    flex: 1,
-    color: "#6c757d",
-    fontSize: 16,
-  },
-  hiddenPicker: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0,
-  },
-  picker: {
-    width: "100%",
-  },
-  switchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 15,
-    paddingHorizontal: 10,
-  },
-  switchLabel: {
-    marginRight: 10,
-    color: "#555",
-    fontSize: 16,
-  },
-  eventTagContainer: {
-    backgroundColor: "#F6FBF7",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#d6e8de",
-  },
-  eventTagTitle: {
-    fontWeight: "600",
-    color: "#2E5E4E",
-    fontSize: 15,
-    marginBottom: 8,
-  },
-  noEventText: {
-    color: "#555",
-    fontStyle: "italic",
-  },
-  activeEventText: {
-    color: "#2E5E4E",
-  },
-  eventPickerWrapper: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#8AD0AB",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  periodicPicker: {
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  goalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 15,
-    marginTop: 15,
-    marginBottom: 25,
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  goalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#2E5E4E",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  goalList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  goalButton: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    marginVertical: 6,
-    alignItems: "center",
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  goalButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  goalButtonText: {
-    color: "#2E5E4E",
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  goalButtonTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  noGoalsText: {
-    color: "#777",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  subLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2E5E4E",
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  methodList: {
-    marginTop: 5,
-    marginBottom: 10,
-  },
-  methodButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#f5f5f5",
-    marginBottom: 8,
-  },
-  methodButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  methodIcon: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  methodInfo: {
-    flex: 1,
-  },
-  methodName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  methodDetails: {
-    fontSize: 12,
-    color: "#555",
-  },
-  accountSection: {
-    marginTop: 8,
-  },
-  accountButton: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  accountButtonActive: {
-    backgroundColor: "#8AD0AB",
-  },
-  accountName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  accountBalance: {
-    fontSize: 12,
-    color: "#555",
-  },
-  accountRate: {
-    fontSize: 12,
-    color: "#4CAF50",
-    marginTop: 2,
-  },
+
   addAccountButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1514,41 +1097,5 @@ const styles = StyleSheet.create({
     color: "#2E5E4E",
     fontWeight: "600",
   },
-  actionButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-  },
-  deleteButton: {
-    flexDirection: "row",
-    backgroundColor: "#E53935",
-    padding: 15,
-    borderRadius: 10,
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8,
-  },
-  saveButton: {
-    flexDirection: "row",
-    backgroundColor: "#2E5E4E",
-    padding: 15,
-    borderRadius: 10,
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  deleteButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 16,
-  },
-  saveButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 16,
-  },
+
 });

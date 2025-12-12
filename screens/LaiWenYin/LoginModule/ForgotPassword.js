@@ -1,13 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Animated } from 'react-native';
-import { generateResetToken } from '../../../database/userAuth';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Animated, Alert } from 'react-native';
+import axios from "axios";
+import { getApiBase } from "../FaceAuthModule/apiConfig";
+import { getUserByEmail } from '../../../database/userAuth'; 
+
 
 export default function ForgotPassword({ navigation }) {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Shake animation
+  const API = getApiBase();
+
+  // shake animation
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   const runShake = () => {
@@ -29,33 +34,35 @@ export default function ForgotPassword({ navigation }) {
     return '';
   };
 
-  const handleReset = async () => {
-    const error = validateEmail(email);
-    setEmailError(error);
+const handleReset = async () => {
+  const error = validateEmail(email);
+  setEmailError(error);
 
-    if (error) {
-      runShake();
-      return; // stop submission if invalid
-    }
+  if (error) {
+    runShake();
+    return;
+  }
 
-    try {
-      setLoading(true);
-      const token = await generateResetToken(email);
-
-      const generatedResetLink = `myapp://reset?email=${encodeURIComponent(email)}&token=${token}`;
-
-      navigation.navigate('ResetPassword', {
-        email: email,
-        token: token,
-        resetLink: generatedResetLink
-      });
-
-    } catch (err) {
-      alert(err.message || 'Failed to generate reset link.');
-    } finally {
+  try {
+    setLoading(true);
+    // FRONT-END email verification using SQLite (userAuth.db)
+    const user = await getUserByEmail(email);
+    if (!user) {
+      Alert.alert("Email Not Found", "This email is not registered.");
       setLoading(false);
+      return;
     }
-  };
+
+    console.log("📩 Sending OTP to:", email, "API:", API);
+    await axios.post(`${API}/send-otp`, { email });
+    navigation.navigate("VerifyOTP", { email });
+  } catch (err) {
+    Alert.alert("Error", err.message || "Failed to send OTP");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <View style={styles.container}>
@@ -71,7 +78,7 @@ export default function ForgotPassword({ navigation }) {
             <TextInput
               style={[styles.input, emailError && styles.inputError]}
               placeholder="you@example.com"
-              placeholderTextColor={"#c5c5c5ff"}
+              placeholderTextColor={"#c5c5c5"}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -93,7 +100,7 @@ export default function ForgotPassword({ navigation }) {
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.buttonText}>Generating Link...</Text>
+              <Text style={styles.buttonText}>Sending OTP...</Text>
             </View>
           ) : (
             <Text style={styles.buttonText}>Send Reset Link</Text>

@@ -19,9 +19,10 @@ import FinancialTipBanner from "../TutorialModule/FinancialTipBanner";
 import { BlurView } from "expo-blur";
 import { MotiView } from "moti";
 import { Ionicons } from '@expo/vector-icons';
-import { getUserIncome } from "../../../database/userAuth";
-import { getTotalExpensesLocal } from "../../../database/SQLite"
+import { getCurrentMonthlyIncome, getIncomeGrowthRate, getExpensesLocal } from "../../../database/SQLite"
 import { LineChart } from "react-native-chart-kit";
+import { expandPeriodicExpenses } from "../ExpenseAnalysisModule/expandPeriodic"
+
 const screenWidth = Dimensions.get("window").width;
 
 // Validation limits
@@ -52,8 +53,6 @@ const VALIDATION_LIMITS = {
 export default function FuturePredictionScreen() {
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState("projection");
-  const [showIncomeDropdown, setShowIncomeDropdown] = useState(false);
-  const [showInflationDropdown, setShowInflationDropdown] = useState(false);
   const { userLevel, userId } = useUser();
   const [data, setData] = useState({
     currentIncome: "",
@@ -70,19 +69,100 @@ export default function FuturePredictionScreen() {
   //String() makes input editable
   const loadData = async () => {
     try {
-      const income = await getUserIncome(userId);
-      const expenses = await getTotalExpensesLocal(userId);
-      console.log("Loaded income and expenses:", income, expenses);
+      /** ---------------------------
+       * 1. Load Current Monthly Income
+       * -------------------------- */
+      const income = await getCurrentMonthlyIncome(userId);
+
       setData(prev => ({
         ...prev,
-        currentIncome: income ? String(Number(income)) : "",
-        currentExpenses: expenses ? String(Number(expenses)) : "",
+        currentIncome: income ? String(Number(income)) : "0",
       }));
+
+
+      /** ---------------------------
+       * 2. Load ALL Expenses
+       * -------------------------- */
+      /** ----- FINAL Monthly Expense Extraction ----- */
+      let rawExpenses = await getExpensesLocal(userId);
+
+      // convert transaction → expenses
+      rawExpenses = rawExpenses.map(exp => {
+        if (exp.tag === "transaction") {
+          return { ...exp, typeLabel: "expense" };
+        }
+        return exp;
+      });
+
+      // split periodic expenses
+      let expanded = expandPeriodicExpenses(rawExpenses);
+
+      // filter current month only
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth();
+
+      expanded = expanded.filter(exp => {
+        const d = new Date(exp.date);
+        const isExpense = exp.typeLabel !== "income";
+        return isExpense && d.getFullYear() === y && d.getMonth() === m;
+      });
+
+      // sum & ensure non-zero
+      const monthlyExpense = Math.max(
+        expanded.reduce((s, e) => s + Number(e.amount), 0),
+        1
+      );
+
+      setData(prev => ({
+        ...prev,
+        currentExpenses: String(monthlyExpense.toFixed(2)),
+      }));
+
+
+
+      /** ---------------------------
+       * 3. Auto Income Growth using snapshots
+       * -------------------------- */
+
+      try {
+        const growthObj = await getIncomeGrowthRate(userId);
+
+        if (growthObj && typeof growthObj.rate === "number") {
+          setData(prev => ({
+            ...prev,
+            incomeGrowth: Number((growthObj.rate * 100).toFixed(1)),
+          }));
+        } else {
+          // fallback (Malaysia avg)
+          setData(prev => ({
+            ...prev,
+            incomeGrowth: 10,
+          }));
+        }
+
+      } catch (e) {
+        console.log("Income growth auto-load failed:", e);
+        setData(prev => ({
+          ...prev,
+          incomeGrowth: 10,
+        }));
+      }
+
+
+
+      /** ---------------------------
+       * 4. Auto Inflation Baseline (Malaysia CPI)
+       * -------------------------- */
+      setData(prev => ({
+        ...prev,
+        inflation: 2.5
+      }));
+
     } catch (err) {
       console.log("Failed loading data:", err);
     }
   };
-
 
 
   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
@@ -181,20 +261,6 @@ export default function FuturePredictionScreen() {
     return null;
   };
 
-  const validateIncomeGrowth = (value) => {
-    const numValue = parseFloat(value) || 0;
-    if (numValue < VALIDATION_LIMITS.INCOME_GROWTH.MIN) return `Income growth cannot be less than ${VALIDATION_LIMITS.INCOME_GROWTH.MIN}%`;
-    if (numValue > VALIDATION_LIMITS.INCOME_GROWTH.MAX) return `Income growth cannot exceed ${VALIDATION_LIMITS.INCOME_GROWTH.MAX}%`;
-    return null;
-  };
-
-  const validateInflation = (value) => {
-    const numValue = parseFloat(value) || 0;
-    if (numValue < VALIDATION_LIMITS.INFLATION.MIN) return `Inflation cannot be less than ${VALIDATION_LIMITS.INFLATION.MIN}%`;
-    if (numValue > VALIDATION_LIMITS.INFLATION.MAX) return `Inflation cannot exceed ${VALIDATION_LIMITS.INFLATION.MAX}%`;
-    return null;
-  };
-
   // Update functions
   const updateCurrentIncome = (value) => {
     // allow user to clear input
@@ -239,61 +305,6 @@ export default function FuturePredictionScreen() {
     }
   };
 
-  const updateIncomeGrowth = (value) => {
-    if (value === "") {
-      setData({ ...data, incomeGrowth: "" });
-      setIncomeGrowthError('');
-    } else {
-      const numValue = parseFloat(value);
-      if (!isNaN(numValue)) {
-        setData({ ...data, incomeGrowth: numValue });
-        if (incomeGrowthError) setIncomeGrowthError('');
-      }
-    }
-  };
-
-  const updateInflation = (value) => {
-    if (value === "") {
-      setData({ ...data, inflation: "" });
-      setInflationError('');
-    } else {
-      const numValue = parseFloat(value);
-      if (!isNaN(numValue)) {
-        setData({ ...data, inflation: numValue });
-        if (inflationError) setInflationError('');
-      }
-    }
-  };
-
-  const setIncomeGrowthPreset = (rate) => {
-    if (rate === 0) {
-      setData({ ...data, incomeGrowth: "" });
-    } else {
-      setData({ ...data, incomeGrowth: rate });
-    }
-    setShowIncomeDropdown(false);
-    setIncomeGrowthError('');
-  };
-
-  const setInflationGrowthPreset = (rate) => {
-    if (rate === 0) {
-      setData({ ...data, inflation: "" });
-    } else {
-      setData({ ...data, inflation: rate });
-    }
-    setShowInflationDropdown(false);
-    setInflationError('');
-  };
-
-  const getSelectedPresetLabel = () => {
-    const preset = incomeGrowthPresets.find(preset => preset.value === data.incomeGrowth);
-    return preset ? preset.label : "Custom";
-  };
-
-  const getSelectedInflationPresetLabel = () => {
-    const preset = inflationRatePresets.find(preset => preset.value === data.inflation);
-    return preset ? preset.label : "Custom";
-  };
 
   // Core calculation function - implements your original formula
   const calculateProjection = async () => {
@@ -301,16 +312,13 @@ export default function FuturePredictionScreen() {
     const incomeError = validateIncome(data.currentIncome);
     const expensesError = validateExpenses(data.currentExpenses);
     const yearsError = validateYears(data.years);
-    const incomeGrowthError = validateIncomeGrowth(data.incomeGrowth);
-    const inflationError = validateInflation(data.inflation);
 
     setIncomeError(incomeError);
     setExpensesError(expensesError);
     setYearsError(yearsError);
-    setIncomeGrowthError(incomeGrowthError);
-    setInflationError(inflationError);
 
-    const errors = [incomeError, expensesError, yearsError, incomeGrowthError, inflationError]
+
+    const errors = [incomeError, expensesError, yearsError]
       .filter(e => e !== null);
 
     if (errors.length > 0) {
@@ -332,9 +340,19 @@ export default function FuturePredictionScreen() {
       let yearlyBreakdown = [];
 
       for (let year = 1; year <= years; year++) {
-        const futureIncome = income * Math.pow(1 + growth, year);
-        const futureExpenses = expenses * Math.pow(1 + inflation, year);
-        const futureNetSavings = futureIncome - futureExpenses;
+
+        const currentNetSavings = income - expenses; // monthly net savings
+
+        // future net savings based on your FYP formula
+        const futureNetSavings =
+          currentNetSavings * Math.pow(1 + growth, year) -
+          expenses * Math.pow(1 + inflation, year);
+
+        const futureIncome =
+          income * Math.pow(1 + growth, year); // still used for display
+
+        const futureExpenses =
+          expenses * Math.pow(1 + inflation, year);
 
         yearlyBreakdown.push({
           year,
@@ -344,13 +362,14 @@ export default function FuturePredictionScreen() {
         });
       }
 
+
       /** FINAL YEAR RESULT */
       const last = yearlyBreakdown[yearlyBreakdown.length - 1];
 
       /** REAL (INFLATION-ADJUSTED) VALUE LOSS */
       const inflationLoss =
-        last.futureSavings -
-        last.futureSavings / Math.pow(1 + inflation, years);
+        last.futureExpenses - expenses; // cost increase due to inflation
+
 
       /** MONTHS OF COVERAGE (Realistic emergency approximation) */
       const monthlySurplus = Math.max(income - expenses, 0);
@@ -358,8 +377,17 @@ export default function FuturePredictionScreen() {
         monthlySurplus === 0 ? 0 : Number((monthlySurplus / expenses).toFixed(1));
 
       /** EMERGENCY FUND GOAL */
+      // emergency fund target (6 months expenses)
       const emergencyTarget = expenses * 6;
-      const emergencyEstimate = Math.min(monthlySurplus, emergencyTarget);
+
+      // how many months needed to build full emergency fund
+      let monthsToEmergencyFund = 0;
+      if (monthlySurplus > 0) {
+        monthsToEmergencyFund = emergencyTarget / monthlySurplus;
+      } else {
+        monthsToEmergencyFund = Infinity; // cannot build emergency fund
+      }
+
 
       /** NET GROWTH RATE */
       const netGrowthRate = Number(((data.incomeGrowth - data.inflation)).toFixed(1));
@@ -370,12 +398,13 @@ export default function FuturePredictionScreen() {
         inflationLoss: Number(inflationLoss.toFixed(2)),
         monthsOfExpenses,
         emergencyTarget: Math.round(emergencyTarget),
-        emergencyGoal: Math.round(emergencyEstimate),
+        monthsToEmergencyFund: monthsToEmergencyFund.toFixed(1),
         netGrowthRate,
         currentNetSavings: Math.round(income - expenses),
         financialHealth: calculateFinancialHealth(monthsOfExpenses, netGrowthRate, income, expenses),
         recommendation: generateRecommendation(monthsOfExpenses, netGrowthRate, inflationLoss, income, expenses),
       });
+
 
       showToast("Projection generated successfully!", "success");
 
@@ -786,6 +815,8 @@ export default function FuturePredictionScreen() {
     );
   };
 
+
+
   return (
     <View style={styles.container}>
       <FinancialTipBanner
@@ -841,141 +872,27 @@ export default function FuturePredictionScreen() {
               </View>
             </View>
 
-            {/* Income Growth Dropdown */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={styles.label}>
-                  Income Growth Rate
-                </Text>
+                <Text style={styles.label}>Income Growth Rate (Auto)</Text>
               </View>
 
-              <TouchableOpacity
-                style={[styles.dropdownButton, incomeGrowthError ? styles.inputError : null]}
-                onPress={() => setShowIncomeDropdown(!showIncomeDropdown)}
-                disabled={calculationLoading}
-              >
-                <Text style={styles.dropdownButtonText}>{getSelectedPresetLabel()}</Text>
-                <Text style={styles.dropdownArrow}>{showIncomeDropdown ? '▲' : '▼'}</Text>
-              </TouchableOpacity>
-
-              {incomeGrowthError ? <Text style={styles.errorText}>{incomeGrowthError}</Text> : null}
-
-              {data.incomeGrowth === "" && (
-                <TextInput
-                  style={[styles.input, { marginTop: 8 }, incomeGrowthError ? styles.inputError : null]}
-                  keyboardType="numeric"
-                  placeholder="Enter custom income growth rate (%)"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  value={data.incomeGrowth === "" ? "" : String(data.incomeGrowth)}
-                  onChangeText={updateIncomeGrowth}
-                  editable={!calculationLoading}
-                />
-              )}
-
-              <Modal
-                visible={showIncomeDropdown}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowIncomeDropdown(false)}
-              >
-                <TouchableOpacity
-                  style={styles.modalOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowIncomeDropdown(false)}
-                >
-                  <View style={styles.dropdownList}>
-                    <FlatList
-                      data={incomeGrowthPresets}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={[
-                            styles.dropdownItem,
-                            data.incomeGrowth === item.value && styles.dropdownItemActive
-                          ]}
-                          onPress={() => setIncomeGrowthPreset(item.value)}
-                        >
-                          <Text style={[
-                            styles.dropdownItemText,
-                            data.incomeGrowth === item.value && styles.dropdownItemTextActive
-                          ]}>
-                            {item.label}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </Modal>
+              <View style={[styles.input, { backgroundColor: "#f0f0f0" }]}>
+                <Text style={{ color: "#2c3e50" }}>{data.incomeGrowth}%</Text>
+              </View>
             </View>
 
-            {/* Inflation Dropdown */}
+
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={styles.label}>
-                  Inflation Rate
-                </Text>
+                <Text style={styles.label}>Inflation Rate (Auto)</Text>
               </View>
 
-              <TouchableOpacity
-                style={[styles.dropdownButton, inflationError ? styles.inputError : null]}
-                onPress={() => setShowInflationDropdown(!showInflationDropdown)}
-                disabled={calculationLoading}
-              >
-                <Text style={styles.dropdownButtonText}>{getSelectedInflationPresetLabel()}</Text>
-                <Text style={styles.dropdownArrow}>{showInflationDropdown ? '▲' : '▼'}</Text>
-              </TouchableOpacity>
-
-              {inflationError ? <Text style={styles.errorText}>{inflationError}</Text> : null}
-
-              {data.inflation === "" && (
-                <TextInput
-                  style={[styles.input, { marginTop: 8 }, inflationError ? styles.inputError : null]}
-                  keyboardType="numeric"
-                  placeholder="Enter custom inflation rate (%)"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  value={data.inflation === "" ? "" : String(data.inflation)}
-                  onChangeText={updateInflation}
-                  editable={!calculationLoading}
-                />
-              )}
-
-              <Modal
-                visible={showInflationDropdown}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowInflationDropdown(false)}
-              >
-                <TouchableOpacity
-                  style={styles.modalOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowInflationDropdown(false)}
-                >
-                  <View style={styles.dropdownList}>
-                    <FlatList
-                      data={inflationRatePresets}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={[
-                            styles.dropdownItem,
-                            data.inflation === item.value && styles.dropdownItemActive
-                          ]}
-                          onPress={() => setInflationGrowthPreset(item.value)}
-                        >
-                          <Text style={[
-                            styles.dropdownItemText,
-                            data.inflation === item.value && styles.dropdownItemTextActive
-                          ]}>
-                            {item.label}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                </TouchableOpacity>
-              </Modal>
+              <View style={[styles.input, { backgroundColor: "#f0f0f0" }]}>
+                <Text style={{ color: "#2c3e50" }}>{data.inflation}%</Text>
+              </View>
             </View>
+
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>

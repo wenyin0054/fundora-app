@@ -20,6 +20,7 @@ import {
   clearAllActiveEventTagsLocal,
   resetUserSummary,
   deleteAllGoals,
+  resetIncomeSnapshots
 } from "../../database/SQLite";
 import { Picker } from "@react-native-picker/picker";
 import { DeviceEventEmitter } from "react-native";
@@ -226,8 +227,12 @@ export default function CustomDrawerContent(props) {
           onPress: async () => {
             try {
               await resetUserSummary(userId);
-              Alert.alert("✅ Success", "User summary has been reset to 0.");
-              console.log("🧾 User summary reset successfully");
+
+              // ⭐ 同时清空所有 snapshot（防止 dashboard 继续显示旧 growth）
+              await resetIncomeSnapshots(userId);
+
+              Alert.alert("✅ Success", "User summary and snapshots have been reset to 0.");
+              console.log("🧾 User summary & snapshots reset successfully");
             } catch (err) {
               console.error("❌ resetUserSummary error:", err);
               Alert.alert("Error", "Failed to reset user summary.");
@@ -237,6 +242,7 @@ export default function CustomDrawerContent(props) {
       ]
     );
   };
+
 
   const getMarkedDates = () => {
     const marks = {};

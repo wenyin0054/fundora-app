@@ -17,6 +17,7 @@ export default function GoalProjectionScreen() {
   const { userId, userLevel } = useUser();
   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
   const [goals, setGoals] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
 
   // ---- All Tip Handlers ----
   const showFutureValueTip = () => showTip('goalProjection', 'futureValue');
@@ -36,16 +37,28 @@ export default function GoalProjectionScreen() {
   const loadGoals = async () => {
     try {
       const results = await getGoalsLocal(userId);
-      const mapped = results.map((g) => ({
-        id: g.id.toString(),
-        name: g.goalName,
-        targetAmount: parseFloat(g.targetAmount),
-        currentAmount: parseFloat(g.currentAmount),
-        monthlySave: parseFloat(g.monthlySaving || 0),
-        years: calculateYearsFromDeadline(g.deadline),
-        returnRate: 4,
-        inflation: 3,
-      }));
+      const mapped = results.map((g) => {
+        const yObj = calculateYearsFromDeadline(g.deadline);
+        return {
+          id: g.id.toString(),
+          name: g.goalName,
+          targetAmount: parseFloat(g.targetAmount) || 0,
+          currentAmount: parseFloat(g.currentAmount) || 0,
+          monthlySave: parseFloat(g.monthlySaving || 0) || 0,
+          // timeline fields (new)
+          yearsFloat: yObj.yearsFloat,       // e.g. 0.90
+          yearsInt: yObj.yearsInt,           // whole years
+          monthsRemaining: yObj.monthsRemaining, // remaining months part
+          monthsTotal: yObj.monthsTotal,     // total months remaining (integer)
+          // default financial assumptions (can be overridden later)
+          returnRate: parseFloat(g.returnRate ?? 4) || 4,
+          inflation: parseFloat(g.inflation ?? 3) || 3,
+          isOverdue: yObj.isOverdue,
+          overdueMonths: yObj.overdueMonths,
+
+        };
+      });
+
       setGoals(mapped);
     } catch (error) {
       console.error("❌ Error loading goals:", error);
@@ -56,38 +69,163 @@ export default function GoalProjectionScreen() {
     loadGoals();
   }, []);
 
+
   const calculateYearsFromDeadline = (deadline) => {
     const now = new Date();
     const goalDate = new Date(deadline);
-    const diff = goalDate - now;
-    const years = diff / (1000 * 60 * 60 * 24 * 365);
-    return years > 0 ? parseFloat(years.toFixed(1)) : 0;
+
+    if (isNaN(goalDate)) {
+      return {
+        yearsInt: 0,
+        monthsRemaining: 0,
+        yearsFloat: 0,
+        monthsTotal: 0,
+        isOverdue: false,
+        overdueMonths: 0
+      };
+    }
+
+    // Case 1: deadline already passed (OVERDUE)
+    if (goalDate < now) {
+      let yearsDiff = now.getFullYear() - goalDate.getFullYear();
+      let monthsDiff = now.getMonth() - goalDate.getMonth();
+      let dayDiff = now.getDate() - goalDate.getDate();
+
+      let overdueMonths = yearsDiff * 12 + monthsDiff;
+      if (dayDiff > 0) overdueMonths += 1;
+
+      return {
+        yearsInt: 0,
+        monthsRemaining: 0,
+        yearsFloat: 0,
+        monthsTotal: 0,
+        isOverdue: true,
+        overdueMonths,
+      };
+    }
+
+    // Case 2: deadline is in the future
+    let yearsDiff = goalDate.getFullYear() - now.getFullYear();
+    let monthsDiff = goalDate.getMonth() - now.getMonth();
+    let dayDiff = goalDate.getDate() - now.getDate();
+
+    let totalMonths = yearsDiff * 12 + monthsDiff;
+    if (dayDiff > 0) totalMonths += 1;
+
+    if (totalMonths <= 0)
+      return {
+        yearsInt: 0,
+        monthsRemaining: 0,
+        yearsFloat: 0,
+        monthsTotal: 0,
+        isOverdue: false,
+        overdueMonths: 0
+      };
+
+    const yearsInt = Math.floor(totalMonths / 12);
+    const monthsRemaining = totalMonths % 12;
+    const yearsFloat = parseFloat((totalMonths / 12).toFixed(2));
+
+    return {
+      yearsInt,
+      monthsRemaining,
+      yearsFloat,
+      monthsTotal: totalMonths,
+      isOverdue: false,
+      overdueMonths: 0,
+    };
   };
 
   const calculateProjection = (goal) => {
-    const monthlyRate = goal.returnRate / 100 / 12;
-    const months = goal.years * 12;
+    // months to project: prefer monthsTotal if present and >0, else round yearsFloat*12
+    const months = Math.max(0, Math.round(goal.monthsTotal || (goal.yearsFloat ? goal.yearsFloat * 12 : 0)));
 
-    let futureValue = goal.currentAmount * Math.pow(1 + monthlyRate, months);
-    futureValue += goal.monthlySave * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+    // safer parsing
+    const current = parseFloat(goal.currentAmount) || 0;
+    const monthlySave = parseFloat(goal.monthlySave) || 0;
+    const annualRate = parseFloat(goal.returnRate) || 0;
+    const inflation = parseFloat(goal.inflation) || 0;
+    const target = parseFloat(goal.targetAmount) || 0;
 
-    const inflationFactor = Math.pow(1 + goal.inflation / 100, goal.years);
-    const realValue = futureValue / inflationFactor;
+    // more accurate monthly rate: (1+annual)^(1/12)-1
+    const monthlyRate = Math.pow(1 + annualRate / 100, 1 / 12) - 1;
+
+    // Future value of current amount (compounding)
+    const fvCurrent = current * Math.pow(1 + monthlyRate, months);
+
+    // Future value of monthly deposits (ordinary annuity)
+    let fvSavings = 0;
+    if (months <= 0) {
+      fvSavings = 0;
+    } else if (Math.abs(monthlyRate) < 1e-12) {
+      // zero interest
+      fvSavings = monthlySave * months;
+    } else {
+      fvSavings = monthlySave * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+    }
+
+    const futureValue = fvCurrent + fvSavings;
+
+    // Adjust target for inflation to compare in same future terms:
+    const inflationFactor = Math.pow(1 + inflation / 100, months / 12); // pro-rata by years
+    const adjustedTarget = Math.round(target * inflationFactor);
+
+    const gap = Math.round(adjustedTarget - futureValue);
+    const realValue = Math.round(futureValue / inflationFactor); // present value in today's terms
 
     return {
       futureValue: Math.round(futureValue),
       realValue: Math.round(realValue),
-      adjustedTarget: Math.round(goal.targetAmount * inflationFactor),
-      gap: Math.round(goal.targetAmount * inflationFactor - futureValue),
+      adjustedTarget,
+      gap,
+      monthsUsed: months,
+      monthlyRate,
     };
   };
+
+  const estimateMonthsToReachTarget = (currentAmount, monthlySave, annualRatePercent, targetAmount) => {
+    const annual = parseFloat(annualRatePercent) || 0;
+    const monthlyRate = Math.pow(1 + annual / 100, 1 / 12) - 1;
+
+    const curr = parseFloat(currentAmount) || 0;
+    const save = parseFloat(monthlySave) || 0;
+    const target = parseFloat(targetAmount) || 0;
+
+    if (curr >= target) return 0;
+    if (save <= 0 && monthlyRate <= 0) return Infinity; // cannot reach
+
+    // function to compute FV at months
+    const fvAt = (months) => {
+      if (months <= 0) return curr;
+      const fvCur = curr * Math.pow(1 + monthlyRate, months);
+      let fvSave = 0;
+      if (Math.abs(monthlyRate) < 1e-12) fvSave = save * months;
+      else fvSave = save * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+      return fvCur + fvSave;
+    };
+
+    // upper bound search
+    let low = 0;
+    let high = 12 * 100; // 100 years cap
+    if (fvAt(high) < target) return Infinity;
+
+    // binary search
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (fvAt(mid) >= target) high = mid;
+      else low = mid + 1;
+    }
+    return low;
+  };
+
+
 
   // Enhanced Progress Bar
   const ProgressBar = ({ progress, color = '#4CAF50' }) => {
     const displayProgress = Math.min(progress, 1);
     const isOverTarget = progress > 1;
     const progressPercentage = Math.round(displayProgress * 100);
-    
+
     return (
       <View style={styles.progressContainer}>
         <View style={styles.progressHeader}>
@@ -99,21 +237,21 @@ export default function GoalProjectionScreen() {
             <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.progressBarContainer}>
           <View style={styles.progressBackground}>
             <View
               style={[
                 styles.progressFill,
-                { 
-                  width: `${displayProgress * 100}%`, 
-                  backgroundColor: isOverTarget ? '#F59E0B' : color 
+                {
+                  width: `${displayProgress * 100}%`,
+                  backgroundColor: isOverTarget ? '#F59E0B' : color
                 },
               ]}
             />
           </View>
         </View>
-        
+
         {isOverTarget && (
           <View style={styles.successIndicator}>
             <Ionicons name="trophy" size={16} color="#F59E0B" />
@@ -129,159 +267,223 @@ export default function GoalProjectionScreen() {
   // Enhanced Projection Card
   const PredictionCard = ({ goal }) => {
     const projection = calculateProjection(goal);
-    const currentProgress = goal.currentAmount / goal.targetAmount;
+    const currentProgress = goal.targetAmount > 0 ? goal.currentAmount / goal.targetAmount : 0;
     const isOnTrack = projection.gap <= 0;
+
+    // estimate months to reach adjustedTarget (future inflated target)
+    const monthsToTarget = estimateMonthsToReachTarget(
+      goal.currentAmount,
+      goal.monthlySave,
+      goal.returnRate,
+      projection.adjustedTarget
+    );
+    const estYears = monthsToTarget === Infinity ? null : Math.floor(monthsToTarget / 12);
+    const estMonthsRem = monthsToTarget === Infinity ? null : monthsToTarget % 12;
+
 
     return (
       <View style={styles.card}>
         {/* Header Section */}
-        <View style={styles.headerSection}>
-          <View style={styles.goalHeader}>
-            <View style={styles.goalTitleContainer}>
-              <Ionicons name="flag" size={20} color="#4CAF50" />
-              <Text style={styles.goalName}>{goal.name}</Text>
+        <TouchableOpacity onPress={() => setExpandedId(expandedId === goal.id ? null : goal.id)}>
+          <View style={styles.headerSection}>
+            <View style={styles.goalHeader}>
+              <View style={styles.goalTitleContainer}>
+                <Ionicons name="flag" size={20} color="#4CAF50" />
+                <Text style={styles.goalName}>{goal.name}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={showStatusBadgeTip}
+                style={[
+                  styles.statusBadge,
+                  isOnTrack ? styles.onTrackBadge : styles.offTrackBadge
+                ]}
+              >
+                <Ionicons
+                  name={isOnTrack ? "checkmark-circle" : "warning"}
+                  size={14}
+                  color={isOnTrack ? "#059669" : "#DC2626"}
+                />
+                <Text style={styles.statusText}>
+                  {isOnTrack ? 'On Track' : 'Needs Attention'}
+                </Text>
+                <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity 
-              onPress={showStatusBadgeTip} 
-              style={[
-                styles.statusBadge,
-                isOnTrack ? styles.onTrackBadge : styles.offTrackBadge
-              ]}
-            >
-              <Ionicons 
-                name={isOnTrack ? "checkmark-circle" : "warning"} 
-                size={14} 
-                color={isOnTrack ? "#059669" : "#DC2626"} 
-              />
-              <Text style={styles.statusText}>
-                {isOnTrack ? 'On Track' : 'Needs Attention'}
-              </Text>
-              <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.targetContainer}>
-            <Text style={styles.targetLabel}>Target Amount</Text>
-            <Text style={styles.targetAmount}>RM {goal.targetAmount.toLocaleString()}</Text>
-          </View>
-        </View>
 
-        {/* Timeline Info */}
-        <View style={styles.timelineContainer}>
-          <TouchableOpacity onPress={showTimelineTip} style={styles.timelineItem}>
-            <Ionicons name="calendar" size={16} color="#6B7280" />
-            <View style={styles.timelineTextContainer}>
-              <Text style={styles.timelineLabel}>Timeline</Text>
-              <Text style={styles.timelineValue}>{goal.years} years</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.timelineDivider} />
-          <TouchableOpacity onPress={showMonthlySavingsTip} style={styles.timelineItem}>
-            <Ionicons name="cash" size={16} color="#6B7280" />
-            <View style={styles.timelineTextContainer}>
-              <Text style={styles.timelineLabel}>Monthly Save</Text>
-              <Text style={styles.timelineValue}>RM {goal.monthlySave.toLocaleString()}</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* Progress Bar */}
-        <ProgressBar progress={currentProgress} />
-
-        {/* Projection Section */}
-        <View style={styles.projectionSection}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Financial Projection</Text>
-              <Text style={styles.sectionSubtitle}>Accounting for inflation and returns</Text>
+            <View style={styles.targetContainer}>
+              <Text style={styles.targetLabel}>Target Amount</Text>
+              <Text style={styles.targetAmount}>RM {goal.targetAmount.toLocaleString()}</Text>
             </View>
           </View>
+        </TouchableOpacity>
 
-          <View style={styles.metricsGrid}>
-            <MetricCard
-              label="Future Value"
-              value={`RM ${projection.futureValue.toLocaleString()}`}
-              description={`With ${goal.returnRate}% returns`}
-              onPress={showFutureValueTip}
-              icon="trending-up"
-              showInfoIcon={true}
-            />
-            <MetricCard
-              label="Today's Value"
-              value={`RM ${projection.realValue.toLocaleString()}`}
-              description="After inflation"
-              onPress={showTodayValueTip}
-              icon="today"
-              showInfoIcon={true}
-            />
-            <MetricCard
-              label="Adjusted Target"
-              value={`RM ${projection.adjustedTarget.toLocaleString()}`}
-              description="Future cost"
-              onPress={showInflationAdjustedTargetTip}
-              icon="target"
-              showInfoIcon={true}
-            />
-            <MetricCard
-              label="Gap Analysis"
-              value={`RM ${Math.abs(projection.gap).toLocaleString()}`}
-              description={isOnTrack ? 'Surplus' : 'Shortfall'}
-              onPress={showGapAnalysisTip}
-              icon="analytics"
-              isOnTrack={isOnTrack}
-              showInfoIcon={true}
-            />
-          </View>
+        {expandedId === goal.id && (
+          <>
+            {/* Timeline Info */}
+            <View style={styles.timelineContainer}>
+              <TouchableOpacity onPress={showTimelineTip} style={styles.timelineItem}>
+                <Ionicons name="calendar" size={16} color="#6B7280" />
+                <View style={styles.timelineTextContainer}>
+                  <Text style={styles.timelineLabel}>Timeline</Text>
+                  {/* show deadline-based remaining time */}
+                  <Text style={styles.timelineValue}>
+                    {goal.isOverdue
+                      ? `Overdue by ${goal.overdueMonths} month(s)`
+                      : goal.monthsTotal > 0
+                        ? `${goal.yearsInt}y ${goal.monthsRemaining}m`
+                        : 'No deadline set'}
+                  </Text>
 
-          {/* Return Rate and Inflation Info */}
-          <View style={styles.assumptionsContainer}>
-            <TouchableOpacity onPress={showReturnRateTip} style={styles.assumptionItem}>
-              <Ionicons name="trending-up" size={14} color="#6B7280" />
-              <Text style={styles.assumptionText}>Assumed return: {goal.returnRate}% annually</Text>
-              <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={showInflationRateTip} style={styles.assumptionItem}>
-              <Ionicons name="trending-down" size={14} color="#6B7280" />
-              <Text style={styles.assumptionText}>Assumed inflation: {goal.inflation}% annually</Text>
-              <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
-        </View>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.timelineDivider} />
+              <TouchableOpacity onPress={showMonthlySavingsTip} style={styles.timelineItem}>
+                <Ionicons name="cash" size={16} color="#6B7280" />
+                <View style={styles.timelineTextContainer}>
+                  <Text style={styles.timelineLabel}>Est. to Target</Text>
+                  <Text style={styles.timelineValue}>
+                    {monthsToTarget === Infinity
+                      ? 'Not reachable'
+                      : monthsToTarget === 0
+                        ? 'Achieved'
+                        : `${estYears}y ${estMonthsRem}m`}
+                  </Text>
 
-        {/* Recommendations */}
-        <View style={styles.recommendationBox}>
-          <TouchableOpacity onPress={showRecommendationsTip} style={styles.recommendationHeader}>
-            <View style={styles.recommendationIcon}>
-              <Ionicons name="bulb" size={20} color="#4CAF50" />
+                </View>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.recommendationTitle}>Recommendations</Text>
-            <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
-          </TouchableOpacity>
-          {projection.gap > 0 ? (
-            <View style={styles.recommendationList}>
-              <RecommendationItem 
-                text={`Increase monthly savings by RM ${Math.round(projection.gap / (goal.years * 12))}`}
-                icon="add-circle"
-              />
-              <RecommendationItem 
-                text={`Explore investment options with ${goal.returnRate + 2}% potential returns`}
-                icon="analytics"
-              />
-              <RecommendationItem 
-                text={`Consider extending timeline by ${Math.ceil(projection.gap / (goal.monthlySave * 12))} year(s)`}
-                icon="time"
-              />
-            </View>
-          ) : (
-            <View style={styles.successMessage}>
-              <Ionicons name="checkmark-done-circle" size={24} color="#4CAF50" />
-              <View style={styles.successTextContainer}>
-                <Text style={styles.successTitle}>Excellent Progress!</Text>
-                <Text style={styles.successText}>You're on track to achieve your goal</Text>
+
+
+            {/* Progress Bar */}
+            <ProgressBar progress={currentProgress} />
+
+            {/* Projection Section */}
+            <View style={styles.projectionSection}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionTitle}>Financial Projection</Text>
+                  <Text style={styles.sectionSubtitle}>Accounting for inflation and returns</Text>
+                </View>
+              </View>
+
+              <View style={styles.metricsGrid}>
+                <MetricCard
+                  label="Future Value"
+                  value={`RM ${projection.futureValue.toLocaleString()}`}
+                  description={`With ${goal.returnRate}% returns`}
+                  onPress={showFutureValueTip}
+                  icon="trending-up"
+                  showInfoIcon={true}
+                />
+                <MetricCard
+                  label="Today's Value"
+                  value={`RM ${projection.realValue.toLocaleString()}`}
+                  description="After inflation"
+                  onPress={showTodayValueTip}
+                  icon="today"
+                  showInfoIcon={true}
+                />
+                <MetricCard
+                  label="Adjusted Target"
+                  value={`RM ${projection.adjustedTarget.toLocaleString()}`}
+                  description="Future cost"
+                  onPress={showInflationAdjustedTargetTip}
+                  icon="disc-outline"
+                  showInfoIcon={true}
+                />
+                <MetricCard
+                  label="Gap Analysis"
+                  value={`RM ${Math.abs(projection.gap).toLocaleString()}`}
+                  description={isOnTrack ? 'Surplus' : 'Shortfall'}
+                  onPress={showGapAnalysisTip}
+                  icon="analytics"
+                  isOnTrack={isOnTrack}
+                  showInfoIcon={true}
+                />
+              </View>
+
+              {/* Return Rate and Inflation Info */}
+              <View style={styles.assumptionsContainer}>
+                <TouchableOpacity onPress={showReturnRateTip} style={styles.assumptionItem}>
+                  <Ionicons name="trending-up" size={14} color="#6B7280" />
+                  <Text style={styles.assumptionText}>Assumed return: {goal.returnRate}% annually</Text>
+                  <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={showInflationRateTip} style={styles.assumptionItem}>
+                  <Ionicons name="trending-down" size={14} color="#6B7280" />
+                  <Text style={styles.assumptionText}>Assumed inflation: {goal.inflation}% annually</Text>
+                  <Ionicons name="information-circle-outline" size={12} color="#9CA3AF" />
+                </TouchableOpacity>
               </View>
             </View>
-          )}
-        </View>
+
+            {goal.isOverdue && (
+              <View style={{
+                backgroundColor: '#FEF2F2',
+                padding: 16,
+                borderRadius: 12,
+                borderLeftWidth: 4,
+                borderLeftColor: '#DC2626',
+                marginBottom: 16
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="alert-circle" size={20} color="#DC2626" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#DC2626' }}>
+                    Deadline Passed
+                  </Text>
+                </View>
+                <Text style={{ marginTop: 6, fontSize: 14, color: '#7F1D1D', lineHeight: 20 }}>
+                  Your goal deadline has passed. You may increase your monthly savings or update your target date.
+                </Text>
+              </View>
+            )}
+
+
+            {/* Recommendations */}
+            <View style={styles.recommendationBox}>
+              <TouchableOpacity onPress={showRecommendationsTip} style={styles.recommendationHeader}>
+                <View style={styles.recommendationIcon}>
+                  <Ionicons name="bulb" size={20} color="#4CAF50" />
+                </View>
+                <Text style={styles.recommendationTitle}>Recommendations</Text>
+                <Ionicons name="information-circle-outline" size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+              {projection.gap > 0 ? (
+                <View style={styles.recommendationList}>
+                  <RecommendationItem
+                    text={`Increase monthly savings by RM ${Math.max(Math.ceil(projection.gap / Math.max(1, projection.monthsUsed)), 0)} per month`}
+                    icon="add-circle"
+                  />
+                  <RecommendationItem
+                    text={`Or aim for higher returns; e.g. target ~${(goal.returnRate + 2).toFixed(1)}% p.a.`}
+                    icon="analytics"
+                  />
+                  <RecommendationItem
+                    text={
+                      monthsToTarget === Infinity
+                        ? `Consider increasing monthly savings or extending timeline`
+                        : monthsToTarget < goal.monthsTotal
+                          ? `You can achieve this goal earlier by ${goal.monthsTotal - monthsToTarget} month(s)`
+                          : `Extend timeline by ${Math.ceil((monthsToTarget - goal.monthsTotal) / 12)} year(s)`
+                    }
+                    icon="time"
+                  />
+
+                </View>
+
+              ) : (
+                <View style={styles.successMessage}>
+                  <Ionicons name="checkmark-done-circle" size={24} color="#4CAF50" />
+                  <View style={styles.successTextContainer}>
+                    <Text style={styles.successTitle}>Excellent Progress!</Text>
+                    <Text style={styles.successText}>You're on track to achieve your goal</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </>
+        )}
       </View>
     );
   };

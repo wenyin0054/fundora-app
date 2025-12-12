@@ -27,7 +27,51 @@ import {
 } from "../../../database/SQLite";
 import ValidatedInput from "../../reuseComponet/ValidatedInput";
 import { Animated } from "react-native";
+import {
+  FDSCard,
+  FDSLabel,
+  FDSValidatedInput,
+  FDSButton
+} from "../../reuseComponet/DesignSystem";
 
+
+// --- MUST MATCH SavingsPlanner.js --- //
+function getDeadlineStatus(deadline) {
+  const now = new Date();
+  const end = new Date(deadline);
+
+  if (isNaN(end)) {
+    return { isOverdue: false, overdueMonths: 0, monthsRemaining: 0 };
+  }
+
+  // --------------- overdue check ---------------
+  if (end < now) {
+    const yDiff = now.getFullYear() - end.getFullYear();
+    const mDiff = now.getMonth() - end.getMonth();
+    let overdueMonths = yDiff * 12 + mDiff;
+
+    if (now.getDate() > end.getDate()) overdueMonths += 1;
+
+    return {
+      isOverdue: true,
+      overdueMonths,
+      monthsRemaining: 0
+    };
+  }
+
+  // --------------- still ongoing ---------------
+  const yDiff = end.getFullYear() - now.getFullYear();
+  const mDiff = end.getMonth() - now.getMonth();
+  let monthsRemaining = yDiff * 12 + mDiff;
+
+  if (end.getDate() > now.getDate()) monthsRemaining += 1;
+
+  return {
+    isOverdue: false,
+    overdueMonths: 0,
+    monthsRemaining
+  };
+}
 
 
 export default function GoalDetailScreen({ route, navigation }) {
@@ -40,7 +84,7 @@ export default function GoalDetailScreen({ route, navigation }) {
   const [deadline, setDeadline] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
   const [progress, setProgress] = useState(0);
-
+  const [isOverdue, setIsOverdue] = useState(false);
   const [fundAllocations, setFundAllocations] = useState([]);
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [selectedAllocation, setSelectedAllocation] = useState(null);
@@ -69,12 +113,17 @@ export default function GoalDetailScreen({ route, navigation }) {
 
   const loadGoalData = useCallback(async () => {
     if (!goal) return;
+    const deadlineValue = goal.deadline || goal.due;
+    console.log("date", deadlineValue)
 
     setGoalName(goal.goalName || goal.title || "");
     setDescription(goal.description || goal.desc || "");
     setTargetAmount(goal.targetAmount?.toString() || goal.target?.toString() || "");
     setCurrentAmount(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
-    setDeadline(goal.deadline ? new Date(goal.deadline + "T00:00:00") : new Date());
+    setDeadline(deadlineValue ? new Date(deadlineValue + "T00:00:00") : new Date());
+
+
+
 
     const current = parseFloat(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
     const target = parseFloat(goal.targetAmount?.toString() || goal.target?.toString() || "0");
@@ -121,6 +170,16 @@ export default function GoalDetailScreen({ route, navigation }) {
 
       console.log("📊 Allocations with current value:", allocationsWithCurrentValue);
       setFundAllocations(allocationsWithCurrentValue);
+      // --- Accurate Overdue Logic (same as SavingsPlanner.js) ---
+      try {
+        const { isOverdue } = getDeadlineStatus(deadlineValue);
+        setIsOverdue(isOverdue);
+        console.log(isOverdue)
+      } catch {
+        setIsOverdue(false);
+      }
+
+
     } catch (error) {
       console.error("❌ loadGoalData error:", error);
     }
@@ -427,62 +486,54 @@ export default function GoalDetailScreen({ route, navigation }) {
   );
 
   const renderFundAllocation = (allocation) => (
-    <View key={allocation.id} style={styles.allocationItem}>
-      <View style={styles.allocationHeader}>
-        <Text style={styles.allocationAccount}>
-          {allocation.icon_name} {allocation.institution_name} - {allocation.account_name}
+    <FDSCard key={allocation.id} style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+        <Text style={{ fontSize: 14, fontWeight: "600" }}>
+          {allocation.institution_name} - {allocation.account_name}
         </Text>
-        <Text style={styles.allocationAmount}>
+        <Text style={{ fontSize: 16, fontWeight: "700", color: "#2E5E4E" }}>
           RM {allocation.current_value.toFixed(2)}
         </Text>
       </View>
 
-      <View style={styles.allocationDetails}>
-        <Text style={styles.allocationDetail}>
-          Principal: RM {allocation.allocated_amount.toFixed(2)}
-        </Text>
-        <Text style={[styles.allocationDetail, styles.profitText]}>
-          Interest Earned: +RM {allocation.interest_earned.toFixed(2)}
-        </Text>
-        <Text style={styles.allocationDetail}>
-          Return: {allocation.interest_rate || 0}%
-        </Text>
-        {allocation.maturity_date && (
-          <Text style={styles.allocationDetail}>
-            Matures: {new Date(allocation.maturity_date).toLocaleDateString()}
+      <Text style={{ fontSize: 12, color: "#555" }}>
+        Principal: RM {allocation.allocated_amount.toFixed(2)}
+      </Text>
+      <Text style={{ fontSize: 12, color: "#4CAF50", marginTop: 2 }}>
+        Interest: +RM {allocation.interest_earned.toFixed(2)}
+      </Text>
+      <Text style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
+        Rate: {allocation.interest_rate}%
+      </Text>
+
+      {allocation.has_pending_withdrawal && (
+        <View style={{
+          backgroundColor: "#FFF3E0",
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 6,
+          marginTop: 8,
+          flexDirection: "row",
+          alignItems: "center"
+        }}>
+          <Ionicons name="time-outline" size={12} color="#FF9800" />
+          <Text style={{ marginLeft: 6, fontSize: 12, color: "#FF9800" }}>
+            Withdrawal Requested
           </Text>
-        )}
-
-        {/* Display the extraction status */}
-        {allocation.has_pending_withdrawal && (
-          <View style={styles.pendingWithdrawalBadge}>
-            <Ionicons name="time-outline" size={12} color="#FF9800" />
-            <Text style={styles.pendingWithdrawalText}>
-              Withdrawal Requested
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Display different buttons based on the extraction status */}
-      {allocation.has_pending_withdrawal ? (
-        <TouchableOpacity
-          style={[styles.withdrawButton, styles.withdrawButtonDisabled]}
-          disabled={true}
-        >
-          <Ionicons name="lock-closed-outline" size={16} color="#fff" />
-          <Text style={styles.withdrawButtonText}>Withdrawal Requested</Text>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity
-          style={styles.withdrawButton}
-          onPress={() => handleWithdraw(allocation)}
-        >
-          <Ionicons name="cash-outline" size={16} color="#fff" />
-          <Text style={styles.withdrawButtonText}>Withdraw</Text>
-        </TouchableOpacity>
+        </View>
       )}
-    </View>
+
+      {!allocation.has_pending_withdrawal && (
+        <FDSButton
+          title="Withdraw"
+          icon="cash-outline"
+          bgColor="#FF9800"
+          textColor="#fff"
+          style={{ marginTop: 10, alignSelf: "flex-start" }}
+          onPress={() => handleWithdraw(allocation)}
+        />
+      )}
+    </FDSCard>
   );
 
   return (
@@ -503,7 +554,19 @@ export default function GoalDetailScreen({ route, navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <ScrollView style={styles.scrollContainer}>
-          <View style={styles.card}>
+          {/* ----- SECTION 1: PROGRESS ----- */}
+          <FDSCard style={[{ marginBottom: 16 }, isOverdue && styles.cardOverdue]}>
+
+            {/* --- Overdue Header  --- */}
+            {isOverdue && (
+              <View style={styles.overdueHeaderContainer}>
+                <Ionicons name="warning-outline" size={18} color="#B91C1C" />
+                <Text style={styles.overdueHeaderText}>
+                  This goal has passed its deadline. Please update it.
+                </Text>
+              </View>
+            )}
+
             {renderProgressBar(progress)}
             <Text style={[styles.label, { alignSelf: "center" }]}>Goal Progress</Text>
 
@@ -520,103 +583,111 @@ export default function GoalDetailScreen({ route, navigation }) {
               </View>
             )}
 
-            <ValidatedInput
+            <FDSValidatedInput
               label="Goal Name"
               value={goalName}
               onChangeText={setGoalName}
-              placeholder="Enter goal name"
-              placeholderTextColor={"#c5c5c5ff"}
               validate={(v) => v.trim().length >= 2}
               errorMessage="Goal name must be at least 2 characters"
               ref={nameRef}
             />
 
 
-            <Text style={styles.label}>Description</Text>
+            <FDSLabel>Description</FDSLabel>
             <TextInput
-              style={styles.textArea}
+              style={[styles.textArea, { backgroundColor: "#F0F4F3" }]}
+              multiline
               value={description}
               onChangeText={setDescription}
-              multiline
             />
-
-            <ValidatedInput
+          </FDSCard>
+          {/* ----- SECTION 2: FINANCIAL INFO ----- */}
+          <FDSCard style={{ marginBottom: 16 }}>
+            <FDSValidatedInput
               label="Target Amount (RM)"
               value={targetAmount}
               onChangeText={setTargetAmount}
               keyboardType="numeric"
               validate={(v) => {
                 const num = parseFloat(v);
-                if (isNaN(num)) return false;
-                return num >= parseFloat(currentAmount);
+                return !isNaN(num) && num >= parseFloat(currentAmount);
               }}
               errorMessage={`Amount must be ≥ RM ${currentAmount}`}
               ref={amountRef}
             />
 
+            <FDSLabel>Current Saved Amount (RM)</FDSLabel>
+            <FDSCard style={{ backgroundColor: "#E9F7EF", marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: "#2E5E4E" }}>
+                RM {Number(currentAmount).toFixed(2)}
+              </Text>
+            </FDSCard>
 
-            <Text style={styles.label}>Current Saved Amount (RM)</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="wallet-outline" size={20} color="#6c757d" />
-              <TextInput
-                value={Number(currentAmount).toFixed(2)}
-                style={styles.input}
-                editable={false}
-                showSoftInputOnFocus={false}
-              /> 
-            </View>
-
-
-            {/* 資金分配部分 */}
-            {fundAllocations.length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Fund Allocations</Text>
-                {fundAllocations.map(renderFundAllocation)}
-
-                <TouchableOpacity
-                  style={styles.manageWithdrawalsButton}
-                  onPress={() => navigation.navigate('WithdrawalManagement')}
-                >
-                  <Ionicons name="list-outline" size={16} color="#fff" />
-                  <Text style={styles.manageWithdrawalsText}>Manage Withdrawals</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            <Text style={styles.label}>Deadline</Text>
+            <FDSLabel>Deadline</FDSLabel>
             <Animated.View
               style={[
-                styles.dateInput,
-                deadlineError && { borderColor: "#ff6b6b", borderWidth: 2 },
+                {
+                  padding: 14,
+                  borderRadius: 10,
+                  backgroundColor: "#F0F4F3",
+                  borderWidth: deadlineError ? 2 : 0,
+                  borderColor: deadlineError ? "#FF6B6B" : "transparent"
+                },
                 { transform: [{ translateX: deadlineShake }] }
               ]}
             >
               <TouchableOpacity onPress={() => setShowPicker(true)} style={{ flexDirection: "row", alignItems: "center" }}>
                 <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-                <Text style={styles.dateText}>{deadline.toDateString().slice(4)}</Text>
+                <Text style={{ marginLeft: 10 }}>{deadline.toDateString().slice(4)}</Text>
               </TouchableOpacity>
             </Animated.View>
+          </FDSCard>
 
 
-            {showPicker && (
-              <DateTimePicker
-                value={deadline}
-                mode="date"
-                display="default"
-                onChange={(event, date) => {
-                  setShowPicker(false);
-                  if (date) setDeadline(date);
-                }}
-              />
-            )}
+          {/* ----- SECTION 3: FUND ALLOCATIONS ----- */}
+          {fundAllocations.length > 0 && (
+            <FDSCard style={{ marginBottom: 16 }}>
+              <FDSLabel>Fund Allocations</FDSLabel>
 
-            <TouchableOpacity style={styles.saveButton} onPress={onUpdate}>
-              <Text style={styles.saveText}>Save Changes</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-              <Text style={styles.deleteText}>Delete Goal</Text>
-            </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Fund Allocations</Text>
+              {fundAllocations.map(renderFundAllocation)}
+
+              <TouchableOpacity
+                style={styles.manageWithdrawalsButton}
+                onPress={() => navigation.navigate('WithdrawalManagement')}
+              >
+                <Ionicons name="list-outline" size={16} color="#fff" />
+                <Text style={styles.manageWithdrawalsText}>Manage Withdrawals</Text>
+              </TouchableOpacity>
+            </FDSCard>
+          )}
+
+          {showPicker && (
+            <DateTimePicker
+              value={deadline}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowPicker(false);
+                if (date) setDeadline(date);
+              }}
+            />
+          )}
+          <View style={{ paddingHorizontal: 16 }}>
+            <FDSButton
+              title="Save Changes"
+              onPress={onUpdate}
+              icon="save-outline"
+              style={{ marginTop: 20 }}
+            />
+            <FDSButton
+              title="Delete Goal"
+              mode="danger"
+              icon="trash-outline"
+              onPress={handleDelete}
+              style={{ marginTop: 12 }}
+            />
           </View>
         </ScrollView>
       </KeyboardAwareScrollView>
@@ -688,7 +759,7 @@ export default function GoalDetailScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
-    </View>
+    </View >
   );
 }
 
@@ -1001,4 +1072,26 @@ const styles = StyleSheet.create({
   negativeText: {
     color: '#F44336',
   },
+  cardOverdue: {
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1.5,
+    borderColor: "#DC2626",
+  },
+
+  overdueHeaderContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FECACA",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+
+  overdueHeaderText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+
 });

@@ -1,483 +1,319 @@
-import React, { useState, useRef, useEffect } from 'react';
+// FaceLoginScreen.js
+import React, { useState, useRef, useEffect } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal,
-  Alert, ActivityIndicator, Dimensions
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as FileSystem from 'expo-file-system/legacy';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { checkOnboardingStatus, hasRegisteredFace, getUserById } from '../../../database/userAuth';
-import { getApiBase } from './apiConfig';
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ActivityIndicator,
+  Animated,
+  Easing,
+  Platform,
+  Vibration,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { checkOnboardingStatus, hasRegisteredFace, getUserById } from "../../../database/userAuth";
+import { getApiBase } from "./apiConfig";
 
 const API_URL = getApiBase();
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+console.log("🔗 Using API URL:", API_URL);
 
-export default function FaceLoginScreen({ navigation, route }) {
-  const [showCamera, setShowCamera] = useState(true);
-  const [permission, requestPermission] = useCameraPermissions();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [instruction, setInstruction] = useState('Center your face in the frame');
-  const [detectionProgress, setDetectionProgress] = useState(0);
-  const [faceDetected, setFaceDetected] = useState(false);
-  const [faceDetectionWorking, setFaceDetectionWorking] = useState(true);
-  const cameraRef = useRef(null);
-  const faceDetectionTimeoutRef = useRef(null);
-  const detectionProgressRef = useRef(null);
-  const noFaceTimeoutRef = useRef(null);
-  const faceStableRef = useRef(false);
-  const faceAppearTimeRef = useRef(0);
+const FaceLoginScreen = ({ navigation, route }) => {
   const { onSuccess, onCancel } = route.params || {};
+
+  // camera permission
+  const [permission, requestPermission] = useCameraPermissions();
+
+  // detection & processing states
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [instruction, setInstruction] = useState("Center your face in the frame");
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [failedMessage, setFailedMessage] = useState("");
+  const [detectionProgress, setDetectionProgress] = useState(0);
 
-  // Hide the default navigation header
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerShown: false
-    });
-  }, [navigation]);
+  // refs for timers & stability
+  const cameraRef = useRef(null);
+  const faceStableRef = useRef(false);
+  const faceAppearTimeRef = useRef(0);
+  const detectionIntervalRef = useRef(null);
+  const captureTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
+  // animations
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const ringRotate = useRef(new Animated.Value(0)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Check camera permissions
-    if (!permission) {
-      requestPermission();
-    } else if (!permission.granted) {
-      Alert.alert(
-        "Camera Permission Required",
-        "This app needs camera access for face recognition.",
-        [{ text: "OK", onPress: () => requestPermission() }]
-      );
-    }
+    // run pulsing animation loop
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
 
-    // Test face detection after a delay
-    const testFaceDetection = setTimeout(() => {
-      if (!faceDetected) {
-        console.log("⚠️ Face detection might not be working");
-        setFaceDetectionWorking(false);
-      }
-    }, 5000);
+    Animated.loop(
+      Animated.timing(ringRotate, {
+        toValue: 1,
+        duration: 6000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
 
-    // Clear all timeouts when component unmounts
     return () => {
-      clearTimeout(testFaceDetection);
-      if (faceDetectionTimeoutRef.current) {
-        clearTimeout(faceDetectionTimeoutRef.current);
-      }
-      if (detectionProgressRef.current) {
-        clearInterval(detectionProgressRef.current);
-      }
-      if (noFaceTimeoutRef.current) {
-        clearTimeout(noFaceTimeoutRef.current);
+      // cleanup timers and abort controllers
+      if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
+      if (captureTimeoutRef.current) clearTimeout(captureTimeoutRef.current);
+      if (abortControllerRef.current) {
+        try { abortControllerRef.current.abort(); } catch { }
       }
     };
-  }, [permission, faceDetected]);
+  }, []);
 
-  // Start detection progress animation
-  const startDetectionProgress = () => {
-    setIsDetecting(true);
-    setDetectionProgress(0);
+  useEffect(() => {
+    // helper to reset progress animation value whenever detectionProgress changes
+    Animated.timing(progressAnim, {
+      toValue: detectionProgress / 100,
+      duration: 150,
+      useNativeDriver: true,
+      easing: Easing.linear,
+    }).start();
+  }, [detectionProgress]);
 
-    detectionProgressRef.current = setInterval(() => {
-      setDetectionProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(detectionProgressRef.current);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 100);
-  };
+  // request permission immediately
+  useEffect(() => {
+    if (!permission) requestPermission();
+  }, [permission]);
 
-  // Stop detection progress animation
-  const stopDetectionProgress = () => {
-    setIsDetecting(false);
-    setDetectionProgress(0);
-    if (detectionProgressRef.current) {
-      clearInterval(detectionProgressRef.current);
-    }
-  };
-
+  // Clean base64 and call server endpoint
   const recognizeFaceWithMTCNN = async (base64Image) => {
     try {
-      console.log('🔍 Sending face for recognition...');
-
-      // Clean the base64 string - remove data URL prefix
       let cleanBase64 = base64Image;
-      if (base64Image.startsWith('data:image/jpeg;base64,')) {
-        cleanBase64 = base64Image.replace('data:image/jpeg;base64,', '');
-      }
+      if (cleanBase64.includes(",")) cleanBase64 = cleanBase64.split(",")[1];
 
-      console.log('📸 Clean base64 length:', cleanBase64.length);
+      // abort controller for timeout
+      abortControllerRef.current = new AbortController();
+      const ctrl = abortControllerRef.current;
+      const timeout = setTimeout(() => ctrl.abort(), 15000);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      const response = await fetch(`${API_URL}/recognize-face`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: cleanBase64,
-        }),
-        signal: controller.signal
+      const res = await fetch(`${API_URL}/recognize-face`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: cleanBase64 }),
+        signal: ctrl.signal,
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
-      return result;
-    } catch (error) {
-      console.error('Face recognition error:', error);
-      if (error.name === 'AbortError') {
-        return { success: false, error: 'Server timeout. Please check connection.' };
-      }
-      return { success: false, error: `Connection error: ${error.message}` };
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const json = await res.json();
+      return json;
+    } catch (err) {
+      console.error("recognizeFaceWithMTCNN error:", err);
+      if (err.name === "AbortError") return { success: false, error: "timeout" };
+      return { success: false, error: err.message || "network" };
     }
   };
 
-  const handleFaceRecognized = async (recognitionResult) => {
+  const handleFaceRecognized = async (result) => {
     try {
-      console.log('🎯 Processing recognized user:', recognitionResult.user_id);
+      // get full user
+      const user = await getUserById(result.user_id);
+      if (!user) {
+        setFailedMessage(
+          typeof result.error === "string"
+            ? `Not recognized (${result.error})`
+            : "Face not recognized"
+        );
 
-      // Get full user data from database
-      const userData = await getUserById(recognitionResult.user_id);
-
-      if (!userData) {
-        Alert.alert('Error', 'User data not found. Please try email login.');
-        setIsProcessing(false);
-        setFaceDetected(false);
+        setShowRetryModal(true);
         return;
       }
 
-      // Store current user in AsyncStorage
-      await AsyncStorage.setItem('currentUser', JSON.stringify({
-        userId: userData.userId,
-        username: userData.username,
-        email: userData.email,
-      }));
+      // store session
+      await AsyncStorage.setItem(
+        "currentUser",
+        JSON.stringify({ userId: user.userId, username: user.username, email: user.email })
+      );
 
-      // Store in recent face login users
-      await storeRecentUserWithFaceAuth(userData);
+      // slight haptic feedback on success
+      if (Platform.OS !== "web") Vibration.vibrate(60);
 
-      setInstruction(`✅ Welcome ${userData.username}!`);
-      setFaceDetected(true);
-
-      // Wait a moment to show success
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      if (onSuccess) {
-        onSuccess(userData);
-      } else {
-        // Navigate based on status
-        const done = await checkOnboardingStatus(userData.userId);
-        const hasFace = await hasRegisteredFace(userData.userId);
-
-        if (!done) {
-          navigation.replace("OnboardingScreen");
-        } else if (!hasFace) {
-          navigation.replace("FaceRegistration", {
-            showSkipOption: true,
-            fromLogin: true
-          });
-        } else {
-          navigation.replace("MainApp");
-        }
-      }
-    } catch (error) {
-      console.error('Error after face recognition:', error);
-      Alert.alert('Error', 'Failed to complete login process');
+      setInstruction(`Welcome ${user.username}!`);
       setIsProcessing(false);
-      setFaceDetected(false);
-      setInstruction('Center your face in the frame');
-    }
-  };
 
-  const storeRecentUserWithFaceAuth = async (user) => {
-    try {
-      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
-      let usersArray = recentUsers ? JSON.parse(recentUsers) : [];
-
-      usersArray = usersArray.filter(u => u.userId !== user.userId);
-      usersArray.unshift({
-        userId: user.userId,
-        username: user.username,
-        email: user.email,
-        timestamp: new Date().toISOString()
-      });
-      usersArray = usersArray.slice(0, 5);
-
-      await AsyncStorage.setItem('recentUsersWithFaceAuth', JSON.stringify(usersArray));
-    } catch (error) {
-      console.error('Error storing recent user:', error);
+      // call callback or navigate accordingly
+      if (onSuccess) {
+        onSuccess(user);
+      } else {
+        const done = await checkOnboardingStatus(user.userId);
+        const hasFace = await hasRegisteredFace(user.userId);
+        if (!done) navigation.replace("OnboardingScreen");
+        else if (!hasFace) navigation.replace("FaceRegistration", { showSkipOption: true, fromLogin: true });
+        else navigation.replace("MainApp");
+      }
+    } catch (err) {
+      console.error("handleFaceRecognized error:", err);
+      setFailedMessage("Login failed. Try again.");
+      setShowRetryModal(true);
+      setIsProcessing(false);
     }
   };
 
   const handleFaceDetected = async (base64) => {
     if (isProcessing) return;
-
     setIsProcessing(true);
     stopDetectionProgress();
-    setInstruction('Processing your face...');
+    setInstruction("Processing your face...");
     setFaceDetected(true);
 
-    try {
-      if (!base64) {
-        setInstruction('Error processing image');
-        setIsProcessing(false);
-        setFaceDetected(false);
-        return;
-      }
+    // small UI delay so the user sees the "processing" state
+    await new Promise((r) => setTimeout(r, 350));
 
-      const result = await recognizeFaceWithMTCNN(base64);
+    const result = await recognizeFaceWithMTCNN(base64);
 
-      if (result.success && result.recognized) {
-        console.log(`👤 Recognized user: ${result.user_id} with similarity: ${result.similarity}`);
-        await handleFaceRecognized(result);
-      } else {
-        // FACE NOT RECOGNIZED - Show retry modal
-        setInstruction('❌ Face not recognized');
-        setFaceDetected(false);
-        setFailedMessage("Face not recognized. Would you like to retake or enter manually?");
-        setShowRetryModal(true);
-        setIsProcessing(false);
-        setFaceDetected(false);
-      }
-    } catch (error) {
-      console.error('Face recognition error:', error);
-      setInstruction('Error recognizing face');
-      setFaceDetected(false);
+    if (result.success && result.recognized) {
+      await handleFaceRecognized(result);
+    } else {
+      // fail flow
+      setShowRetryModal(true);
+      setFailedMessage(result.error ? `Not recognized (${result.error})` : "Face not recognized");
       setIsProcessing(false);
+      setFaceDetected(false);
+      setInstruction("Center your face in the frame");
     }
   };
 
-  // Remove user from recent face auth users when face is not recognized
-  const removeUserFromFaceAuth = async () => {
-    try {
-      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
-      if (recentUsers) {
-        let usersArray = JSON.parse(recentUsers);
-        // Keep all users (we don't know which one failed)
-        await AsyncStorage.setItem('recentUsersWithFaceAuth', JSON.stringify(usersArray));
-      }
-    } catch (error) {
-      console.error('Error updating face auth users:', error);
-    }
-  };
-
-  // Face detection handler
+  // face detector callback (CameraView)
   const handleFacesDetected = ({ faces }) => {
     const now = Date.now();
 
-    // Clear any existing no-face timeout
-    if (noFaceTimeoutRef.current) {
-      clearTimeout(noFaceTimeoutRef.current);
-      noFaceTimeoutRef.current = null;
-    }
-
-    // NO FACE DETECTED
-    if (faces.length === 0) {
-      if (faceDetected) {
-        setFaceDetected(false);
-      }
+    // no face
+    if (!faces || faces.length === 0) {
+      if (faceDetected) setFaceDetected(false);
       faceStableRef.current = false;
-
-      noFaceTimeoutRef.current = setTimeout(() => {
-        if (!isProcessing) {
-          stopDetectionProgress();
-          setInstruction("Center your face in the frame");
-        }
-      }, 300);
+      startDetectionProgress(false);
       return;
     }
 
     const face = faces[0];
+    if (!face || !face.bounds) return;
 
-    // Basic face validation
-    const hasValidFace = face.bounds && face.bounds.size;
-
-    if (!hasValidFace) {
-      setFaceDetected(false);
-      return;
-    }
-
-    // FACE DETECTED - Update UI immediately
+    // show immediate detected state
     if (!faceDetected && !isProcessing) {
       setFaceDetected(true);
-      setInstruction("Face detected – hold still");
+      setInstruction("Face detected — hold still");
       faceAppearTimeRef.current = now;
-      console.log("✅ Face detected!");
+      startDetectionProgress(true);
     }
 
-    // Start capture process after face is stable
-    if (!faceStableRef.current && !isProcessing && now - faceAppearTimeRef.current > 800) {
+    // once stable, capture after small delay
+    if (!faceStableRef.current && !isProcessing && now - faceAppearTimeRef.current > 700) {
       faceStableRef.current = true;
-      console.log("✔ Face confirmed stable");
 
-      // Clear any existing timeout
-      if (faceDetectionTimeoutRef.current) {
-        clearTimeout(faceDetectionTimeoutRef.current);
-      }
-
-      startDetectionProgress();
-
-      faceDetectionTimeoutRef.current = setTimeout(() => {
+      // short delay for better UX
+      if (captureTimeoutRef.current) clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = setTimeout(() => {
+        // trigger capture
         takePhotoForRecognition();
-      }, 1200);
+      }, 900);
     }
   };
 
   const takePhotoForRecognition = async () => {
-    if (!cameraRef.current || isProcessing) {
-      console.log('⏸️ Camera not ready or already processing');
-      return;
-    }
-
-    console.log('🎯 Capture triggered');
-
-    // Reset face detection states
-    faceStableRef.current = false;
-    faceAppearTimeRef.current = 0;
-
-    if (faceDetectionTimeoutRef.current) {
-      clearTimeout(faceDetectionTimeoutRef.current);
-      faceDetectionTimeoutRef.current = null;
-    }
-
-    setIsProcessing(true);
-    setInstruction("Capturing your face...");
-    setFaceDetected(true);
-    stopDetectionProgress();
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        base64: true,
-        skipProcessing: false,
-        exif: false,
-      });
-
-      console.log("📸 Photo captured");
-      setInstruction("Processing your face...");
-      await handleFaceDetected(photo.base64);
-
-    } catch (error) {
-      console.error("Recognition capture error:", error);
-      setInstruction("Capture failed. Please try again.");
-      setFaceDetected(false);
-      stopDetectionProgress();
-      setIsProcessing(false);
-    }
-  };
-
-  const handleBackPress = () => {
-    console.log("Close button pressed");
-
-    stopDetectionProgress();
-    setFaceDetected(false);
-    setIsProcessing(false);
-    setShowCamera(false);
-
-    // clear all timeouts
-    if (faceDetectionTimeoutRef.current) {
-      clearTimeout(faceDetectionTimeoutRef.current);
-    }
-
-    if (detectionProgressRef.current) {
-      clearInterval(detectionProgressRef.current);
-    }
-
-    if (noFaceTimeoutRef.current) {
-      clearTimeout(noFaceTimeoutRef.current);
-    }
-
-    // go back safely
-    if (onCancel) {
-      console.log("Calling onCancel");
-      onCancel();
-    } else {
-      console.log("Navigating to LoginScreen");
-      navigation.navigate('LoginScreen');
-    }
-  };
-
-  const handleManualCapture = async () => {
     if (!cameraRef.current || isProcessing) return;
 
-    console.log("📸 Manual capture triggered");
-
-    // Reset states for manual capture
-    faceStableRef.current = false;
-    faceAppearTimeRef.current = 0;
-
-    if (faceDetectionTimeoutRef.current) {
-      clearTimeout(faceDetectionTimeoutRef.current);
-      faceDetectionTimeoutRef.current = null;
-    }
-
-    setIsProcessing(true);
-    setInstruction("Processing your face...");
-    setFaceDetected(true);
-    stopDetectionProgress();
+    // small vibration to indicate capture
+    if (Platform.OS !== "web") Vibration.vibrate(20);
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
+        quality: 0.7,
         base64: true,
         skipProcessing: false,
-        exif: false,
       });
 
       await handleFaceDetected(photo.base64);
-    } catch (error) {
-      console.error("Manual capture error:", error);
-      setInstruction("Capture failed. Please try again.");
-      setFaceDetected(false);
+    } catch (err) {
+      console.error("takePhotoForRecognition error:", err);
+      setInstruction("Capture failed. Try again.");
       setIsProcessing(false);
+      setFaceDetected(false);
+      stopDetectionProgress();
     }
   };
 
-  const handleRetry = () => {
-    setShowRetryModal(false);
-    setInstruction("Please align your face again");
-    setFaceDetected(false);
-    setIsProcessing(false);
+  // progress helpers (visual only)
+  const startDetectionProgress = (active = true) => {
+    if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
+    if (!active) {
+      setDetectionProgress(0);
+      return;
+    }
+    let val = 10;
+    setDetectionProgress(val);
+    detectionIntervalRef.current = setInterval(() => {
+      val = Math.min(80, val + Math.floor(Math.random() * 12) + 6);
+      setDetectionProgress(val);
+      if (val >= 80) clearInterval(detectionIntervalRef.current);
+    }, 220);
+  };
+
+  const stopDetectionProgress = () => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+    setDetectionProgress(0);
+  };
+
+  // close/back handling
+  const handleBackPress = () => {
+    console.log("Close button pressed");
+    if (onCancel) {
+      try { onCancel({ disableAuto: true }); } catch { }
+    }
+    navigation.navigate("Login", { disableAuto: true });
   };
 
   const handleManualLogin = () => {
     setShowRetryModal(false);
-    handleManualCapture();
-  };
-
-  const handleBackToLogin = () => {
-    setShowRetryModal(false);
     if (onCancel) {
-      onCancel();
-    } else {
-      navigation.navigate('LoginScreen');
+      try { onCancel({ disableAuto: true }); } catch { }
     }
+    navigation.navigate("Login", { disableAuto: true });
   };
 
-  if (!permission) {
-    return (
-      <View style={styles.container}>
-        <Text>Requesting camera permission...</Text>
-      </View>
-    );
-  }
+  // UI animations
+  const pulseScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+  const rotateInterpolate = ringRotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  const progressScale = progressAnim.interpolate({ inputRange: [0, 1], outputRange: [0.01, 1] });
 
-  if (!permission.granted) {
+  // permission fallback UI
+  if (!permission?.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.message}>Camera permission is required for face login</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Permission</Text>
+      <View style={styles.permissionContainer}>
+        <Text style={styles.permissionText}>Camera permission required for face login</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={requestPermission}>
+          <Text style={styles.primaryBtnText}>Grant Permission</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 12 }]} onPress={handleManualLogin}>
+          <Text style={styles.secondaryBtnText}>Login manually</Text>
         </TouchableOpacity>
       </View>
     );
@@ -485,338 +321,320 @@ export default function FaceLoginScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      
-      {/* RETAKE / MANUAL CAPTURE MODAL */}
-      <Modal
-        transparent
-        visible={showRetryModal}
-        animationType="fade"
-        onRequestClose={() => setShowRetryModal(false)}
-      >
+      <Modal transparent visible={showRetryModal} animationType="fade" onRequestClose={() => setShowRetryModal(false)}>
         <View style={modalStyles.overlay}>
           <View style={modalStyles.box}>
             <Text style={modalStyles.title}>Face Detection Failed</Text>
-            <Text style={modalStyles.msg}>{failedMessage}</Text>
+            <Text style={modalStyles.msg}>
+              {typeof failedMessage === "string"
+                ? failedMessage
+                : "Face not recognized. Retake or login manually?"}
+            </Text>
 
             <View style={modalStyles.row}>
               <TouchableOpacity
                 style={modalStyles.btn}
-                onPress={handleRetry}
+                onPress={() => {
+                  setShowRetryModal(false);
+                  setFaceDetected(false);
+                  setIsProcessing(false);
+                  setInstruction("Center your face in the frame");
+                  stopDetectionProgress();
+                }}
               >
                 <Text style={modalStyles.btnText}>🔄 Retake</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={modalStyles.btn}
-                onPress={handleManualLogin}
-              >
+              <TouchableOpacity style={modalStyles.btn} onPress={handleManualLogin}>
                 <Text style={modalStyles.btnText}>✋ Manual</Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={modalStyles.cancelBtn}
-              onPress={handleBackToLogin}
-            >
-              <Text style={modalStyles.cancelText}>Back to Login</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* CAMERA VIEW */}
-      <Modal 
-        visible={showCamera} 
-        animationType="slide" 
-        statusBarTranslucent={true}
-        onRequestClose={handleBackPress}
-      >
-        <View style={styles.cameraContainer}>
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            onFacesDetected={handleFacesDetected}
-            faceDetectorSettings={{
-              mode: "accurate",
-              detectLandmarks: "all",
-              runClassifications: "all",
-              minDetectionInterval: 100,
-              tracking: true,
-            }}
-          >
-            <View style={styles.cameraOverlay}>
+      <CameraView
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        facing="front"
+        onFacesDetected={handleFacesDetected}
+        faceDetectorSettings={{
+          mode: 1,
+          detectLandmarks: 2,
+          runClassifications: 1,
+          minDetectionInterval: 100,
+          tracking: true,
+        }}
+      />
 
-              {/* HEADER */}
-              <View style={styles.cameraHeader}>
-                <TouchableOpacity style={styles.closeButton} onPress={handleBackPress}>
-                  <Ionicons name="chevron-down" size={28} color="#fff" />
-                </TouchableOpacity>
+      <View style={styles.overlay}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleBackPress} accessibilityLabel="Close">
+            <Ionicons name="chevron-down" size={28} color="#fff" />
+          </TouchableOpacity>
 
-                <View style={styles.progressSection}>
-                  <Text style={styles.progressText}>Face Login</Text>
-                  {isProcessing && <Text style={styles.progressCount}>Verifying…</Text>}
-                </View>
-              </View>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Face Login</Text>
+            {isProcessing ? <Text style={styles.headerSubtitle}>Verifying…</Text> : null}
+          </View>
 
-              {/* FACE OUTLINE */}
-              <View style={styles.faceGuidance}>
-                <View style={styles.faceOutline}>
-                  <View style={styles.faceGuide} />
-                </View>
-
-                <View style={styles.faceStatusIndicator}>
-                  <Ionicons
-                    name={faceDetected ? "checkmark-circle" : "ellipse-outline"}
-                    size={28}
-                    color={faceDetected ? "#57C0A1" : "rgba(255,255,255,0.6)"}
-                  />
-                  <Text style={styles.faceStatusText}>
-                    {isProcessing
-                      ? "Processing…"
-                      : faceDetected
-                      ? "Face Detected"
-                      : "Align your face"
-                    }
-                  </Text>
-                </View>
-              </View>
-
-              {/* BOTTOM PANEL */}
-              <View style={styles.instructionPanel}>
-                <Text style={styles.instructionTitle}>Instruction</Text>
-                <Text style={styles.instructionText}>{instruction}</Text>
-
-                {isProcessing ? (
-                  <View style={styles.processingState}>
-                    <ActivityIndicator size="large" color="#57C0A1" />
-                    <Text style={styles.processingText}>Verifying your identity…</Text>
-                  </View>
-                ) : (
-                  <View style={styles.captureSection}>
-                    <TouchableOpacity
-                      style={styles.captureButton}
-                      onPress={handleManualCapture}
-                    >
-                      <View style={styles.captureButtonOuter}>
-                        <View style={styles.captureButtonInner} />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                <Text style={styles.helperText}>
-                  {isDetecting ? "Scanning your face…" : "Position your face inside the circle"}
-                </Text>
-              </View>
-
-            </View>
-          </CameraView>
+          <View style={{ width: 44 }} />
         </View>
-      </Modal>
+
+        <View style={styles.centerArea}>
+          <Animated.View
+            style={[
+              styles.pulseOuter,
+              {
+                transform: [{ scale: pulseScale }],
+                opacity: faceDetected ? 0.9 : 0.65,
+              },
+            ]}
+          >
+            <Animated.View style={[styles.rotatingRing, { transform: [{ rotate: rotateInterpolate }] }]} />
+
+            <View style={styles.dashedRing}>
+              <View style={styles.faceHole} />
+            </View>
+          </Animated.View>
+
+          <View style={styles.statusRow}>
+            <Ionicons
+              name={faceDetected ? "checkmark-circle" : "ellipse-outline"}
+              size={20}
+              color={faceDetected ? "#57C0A1" : "rgba(255,255,255,0.7)"}
+            />
+            <Text style={styles.statusText}>
+              {isProcessing ? "Processing…" : faceDetected ? "Face detected" : "Align your face"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.bottomPanel}>
+          <Text style={styles.instructionLabel}>Instruction</Text>
+          <Text style={styles.instruction}>{instruction}</Text>
+
+          <View style={styles.captureRow}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.captureButtonWrapper}
+              onPress={() => {
+                if (!isProcessing) takePhotoForRecognition();
+              }}
+            >
+              <View style={[styles.captureOuter, isProcessing && { opacity: 0.5 }]}>
+                <View style={styles.captureInner} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {isProcessing && (
+            <View style={styles.processingRow}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.processingText}>Verifying identity…</Text>
+            </View>
+          )}
+        </View>
+      </View>
     </View>
   );
-}
+};
+
+/* ----------------- Styles ----------------- */
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
+  container: { flex: 1, backgroundColor: "#000" },
+  overlay: { flex: 1, justifyContent: "space-between" },
+
+  header: {
+    flexDirection: "row",
+    paddingTop: Platform.OS === "ios" ? 52 : 36,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  message: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
+  closeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  button: {
-    backgroundColor: '#57C0A1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cameraContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  cameraOverlay: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'space-between',
-  },
-  cameraHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 24,
-    paddingTop: 60,
-  },
-  closeButton: {
-    padding: 12,
-    borderRadius: 50,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    marginRight: 16,
-  },
-  progressSection: {
-    flex: 1,
-  },
-  progressText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  progressCount: {
-    color: '#57C0A1',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  faceGuidance: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  faceOutline: {
-    width: 250,
+  headerCenter: { alignItems: "center" },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  headerSubtitle: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
+
+  centerArea: { alignItems: "center", justifyContent: "center", flex: 1 },
+  pulseOuter: {
+    width: 300,
     height: 300,
-    borderWidth: 2,
-    borderColor: 'rgba(87, 192, 161, 0.3)',
-    borderRadius: 125,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 150,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  faceGuide: {
-    width: 200,
-    height: 200,
+
+  rotatingRing: {
+    position: "absolute",
+    width: 320,
+    height: 320,
+    borderRadius: 160,
     borderWidth: 1,
-    borderColor: 'rgba(87, 192, 161, 0.5)',
-    borderRadius: 100,
-    borderStyle: 'dashed',
+    borderColor: "rgba(255,255,255,0.06)",
+    shadowColor: "#000",
   },
-  faceStatusIndicator: {
-    position: 'absolute',
-    bottom: 40,
-    alignItems: 'center',
+
+  dashedRing: {
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    borderStyle: "dashed",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  faceStatusText: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 6,
-    fontWeight: '500',
+
+  faceHole: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(0,0,0,0.15)",
   },
-  instructionPanel: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
+
+  statusRow: { flexDirection: "row", alignItems: "center", marginTop: 18 },
+  statusText: { color: "#fff", marginLeft: 10, fontSize: 14 },
+
+  bottomPanel: {
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingTop: 18,
+    paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    paddingHorizontal: 18,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    height: 220,
   },
-  instructionTitle: {
-    color: '#9ca3af',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  instructionText: {
-    color: '#fff',
-    fontSize: 20,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  processingState: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  processingText: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 10,
-  },
-  captureSection: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  captureButton: {
-    // Container for the capture button
-  },
-  captureButtonOuter: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  instructionLabel: { color: "#9CA3AF", textAlign: "center", fontSize: 13 },
+  instruction: { color: "#fff", textAlign: "center", fontSize: 18, marginTop: 8, marginBottom: 12 },
+
+  captureRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+
+  captureButtonWrapper: { alignItems: "center", justifyContent: "center", marginTop: 8, marginBottom: 4 },
+
+  captureOuter: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#000",
   },
-  captureButtonInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#fff',
+  captureInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#fff",
   },
-  helperText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 6,
+
+  processingRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    marginTop: 12 
+  },
+  processingText: { color: "#fff", marginLeft: 8, fontSize: 13 },
+
+  permissionContainer: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    backgroundColor: "#000",
+    padding: 20,
+  },
+  permissionText: { 
+    color: "#fff", 
+    fontSize: 16, 
+    textAlign: "center", 
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  primaryBtn: { 
+    backgroundColor: "#57C0A1", 
+    paddingVertical: 14, 
+    paddingHorizontal: 24, 
+    borderRadius: 10,
+    minWidth: 180,
+  },
+  primaryBtnText: { 
+    color: "#fff", 
+    fontWeight: "600", 
+    fontSize: 16,
+    textAlign: "center",
+  },
+  secondaryBtn: { 
+    borderColor: "#57C0A1", 
+    borderWidth: 1, 
+    paddingVertical: 12, 
+    paddingHorizontal: 24, 
+    borderRadius: 10,
+    minWidth: 180,
+  },
+  secondaryBtnText: { 
+    color: "#57C0A1",
+    fontSize: 16,
+    textAlign: "center",
   },
 });
 
+/* Modal styles */
 const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
+  overlay: { 
+    flex: 1, 
+    backgroundColor: "rgba(0,0,0,0.6)", 
+    justifyContent: "center", 
+    alignItems: "center" 
   },
-  box: {
-    width: "80%",
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
+  box: { 
+    width: "80%", 
+    backgroundColor: "#fff", 
+    padding: 20, 
+    borderRadius: 14, 
+    alignItems: "center" 
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 10,
-    color: "#000",
+  title: { 
+    fontWeight: "700", 
+    fontSize: 18, 
+    marginBottom: 8 
   },
-  msg: {
-    fontSize: 16,
-    textAlign: "center",
-    marginBottom: 20,
+  msg: { 
+    textAlign: "center", 
+    marginBottom: 18, 
     color: "#333",
+    fontSize: 15,
+    lineHeight: 22,
   },
-  row: {
+  row: { 
     flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 15,
-  },
-  btn: {
-    backgroundColor: "#57C0A1",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    marginHorizontal: 8,
-    borderRadius: 8,
-  },
-  btnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  cancelBtn: {
     marginTop: 10,
   },
-  cancelText: {
-    color: "#333",
+  btn: { 
+    backgroundColor: "#57C0A1", 
+    paddingVertical: 10, 
+    paddingHorizontal: 18, 
+    borderRadius: 8, 
+    marginHorizontal: 8 
+  },
+  btnText: { 
+    color: "#fff", 
+    fontWeight: "600",
     fontSize: 15,
   },
 });
+
+export default FaceLoginScreen;

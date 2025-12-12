@@ -17,6 +17,8 @@ import {
   getBillsLocal,
   getGoalsLocal,
   initDefaultSavingMethods,
+  getCurrentMonthSnapshotIncome,
+  getIncomeGrowthRate
 } from "../../database/SQLite.js";
 import Icon from 'react-native-vector-icons/Feather';
 import { useTipManager } from "../LaiWenYin/TutorialModule/TipManager.js";
@@ -37,6 +39,8 @@ export default function DashboardScreen({ navigation }) {
     total_expense: 0,
     total_balance: 0,
   });
+  const [monthlyIncome, setMonthlyIncome] = useState(0);
+  const [incomeGrowth, setIncomeGrowth] = useState(null);
 
   const { userId, userLevel, isLoading: userLoading } = useUser();
   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
@@ -53,6 +57,11 @@ export default function DashboardScreen({ navigation }) {
           await processPeriodicBills(userId);
           await loadAllData();
           await loadGoals();
+          const monthlyIncome = await getCurrentMonthSnapshotIncome(userId);
+          setMonthlyIncome(monthlyIncome);
+
+          const growth = await getIncomeGrowthRate(userId);
+          setIncomeGrowth(growth);
           const summary = await getUserSummary(userId);
           if (summary) setUserSummary(summary);
 
@@ -70,7 +79,6 @@ export default function DashboardScreen({ navigation }) {
 
     }, [userId])
   );
-
 
   // Load bills
   const loadAllData = async () => {
@@ -181,30 +189,49 @@ export default function DashboardScreen({ navigation }) {
               <Ionicons name="information-circle-outline" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            onPress={() => setShowBalance(!showBalance)}
+            style={styles.eyeFixed}
+          >
+            <Icon name={showBalance ? "eye" : "eye-off"} size={20} color="#fff" />
+          </TouchableOpacity>
+
           <View style={styles.balanceWrapper}>
             <Text style={styles.balanceAmount}>
               {showBalance
                 ? `RM ${userSummary.total_balance.toFixed(2)}`
-                : "RM ****"}
+                : "RM ****.**"}
             </Text>
 
-            <TouchableOpacity onPress={() => setShowBalance(!showBalance)}>
-              <Icon
-                name={showBalance ? "eye" : "eye-off"}
-                size={22}
-                color="#fff"
-              />
-            </TouchableOpacity>
           </View>
 
           <View style={styles.incomeExpenseRow}>
-            <Text style={styles.incomeText}>
-              🟢 Income: RM {userSummary.total_income.toFixed(2)}
-            </Text>
-            <Text style={styles.expenseText}>
-              🔴 Expenses: RM {userSummary.total_expense.toFixed(2)}
-            </Text>
+            {showBalance ? (
+              <>
+                <Text style={styles.incomeText}>
+                  🟢 Monthly Income: RM {monthlyIncome.toFixed(2)}
+                </Text>
+
+                {incomeGrowth && (
+                  <Text style={{ color: incomeGrowth.rate >= 0 ? "#d4ffdd" : "#ffeaea" }}>
+                    {incomeGrowth.rate >= 0 ? "📈 Growth: +" : "📉 Growth: "}
+                    {(incomeGrowth.rate * 100).toFixed(1)}%
+                  </Text>
+                )}
+
+                <Text style={styles.expenseText}>
+                  🔴 Expenses: RM {userSummary.total_expense.toFixed(2)}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.incomeText}>🟢 Monthly Income: RM ****.**</Text>
+                <Text style={{ color: "#d4ffdd" }}>📈 Growth: **%</Text>
+                <Text style={styles.expenseText}>🔴 Expenses: RM ****.**</Text>
+              </>
+            )}
           </View>
+
         </View>
 
         {/* Monthly Savings Section */}
@@ -301,23 +328,27 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.buttonGrid}>
-            <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('ScanReceipt') }}>
-              <AntDesign name="scan" size={24} color="#8AD0AB" />
-              <Text style={styles.gridLabel}>Scan Receipt</Text>
-            </TouchableOpacity>
+
+            {/* Add Expense */}
             <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('AddExpense') }}>
               <MaterialIcons name="attach-money" size={24} color="#4CAF50" />
               <Text style={styles.gridLabel}>Add Expense</Text>
             </TouchableOpacity>
+
+            {/* Set Goal */}
             <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('AddGoal') }}>
               <MaterialCommunityIcons name="pig-variant-outline" size={24} color="#4CAF50" />
               <Text style={styles.gridLabel}>Set Goal</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.gridButton} onPress={() => { navigation.navigate('ExpenseAnalysis') }}>
+
+            {/* View Analysis — FULL WIDTH */}
+            <TouchableOpacity style={styles.gridButtonFull} onPress={() => { navigation.navigate('ExpenseAnalysis') }}>
               <Ionicons name="analytics-outline" size={24} color="#4CAF50" />
               <Text style={styles.gridLabel}>View Analysis</Text>
             </TouchableOpacity>
+
           </View>
+
         </View>
       </ScrollView>
 
@@ -573,4 +604,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Inter_600SemiBold',
   },
+
+  gridButtonFull: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    alignItems: "center",
+    paddingVertical: 20,
+    marginTop: 5,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  eyeFixed: {
+    position: "absolute",
+    top: 16,
+    right: 52,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+
 });
