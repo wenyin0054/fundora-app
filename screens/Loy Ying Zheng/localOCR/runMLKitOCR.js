@@ -1,26 +1,26 @@
-import { TextRecognition } from '@react-native-ml-kit/text-recognition';
-import { Platform } from "react-native";
+// runMLKitOCR.js — Final Stable Version
+import TextRecognition from "@react-native-ml-kit/text-recognition";
 
 export async function runMLKitOCR(imageUri) {
   try {
-    console.log("📄 Running ML Kit OCR...");
+    console.log("📄 [MLKit] OCR start");
+    console.log("📄 [MLKit] input:", imageUri);
 
-    // Android sometimes includes file:// prefix — ML Kit 不接受 file://
-    const filePath =
-      Platform.OS === "android"
-        ? imageUri.replace("file://", "")
-        : imageUri;
+    if (!imageUri) {
+      return { success: false, text: "", reason: "Empty imageUri" };
+    }
+
+    // DO NOT REMOVE file://
+    const filePath = imageUri;
+    console.log("📄 [MLKit] using file path:", filePath);
 
     const result = await TextRecognition.recognize(filePath);
 
-    const text = result?.text || "";
-    const blocks = result?.blocks || [];
+    const text = result?.text ?? "";
+    const blocks = result?.blocks ?? [];
 
-    const blockCount = blocks.length;
     const wordCount = text.trim().split(/\s+/).length;
-
-    // 简单信心评分（你之后可以增强）
-    const confidence = Math.min(1, (blockCount + wordCount / 20) / 10);
+    const blockCount = blocks.length;
 
     return {
       success: true,
@@ -28,17 +28,10 @@ export async function runMLKitOCR(imageUri) {
       blocks,
       blockCount,
       wordCount,
-      confidence // 0–1
+      confidence: Math.min(1, (blockCount + wordCount / 20) / 10),
     };
-
-  } catch (err) {
-    console.error("❌ ML Kit OCR Error:", err);
-    return {
-      success: false,
-      text: "",
-      blocks: [],
-      confidence: 0,
-      reason: err.message
-    };
+  } catch (e) {
+    console.error("❌ [MLKit] OCR Error:", e);
+    return { success: false, text: "", reason: e.message };
   }
 }

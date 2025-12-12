@@ -144,8 +144,18 @@ export default function ScanReceiptScreen({ route, navigation }) {
           );
         }
 
-        // 導航到 AddExpense 並傳遞數據
-        navigation.navigate("AddExpense", { scannedData });
+        const onScanResult = route.params?.onScanResult;
+
+        // 传回 AddExpense
+        if (onScanResult) {
+          onScanResult(scannedData);
+        }
+
+        navigation.setParams({ onScanResult: undefined });
+
+        // 返回 AddExpense
+        navigation.goBack();
+
 
       } else {
         // ✅ 使用增強版的錯誤處理

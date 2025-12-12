@@ -3,7 +3,46 @@ import {
   View, Text, TextInput, TouchableOpacity, 
   StyleSheet, Alert, ActivityIndicator, ScrollView 
 } from "react-native";
-import { resetPassword } from "../../../database/userAuth";
+import axios from "axios";
+import { getApiBase } from "../FaceAuthModule/apiConfig";
+
+const API = getApiBase();
+
+const handleReset = async () => {
+  const pwdError = validatePassword(newPassword);
+  if (pwdError) {
+    Alert.alert("Invalid Password", pwdError);
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    Alert.alert("Error", "Passwords do not match");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const API = getApiBase();
+
+    await axios.post(`${API}/reset-password`, {
+      email,
+      newPassword,
+    });
+
+    setLoading(false);
+
+    Alert.alert(
+      "Success",
+      "Your password has been reset!",
+      [{ text: "Go to Login", onPress: () => navigation.navigate("Login") }]
+    );
+
+  } catch (error) {
+    setLoading(false);
+    Alert.alert("Error", "Failed to reset password.");
+  }
+};
 
 export default function ResetPassword({ route, navigation }) {
   const { email, token, resetLink } = route.params || {};
@@ -14,57 +53,14 @@ export default function ResetPassword({ route, navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // STRONG PASSWORD VALIDATION
   const validatePassword = (password) => {
-    if (!password) return "Password is required";
-    if (password.length < 8) return "Must be at least 8 characters";
-    if (!/[A-Z]/.test(password)) return "Must include an uppercase letter (A–Z)";
-    if (!/[a-z]/.test(password)) return "Must include a lowercase letter (a–z)";
-    if (!/[0-9]/.test(password)) return "Must include a number (0–9)";
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return "Must include a special character";
-    return null;
-  };
-
-  const handleReset = async () => {
-    if (!email || !token) {
-      Alert.alert("Error", "Missing password reset details. Try again.");
-      return;
-    }
-
-    // Run validations
-    const pwdError = validatePassword(newPassword);
-    if (pwdError) {
-      Alert.alert("Invalid Password", pwdError);
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      await resetPassword(email, token, newPassword);
-      setLoading(false);
-
-      Alert.alert(
-        "Success",
-        "Your password has been reset. Please log in using your new password.",
-        [{ text: "Go to Login", onPress: () => navigation.navigate("Login") }]
-      );
-    } catch (error) {
-      setLoading(false);
-
-      let message = "Failed to reset password. Please try again.";
-
-      if (error?.message) {
-        message = error.message;
-      }
-
-      Alert.alert("Error", message);
-    }
-  };
+  if (!password) return "Password is required";
+  if (password.length < 6) return "Password must be at least 6 characters";
+  if (password.length > 20) return "Password must be less than 20 characters";
+  if (!/(?=.*[A-Za-z])(?=.*\d)/.test(password))
+    return "Password must contain letters and numbers";
+  return null; // success
+};
 
   const handleShowResetLink = () => {
     if (resetLink) {

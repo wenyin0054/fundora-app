@@ -1,14 +1,26 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, TextInput, TouchableOpacity, Switch, StyleSheet, ScrollView, Alert, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Switch,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Platform,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
-import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import { Platform } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Animated } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
+import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import Slider from "@react-native-community/slider";
+import AppHeader from "../../reuseComponet/header";
 import AddSavingAccountModal from "./AddSavingAccountModal";
+import { Animated } from "react-native";
 
 import {
   initDB,
@@ -25,11 +37,26 @@ import {
   getSavingMethods,
   getSavingAccounts,
   allocateFundToGoal,
+  saveUserTag,
+  saveMonthlyIncomeSnapshot,
+  recalculateMonthlyIncomeSnapshot,
 } from "../../../database/SQLite";
-import AppHeader from "../../reuseComponet/header";
-import Slider from '@react-native-community/slider';
-import { predictCategory, THRESHOLDS, saveUserTag } from '../AIPredictionEngine';
+
 import { useUser } from "../../reuseComponet/UserContext";
+import { predictCategory } from "./AutoAssignTag/AIPredictionEngine";
+import { normalize } from "./AutoAssignTag/normalize";
+
+// === FDS 组件（你之前放在 screens/reuseComponet/DesignSystem.js）===
+import {
+  FDSCard,
+  FDSInput,
+  FDSLabel,
+  FDSButton,
+  FDSColors,
+  FDSValidatedInput,
+  FDSValidatedPicker,
+  FDSI
+} from "../../reuseComponet/DesignSystem";
 
 export default function AddExpenseScreen({ route, navigation }) {
   const [payee, setPayee] = useState("");
@@ -41,7 +68,7 @@ export default function AddExpenseScreen({ route, navigation }) {
   const [allocateToGoal, setAllocateToGoal] = useState(false);
   const periodType = ["Yearly", "Monthly"];
   const [selectedType, setSelectedType] = useState("Yearly");
-  const [essentialityLabel, setEssentialityLabel] = useState(null);
+  const [essentialityLabel, setEssentialityLabel] = useState(0);
   const [tag, setTag] = useState("");
   const [eventTag, setEventTag] = useState("");
   const [paymentType, setPaymentType] = useState("Cash");
@@ -59,6 +86,8 @@ export default function AddExpenseScreen({ route, navigation }) {
   const [lastMonthExpenses, setLastMonthExpenses] = useState(null);
   const [sliderColor, setSliderColor] = useState("#4CAF50");  // default safe green
   const [isLoading, setIsLoading] = useState(false);
+  const [confidenceLevel, setConfidenceLevel] = useState(null);
+  const [incomingScanData, setIncomingScanData] = useState(null);
 
   //for load savings method and account
   const [savingMethods, setSavingMethods] = useState([]);
@@ -69,6 +98,10 @@ export default function AddExpenseScreen({ route, navigation }) {
   const [goalError, setGoalError] = useState(false);
   const [methodError, setMethodError] = useState(false);
   const [accountError, setAccountError] = useState(false);
+  const paymentTypeRef = useRef(null);
+  const tagRef = useRef(null);
+  const intervalRef = useRef(null);
+
 
   // for auto tag 
   const [predInfo, setPredInfo] = useState(null);
@@ -104,6 +137,8 @@ export default function AddExpenseScreen({ route, navigation }) {
 
 
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const amountRef = useRef(null);
+  const payeeRef = useRef(null);
 
   // Reusable shake animation
   const triggerShake = () => {
@@ -119,91 +154,74 @@ export default function AddExpenseScreen({ route, navigation }) {
   useEffect(() => {
     const init = async () => {
       if (!userId) return;
-      console.log("🚀 [init] start");
-
       try {
         await initDB();
-        console.log("✅ DB initialized");
         setdbReady(true);
 
         const loadedTags = await getTagsLocal(userId);
-        console.log("✅ Tags loaded:", loadedTags.length);
         setTags(loadedTags);
 
-        const eventTagData = await getEventTagsLocal(userId);
-        console.log("✅ Event tags loaded:", eventTagData.length);
-        setEventTagData(eventTagData);
+        const eventTags = await getEventTagsLocal(userId);
+        setEventTagData(eventTags);
 
         const goalsData = await getGoalsLocal(userId);
-        console.log("✅ Goals loaded:", goalsData.length);
         setGoals(goalsData);
 
         const active = await getActiveEventTagsLocal(userId);
-        console.log("✅ Active event tags:", active.length);
         setActiveEventTags(active);
 
         const summary = await getUserSummary(userId);
-        console.log("✅ User summary loaded:", summary);
         setUserSummary(summary);
 
-        // load savings method and account
         const methods = await getSavingMethods(userId);
-        console.log("✅ Saving methods loaded:", methods.length);
         setSavingMethods(methods);
 
         const accounts = await getSavingAccounts(userId);
-        console.log("✅ Saving accounts loaded:", accounts.length);
         setSavingAccounts(accounts);
 
-        console.log("⚡ calling getLastMonthTotalExpense()");
         const expenses = await getLastMonthTotalExpense(userId);
-        console.log("📊 getLastMonthTotalExpense returned:", expenses);
-
         const essentialTotal = expenses?.essentialTotal ?? 0;
         const total = expenses?.total ?? 0;
         setLastMonthExpenses({ essentialTotal, total });
-
-        console.log("✅ lastMonthExpenses set:", { essentialTotal, total });
       } catch (err) {
-        console.error("❌ [init] error:", err);
+        console.error("[init] error:", err);
       }
     };
-
     init();
   }, [userId]);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", async () => {
-      const data = route.params?.scannedData;
-      if (!data) return;
-
+    if (!incomingScanData) return;
+    const handleScanData = async () => {
+      const data = incomingScanData;
       try {
-        console.log("Scanned Data Received:", data.text);
-
-        if (data.merchant_name) {
-          const merchant = data.merchant_name || "";
-          setPayee(merchant);
-          await onPayeeChange(merchant).catch(e => console.error(e));
+        setConfidenceLevel(data.confidence_level || null);
+        if (data.merchant_name && data.merchant_name.trim() !== "") {
+          setPayee(data.merchant_name.trim());
+          await onPayeeChange(data.merchant_name.trim());
         }
-
-        if (data.total_amount) setAmount(data.total_amount?.toString() || "");
-        if (data.transaction_date) setDate(new Date(data.transaction_date));
-
-      } catch (error) {
-        console.error("Error processing scanned data:", error);
+        if (data.total_amount) {
+          const cleanAmount = parseFloat(data.total_amount.toString().replace(/[^0-9.]/g, ""));
+          if (!isNaN(cleanAmount)) {
+            if (data.confidence_level === "high" || data.confidence_level === "medium") {
+              setAmount(cleanAmount.toFixed(2));
+            } else {
+              setAmount("");
+            }
+          }
+        }
+        if (data.transaction_date) {
+          const dateObj = new Date(data.transaction_date);
+          if (!isNaN(dateObj)) setDate(dateObj);
+        }
+      } catch (e) {
+        console.error("Error applying scanned data:", e);
       } finally {
-        // clear param to avoid duplicate
-        navigation.setParams({ scannedData: undefined });
+        setIncomingScanData(null);
       }
-    });
-
-    return unsubscribe;
-  }, [navigation, route.params?.scannedData]);
-
-
-  useEffect(() => {
-    console.log("lastMonthExpenses updated:", lastMonthExpenses);
-  }, [lastMonthExpenses]);
+    };
+    handleScanData();
+  }, [incomingScanData]);
 
   useEffect(() => {
     if (!lastMonthExpenses || !userSummary.total_balance) return;
@@ -249,48 +267,37 @@ export default function AddExpenseScreen({ route, navigation }) {
       return;
     }
 
-    // call AI predictor (async)
     const res = await predictCategory(userId, text);
     setPredInfo(res);
 
-    console.log("🎯 PREDICTION RESULT:", {
-      category: res.category,
-      confidence: res.confidence,
-      source: res.source,
-      hasSuggestions: !!res.suggestions
-    });
+    console.log("🎯 PREDICTION RESULT:", res);
 
-    // 1) If user memory exists -> auto assign tag
-    if (res.category && res.source === "user_memory") {
-      console.log("✅ AUTO ASSIGN: User memory -", res.category);
+    // 1) Memory first
+    if (res.source.startsWith("user_memory")) {
       setTag(res.category);
       return;
     }
 
-    // 2) If AI ensemble strong enough to auto assign
-    if (res.category && res.source.includes("ai_auto") && res.confidence >= THRESHOLDS.AI_ENSEMBLE.AUTO_ASSIGN) {
-      console.log("✅ AUTO ASSIGN: AI Ensemble -", res.category, "confidence:", res.confidence);
+    // 2) Ensemble auto assign (AI strongest model)
+    if (res.source === "ai_ensemble" && res.confidence >= 0.90) {
       setTag(res.category);
       return;
     }
 
-    // 3) If individual model strong enough to auto assign
-    if (res.category && (res.source.includes("_auto")) && res.confidence >= THRESHOLDS.FUZZY_MATCH.AUTO_ASSIGN) {
-      console.log("✅ AUTO ASSIGN: Individual Model -", res.category, "confidence:", res.confidence);
+    // 3) Any AI model with strong signal
+    if (res.source.includes("ai") && res.confidence >= 0.85) {
       setTag(res.category);
       return;
     }
 
-    // 4) If suggestions available -> show suggestion UI
-    if (res.suggestions && res.suggestions.length > 0) {
-      console.log("💡 SUGGESTIONS:", res.suggestions.map(s =>
-        `${s.category} (${s.confidence.toFixed(2)})`
-      ));
-      // UI will show suggestions based on predInfo
+    // 4) Show suggestions
+    if (res.suggestions?.length > 0) {
+      console.log("💡 Suggestions:", res.suggestions);
     } else {
       console.log("❌ NO CONFIDENT SUGGESTION");
     }
   };
+
 
   // When the user manually selects a tag, it is saved to the user's memory
   const handleTagSelect = async (selectedTag) => {
@@ -298,8 +305,9 @@ export default function AddExpenseScreen({ route, navigation }) {
 
     // Save user selection to AI memory
     if (payee && selectedTag) {
-      await saveUserTag(userId, payee, selectedTag, 1);
-      console.log("💾 Saved user choice to AI memory");
+      const norm = normalize(payee);
+      await saveUserTag(userId, norm, selectedTag, 1); // 注意：确保 saveUserTag 接受 normalized payee
+      console.log("💾 Saved user choice (normalized):", norm, "->", selectedTag);
     }
   };
 
@@ -335,6 +343,16 @@ export default function AddExpenseScreen({ route, navigation }) {
     return true;
   };
 
+  const isGoalOverdue = (goal) => {
+    if (!goal.deadline && !goal.due) return false;
+
+    const d = goal.deadline || goal.due;
+    const deadlineDate = new Date(d + "T00:00:00");
+    const today = new Date();
+
+    return deadlineDate < today; // true = overdue
+  };
+
   const resetInputs = () => {
     setAmount("");
     setPayee("");
@@ -368,36 +386,38 @@ export default function AddExpenseScreen({ route, navigation }) {
     const currentTag = isGoalAllocation ? "Allocate to Goal" : tag;
 
     // ------------------ VALIDATION ------------------
-    // 1️⃣ VALIDATE AMOUNT (Income / Expense / Transaction without allocation)
+    // VALIDATE AMOUNT (Income / Expense / Transaction without allocation)
     if (!isGoalAllocation) {
-      if (!validateAmount(amount, "Amount")) return;
+      const validAmount = amountRef.current?.validate();
+      if (!validAmount) return;
+
     }
 
-    // 2️⃣ VALIDATE GOAL ALLOCATION AMOUNT
+    //  VALIDATE PAYEE (Only Expense / Transaction)
+    if ((isExpense || isTransaction) && !isGoalAllocation) {
+      const validPayee = payeeRef.current?.validate();
+      if (!validPayee) {
+        return
+      }
+    }
+
+    //  VALIDATE GOAL ALLOCATION AMOUNT
     if (isGoalAllocation) {
       if (!validateAmount(sliderValue, "Goal Amount")) return;
       if (!selectedGoal) return Alert.alert("Missing Goal", "Please select a goal.");
       if (sliderValue <= 0) return Alert.alert("Invalid Amount", "Please select amount to allocate.");
     }
 
-    // 3️⃣ VALIDATE EXPENSE TAG
-    if ((isExpense || (isTransaction && !isGoalAllocation)) && !currentTag) {
-      triggerShake();
-      return Alert.alert("Missing Tag", "Please select a tag.");
+    // Tag Validation
+    if ((isExpense || (isTransaction && !isGoalAllocation))) {
+      const validTag = tagRef.current?.validate();
+      if (!validTag) return;
     }
 
-    // 4️⃣ VALIDATE PAYMENT TYPE
-    if ((isExpense || (isTransaction && !isGoalAllocation)) && !paymentType) {
-      triggerShake();
-      return Alert.alert("Missing Payment Type", "Please select a payment type.");
-    }
-
-    // 5️⃣ VALIDATE PAYEE (Only Expense / Transaction)
-    if ((isExpense || isTransaction) && !isGoalAllocation) {
-      if (!trimmedPayee) {
-        triggerShake();
-        return Alert.alert("Missing Payee", "Please enter a payee or project.");
-      }
+    // Payment Type Validation
+    if ((isExpense || (isTransaction && !isGoalAllocation))) {
+      const validPayment = paymentTypeRef.current?.validate();
+      if (!validPayment) return;
     }
 
     // ------------------ AUTO TAG SAVE ------------------
@@ -408,7 +428,6 @@ export default function AddExpenseScreen({ route, navigation }) {
 
     try {
       setIsLoading(true);
-      await initDB();
 
       const finalDate = date.toISOString().split("T")[0];
       const goalId = isGoalAllocation ? selectedGoal : null;
@@ -425,10 +444,11 @@ export default function AddExpenseScreen({ route, navigation }) {
         );
 
         await updateUserSummary(userId, "income", finalAmount);
+        await saveMonthlyIncomeSnapshot(userId, finalDate);
         Alert.alert("Success", "Income recorded successfully!");
       }
 
-      // ==================== EXPENSE / TRANSACTION ====================
+      // ==================== EXPENSE / TRANSACTION ===================
       if (isExpense || isTransaction) {
 
         // 1️⃣ UPDATE GOAL AMOUNT
@@ -510,544 +530,352 @@ export default function AddExpenseScreen({ route, navigation }) {
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      <AppHeader
-        title="Add Expense/Income"
-        showLeftButton={true}
-        onLeftPress={() => navigation.goBack()}
-        showBell={false}
-        showProfile={false}
-      />
+    <View style={{ flex: 1, backgroundColor: "#f6fbf8" }}>
+      <AppHeader title="Add Expense/Income" showLeftButton={true} onLeftPress={() => navigation.goBack()} showBell={false} showProfile={false} />
+
       <KeyboardAwareScrollView
         contentContainerStyle={{ flexGrow: 1 }}
         resetScrollToCoords={{ x: 0, y: 0 }}
         enableOnAndroid={true}
-        extraScrollHeight={Platform.OS === 'ios' ? 120 : 80}
+        extraScrollHeight={Platform.OS === "ios" ? 120 : 80}
         keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={styles.container}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ flexGrow: 1 }}
-        >
+        <ScrollView style={styles.container} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
           {/* Selection Bar */}
-          <View style={styles.SelectionBarContainer}>
-            {options.map((option, index) => (
+          <View style={styles.selectionBar}>
+            {options.map((option, idx) => (
               <TouchableOpacity
-                key={index}
-                style={[styles.button, selectedOption === option && styles.selectedButton]}
-                onPress={() => {
-                  setSelected(option);
-                  setAllocateToGoal(false); // reset
-                }}
+                key={idx}
+                style={[styles.pill, selectedOption === option && styles.pillActive]}
+                onPress={() => { setSelected(option); setAllocateToGoal(false); }}
               >
-                <Text style={[styles.text, selectedOption === option && styles.selectedText]}>
+                <Text style={[styles.pillText, selectedOption === option && styles.pillTextActive]}>
                   {option}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Payee */}
-          <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-            <View style={styles.inputRow}>
-              <Ionicons name="person-outline" size={20} color="#6c757d" />
-              <TextInput
-                placeholder="Payee or purchased project"
-                placeholderTextColor={"#c5c5c5ff"}
-                style={styles.input}
-                value={payee}
-                onChangeText={onPayeeChange}
+          {/*  Card */}
+          <FDSCard>
+            {!(selectedOption === "Transaction" && allocateToGoal) && (
+              <FDSValidatedInput
+                ref={amountRef}
+                label="Amount"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+                validate={(v) => v && !isNaN(v) && parseFloat(v) > 0}
+                errorMessage="Amount must be greater than 0"
+                icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
               />
-              <TouchableOpacity onPress={() => navigation.navigate("ScanReceipt")}>
-                <Ionicons name="camera-outline" size={22} color="#6c757d" />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-          {/* Amount or Total Balance */}
-          {selectedOption === "Transaction" && allocateToGoal ? (
-            <View style={[styles.inputRow, { justifyContent: "space-between", height: 45 }]}>
-              <Ionicons name="wallet-outline" size={20} color="#6c757d" />
-              <Text style={{ flex: 1, marginLeft: 8, fontSize: 16, color: "#2E5E4E" }}>
-                Total Balance: {userSummary.total_balance.toFixed(2)}
-              </Text>
-            </View>
-          ) : (
-            <Animated.View style={{ transform: [{ translateX: shakeAnim }] }}>
-              <View style={styles.inputRow}>
-                <Ionicons name="cash-outline" size={20} color="#6c757d" />
-                <TextInput
-                  placeholder="Amount"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={amount}
-                  onChangeText={setAmount}
-                />
-              </View>
-            </Animated.View>
-
-          )}
+            )}
 
 
-          {/* Date */}
-          <View style={styles.rowBetween}>
-            <TouchableOpacity style={styles.dateButton} onPress={() => setShowDate(true)}>
-              <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-              <Text style={styles.dateText}>
-                {date
-                  ? `${date.getDate().toString().padStart(2, "0")}-${(date.getMonth() + 1)
-                    .toString()
-                    .padStart(2, "0")}-${date.getFullYear()}`
-                  : "Select Date"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {showDate && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              display="default"
-              onChange={(e, selectedDate) => {
-                setShowDate(false);
-                if (selectedDate) setDate(selectedDate);
-              }}
-              maximumDate={new Date()} // only today or past date
+            <FDSValidatedInput
+              ref={payeeRef}
+              label="Payee / Project"
+              value={payee}
+              onChangeText={(t) => onPayeeChange(t)}
+              placeholder="Payee or purchased project"
+              validate={(v) => v && v.trim().length > 0}
+              errorMessage="Payee / Project is required"
+              icon={<Ionicons name="person-outline" size={18} color={FDSColors.textGray} />}
             />
-          )}
 
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <FDSLabel>Date</FDSLabel>
+                <TouchableOpacity style={styles.dateButton} onPress={() => setShowDate(true)}>
+                  <Ionicons name="calendar-outline" size={16} color={FDSColors.textGray} />
+                  <Text style={styles.dateText}>
+                    {date ? `${date.getDate().toString().padStart(2, "0")}-${(date.getMonth() + 1).toString().padStart(2, "0")}-${date.getFullYear()}` : "Select Date"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
+              <View style={{ flex: 1 }}>
+                <FDSValidatedPicker
+                  ref={paymentTypeRef}
+                  label="Payment Type"
+                  value={paymentType}
+                  validate={(v) => !!v}
+                  errorMessage="Please select a payment type"
+                  icon={<FontAwesome6 name="money-bill-transfer" size={14} color={FDSColors.textGray} />}
+                >
+                  <Picker
+                    selectedValue={paymentType}
+                    onValueChange={(v) => setPaymentType(v)}
+                    style={styles.invisiblePicker}
+                  >
+                    <Picker.Item label="Cash" value="Cash" />
+                    <Picker.Item label="Credit Card" value="Credit Card" />
+                    <Picker.Item label="Debit Card" value="Debit Card" />
+                    <Picker.Item label="E-Wallet" value="E-Wallet" />
+                    <Picker.Item label="Bank Transfer" value="Bank Transfer" />
+                    <Picker.Item label="PayPal" value="PayPal" />
+                    <Picker.Item label="Cryptocurrency" value="Cryptocurrency" />
+                    <Picker.Item label="Gift Card" value="Gift Card" />
+                  </Picker>
+                </FDSValidatedPicker>
+              </View>
+            </View>
 
-          {(!allocateToGoal || selectedOption !== "Transaction") && (
-            <>
-              {/* Tag */}
-              {selectedOption !== "Income" && (
-                <View style={styles.pickerContainer}>
-                  <Ionicons name="pricetag-outline" size={20} color="#6c757d" style={styles.icon} />
+            {showDate && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                onChange={(e, selectedDate) => {
+                  setShowDate(false);
+                  if (selectedDate) setDate(selectedDate);
+                }}
+                maximumDate={new Date()}
+              />
+            )}
 
-                  {/* Read-only display of selected tag */}
-                  <TextInput
-                    value={tag}
-                    style={styles.dropdownContent}
-                    placeholder="Select a tag"
-                    placeholderTextColor={"#c5c5c5ff"}
-                    editable={false}
-                    pointerEvents="none"
-                  />
-
-                  {/* Invisible picker overlay */}
+            {/* Tag Picker */}
+            {selectedOption !== "Income" && (
+              <>
+                <FDSValidatedPicker
+                  ref={tagRef}
+                  label="Tag"
+                  value={tag}
+                  validate={(v) => !!v}
+                  errorMessage="Please select a tag"
+                  icon={<Ionicons name="pricetag-outline" size={16} color={FDSColors.textGray} />}
+                >
                   <Picker
                     selectedValue={tag}
                     onValueChange={(itemValue) => {
-                      if (itemValue === '__add_new_tag__') {
-                        navigation.navigate('AddTag', {
+                      if (itemValue === "__add_new_tag__") {
+                        navigation.navigate("AddTag", {
                           onTagAdded: async (newTag) => {
-                            await fetchTag(); // reload user tags
-                            setTag(newTag);   // set the new tag as selected
+                            await fetchTag();
+                            setTag(newTag.name);
+                            setEssentialityLabel(newTag.essentialityLabel);
+                            setTimeout(() => {
+                              console.log("tag =", itemValue, " essential =", selectedTag.essentialityLabel);
+                            });
                           }
                         });
                       } else {
                         setTag(itemValue);
-                        // First, search in user tags. If you can't find it, then go to default tags
-                        const selectedTag =
-                          tags.find((d) => d.name === itemValue) ||
-                          DEFAULT_TAGS.find((d) => d.name === itemValue);
-                        setEssentialityLabel(selectedTag ? !!selectedTag.essentialityLabel : 0);
+                        const selectedTag = tags.find((d) => d.name === itemValue) || [];
+                        if (selectedTag) {
+                          setEssentialityLabel(Number(selectedTag.essentialityLabel));
+                          setTimeout(() => {
+                            console.log("tag =", itemValue, " essential =", selectedTag.essentialityLabel);
+                          });
+                        }
                       }
                     }}
-                    style={[styles.picker, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0 }]}
-                    dropdownIconColor="#2E5E4E"
+                    style={styles.invisiblePicker}
                   >
                     <Picker.Item label="Select a tag..." value="" />
-
-                    {/* user tags */}
-                    {tags.map((item) => (
-                      <Picker.Item key={`user-${item.id}`} label={item.name} value={item.name} />
+                    {tags.map((t) => (
+                      <Picker.Item key={t.id} label={t.name} value={t.name} />
                     ))}
-
-                    {/* default tags */}
-                    {DEFAULT_TAGS.map((item) => (
-                      <Picker.Item key={`default-${item.name}`} label={item.name} value={item.name} />
-                    ))}
-
                     <Picker.Item label="➕ Add new tag" value="__add_new_tag__" />
                   </Picker>
-                </View>
-              )}
+                </FDSValidatedPicker>
 
-              {/* Essentiality Switch */}
-              {tag && essentialityLabel !== null && selectedOption !== "Income" && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 25, marginBottom: 10 }}>
-                  <Text style={{ marginRight: 10, color: "#555" }}>Essentiality:</Text>
-                  <Switch
-                    value={essentialityLabel}
-                    onValueChange={(value) => setEssentialityLabel(value)}
-                    trackColor={{ false: "#ccc", true: "#4CAF50" }}
-                    thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"}
-                  />
-                  <Text style={{ marginLeft: 10, color: "#555" }}>
-                    {essentialityLabel ? "Essential" : "Non-Essential"}
-                  </Text>
-                </View>
-              )}
 
-              {/* Payment Type */}
-              <View style={styles.pickerContainer}>
-                <FontAwesome6 name="money-bill-transfer" size={14} color="#6c757d" style={styles.icon} />
+                {/* Essentiality */}
+                {tag && (
+                  <View style={styles.rowInline}>
+                    <Text style={styles.smallLabel}>Essentiality</Text>
+                    <Switch value={essentialityLabel === 1} onValueChange={(v) => setEssentialityLabel(v)} trackColor={{ false: "#ccc", true: FDSColors.primary }} thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"} />
+                    <Text style={styles.smallLabel}>{essentialityLabel === 1 ? "Essential" : "Non-Essential"}</Text>
+                  </View>
+                )}
+              </>
+            )}
 
-                <TextInput
-                  value={paymentType}
-                  style={styles.dropdownContent}
-                  placeholder="Select payment type"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  editable={false}
-                  pointerEvents="none"
-                />
-
-                <Picker
-                  selectedValue={paymentType}
-                  onValueChange={(itemValue) => setPaymentType(itemValue)}
-                  style={[styles.picker, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0 }]}
-                  dropdownIconColor="#2E5E4E"
-                >
-                  <Picker.Item label="Select a payment type..." value="" />
-                  {paymentTypeData.map((item) => (
-                    <Picker.Item key={item.id} label={item.name} value={item.name} />
-                  ))}
-                </Picker>
-              </View>
-
-              {selectedOption !== "Income" && (!allocateToGoal && selectedOption !== "Transaction") && (
-                <View style={styles.eventTagContainer}>
-                  <Text style={styles.eventTagTitle}>Active Event</Text>
-
+            {/* Event Tag (Active event) */}
+            {selectedOption !== "Income" && !allocateToGoal && (
+              <View style={{ marginTop: 12 }}>
+                <FDSLabel>Active Event</FDSLabel>
+                <View style={styles.eventArea}>
                   {(() => {
                     const todayStr = new Date().toISOString().split("T")[0];
-                    const filteredEvents = activeEventTags.filter(
-                      (tag) =>
-                        tag.startDate <= todayStr &&
-                        (!tag.endDate || tag.endDate >= todayStr)
-                    );
-
+                    const filteredEvents = activeEventTags.filter((t) => t.startDate <= todayStr && (!t.endDate || t.endDate >= todayStr));
                     if (filteredEvents.length === 0) {
-                      return (
-                        <Text style={{ color: "#555", fontStyle: "italic", marginTop: 5 }}>
-                          No active event
-                        </Text>
-                      );
+                      return <Text style={styles.hint}>No active event</Text>;
                     }
-
                     if (filteredEvents.length === 1) {
-                      const tag = filteredEvents[0];
-                      return (
-                        <Text style={{ color: "#2E5E4E", marginTop: 5 }}>
-                          🎉 {tag.name} ({tag.startDate})
-                        </Text>
-                      );
+                      const e = filteredEvents[0];
+                      return <Text style={styles.eventText}>🎉 {e.name} ({e.startDate})</Text>;
                     }
-
                     return (
-                      <View style={styles.dropdownWrapper}>
-                        <Picker
-                          selectedValue={eventTagData}
-                          onValueChange={(itemValue) => setTag(itemValue)}
-                        >
-                          <Picker.Item label="-- Choose Active Event --" value={null} />
-                          {filteredEvents.map((tag) => (
-                            <Picker.Item
-                              key={tag.id}
-                              label={`${tag.name} (${tag.startDate})`}
-                              value={tag.name}
-                            />
-                          ))}
-                        </Picker>
-                      </View>
+                      <Picker selectedValue={eventTag} onValueChange={(v) => setEventTag(v)} style={styles.invisiblePicker}>
+                        <Picker.Item label="-- Choose Active Event --" value={null} />
+                        {filteredEvents.map((tag) => <Picker.Item key={tag.id} label={`${tag.name} (${tag.startDate})`} value={tag.name} />)}
+                      </Picker>
                     );
                   })()}
                 </View>
-              )}
-
-
-              {/* Periodic Switch */}
-              <View style={styles.periodicContainer}>
-                <Text style={styles.label}>Is it periodic?</Text>
-                <Switch
-                  value={isPeriodic}
-                  onValueChange={setIsPeriodic}
-                  trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                  thumbColor={isPeriodic ? "#4CAF50" : "#f4f3f4"}
-                />
               </View>
+            )}
+          </FDSCard>
 
-              {/* Period Type Selection Bar */}
-              {isPeriodic && (
-                <>
-                  <View style={styles.periodicPicker}>
-                    <View style={styles.selectionBarContainer}>
-                      {periodType.map((type, index) => (
-                        <TouchableOpacity
-                          key={index}
-                          style={[
-                            styles.typeButton,
-                            selectedType === type && styles.typeButtonActive,
-                          ]}
-                          onPress={() => setSelectedType(type)}
-                        >
-                          <Text
-                            style={[
-                              styles.typeButtonText,
-                              selectedType === type && styles.typeButtonTextActive,
-                            ]}
-                          >
-                            {type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
+          {/* Periodic / Allocate to Goal Controls */}
+          <FDSCard>
+            <View style={styles.rowSpace}>
+              <View>
+                <FDSLabel>Is it periodic?</FDSLabel>
+                <Text style={styles.hintSmall}>Recurring payment (monthly/yearly)</Text>
+              </View>
+              <Switch value={isPeriodic} onValueChange={setIsPeriodic} trackColor={{ false: "#ccc", true: "#9cd8b3" }} thumbColor={isPeriodic ? "#fff" : "#f4f3f4"} />
+            </View>
 
-                  <Text style={styles.label}>Repeat every:</Text>
+            {isPeriodic && (
+              <>
+                <FDSLabel>Repeat Type</FDSLabel>
+                <View style={styles.rowInline}>
+                  {periodType.map((t) => (
+                    <TouchableOpacity key={t} style={[styles.smallPill, selectedType === t && styles.smallPillActive]} onPress={() => setSelectedType(t)}>
+                      <Text style={[styles.smallPillText, selectedType === t && styles.smallPillTextActive]}>{t}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <FDSValidatedPicker
+                  ref={intervalRef}
+                  label="Repeat Every"
+                  value={periodInterval}
+                  validate={(v) => v && Number(v) > 0}
+                  errorMessage="Interval is required"
+                  icon={<Ionicons name="repeat-outline" size={18} color={FDSColors.textGray} />}
+                >
                   <Picker
                     selectedValue={periodInterval}
-                    onValueChange={(val) => setPeriodInterval(val)}
-                    style={styles.picker}
+                    onValueChange={(v) => setPeriodInterval(v)}
+                    style={{ position: "absolute", opacity: 0, width: "100%", height: "100%" }}
                   >
                     {[1, 2, 3, 6, 12].map((n) => (
                       <Picker.Item key={n} label={`${n}`} value={n} />
                     ))}
                   </Picker>
-                </>
-              )}
+                </FDSValidatedPicker>
 
-            </>
-          )}
-
-          {selectedOption === "Transaction" && (
-            <View style={styles.periodicContainer}>
-              <Text style={styles.label}>Allocate Income to Goal?</Text>
-              <Switch
-                value={allocateToGoal}
-                onValueChange={setAllocateToGoal}
-                trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                thumbColor={allocateToGoal ? "#4CAF50" : "#f4f3f4"}
-              />
-            </View>
-          )}
-
-          {/* Save Button for Income / Expense / Transaction */}
-          {(selectedOption === "Income" ||
-            selectedOption === "Expenses" ||
-            (selectedOption === "Transaction" && !allocateToGoal)) && (
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  isLoading && styles.saveButtonDisabled
-                ]}
-                onPress={() => onSave()}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.saveText}>
-                    {selectedOption === "Income"
-                      ? "Save Income"
-                      : selectedOption === "Expenses"
-                        ? "Save Expense"
-                        : "Save Transaction"}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              </>
             )}
 
+            {selectedOption === "Transaction" && (
+              <View style={[styles.rowSpace, { marginTop: 12 }]}>
+                <View>
+                  <FDSLabel>Allocate to Goal?</FDSLabel>
+                  <Text style={styles.hintSmall}>Use this to allocate amounts into saving goals</Text>
+                </View>
+                <Switch value={allocateToGoal} onValueChange={setAllocateToGoal} trackColor={{ false: "#ccc", true: "#9cd8b3" }} thumbColor={allocateToGoal ? "#fff" : "#f4f3f4"} />
+              </View>
+            )}
+          </FDSCard>
+
+          {/* Goal Allocation Complex Section */}
           {selectedOption === "Transaction" && allocateToGoal && (
-            <View style={styles.goalCard}>
-              <Text style={styles.goalTitle}>Allocate Income to Goal</Text>
+            <>
+              {/* Goal list card */}
+              <FDSCard>
+                <FDSLabel>Select Goal</FDSLabel>
+                <View style={styles.goalList}>
+                  {goals.length > 0 ? (
+                    goals.map((g) => {
+                      const overdue = isGoalOverdue(g);
 
-              {/* ------------------ GOAL LIST ------------------ */}
-              <Text style={styles.subLabel}>Select your goal:</Text>
-              <Animated.View
-                style={[
-                  styles.goalList,
-                  goalError && styles.errorBorder,     // 红框
-                  { transform: [{ translateX: shakeAnim }] }
-                ]}
-              >
-                {goals.length > 0 ? (
-                  goals.map((goal) => (
-                    <TouchableOpacity
-                      key={goal.id}
-                      style={[
-                        styles.goalButton,
-                        selectedGoal === goal.id && styles.goalButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedGoal(goal.id);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.goalButtonText,
-                          selectedGoal === goal.id && styles.goalButtonTextActive,
-                        ]}
-                      >
-                        {goal.goalName}
-                      </Text>
-                      <Text style={{ color: "#555", fontSize: 12, marginTop: 4 }}>
-                        Target: RM {(goal.targetAmount || 0).toFixed(2)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <Text style={styles.emptyGoalText}>
-                    No goals found. Please add one in Savings Planner.
-                  </Text>
-                )}
-              </Animated.View>
-
-              <View style={styles.divider} />
-
-              {/* ------------------ SAVING METHOD LIST ------------------ */}
-              <Text style={styles.subLabel}>Select Saving Method:</Text>
-              <Animated.View
-                style={[
-                  styles.methodList,
-                  methodError && styles.errorBorder,
-                  { transform: [{ translateX: shakeAnim }] }
-                ]}
-              >
-
-                {savingMethods.map((method) => (
-                  <TouchableOpacity
-                    key={method.id}
-                    style={[
-                      styles.methodButton,
-                      selectedSavingMethod?.id === method.id && styles.methodButtonActive,
-                    ]}
-                    onPress={() => {
-                      setSelectedSavingMethod(method);
-                      setSelectedSavingAccount(null);
-                    }}
-                  >
-                    <Text style={styles.methodIcon}>{method.icon_name}</Text>
-                    <View style={styles.methodInfo}>
-                      <Text style={styles.methodName}>{method.method_name}</Text>
-                      <Text style={styles.methodDetails}>
-                        Return: {method.expected_return}% • Risk: {"⭐".repeat(method.risk_level)}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </Animated.View>
-
-              {/* ------------------ SAVING ACCOUNT LIST ------------------ */}
-              {selectedSavingMethod && (
-                <>
-                  <Text style={styles.subLabel}>Select Account:</Text>
-                  <Animated.View
-                    style={[
-                      styles.accountSection,
-                      accountError && styles.errorBorder,
-                      { transform: [{ translateX: shakeAnim }] }
-                    ]}
-                  >
-
-                    {savingAccounts
-                      .filter((a) => a.method_id === selectedSavingMethod.id)
-                      .map((account) => (
+                      return (
                         <TouchableOpacity
-                          key={account.id}
+                          key={g.id}
                           style={[
-                            styles.accountButton,
-                            selectedSavingAccount?.id === account.id &&
-                            styles.accountButtonActive,
+                            styles.goalItem,
+                            selectedGoal === g.id && !overdue && styles.goalItemActive,
+                            overdue && { opacity: 0.4 }
                           ]}
                           onPress={() => {
-                            setSelectedSavingAccount(account);
+                            if (overdue) {
+                              Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
+                              return;
+                            }
+                            setSelectedGoal(g.id);
                           }}
                         >
-                          <Text style={styles.accountName}>
-                            {account.institution_name} - {account.account_name}
-                          </Text>
-
-                          <Text style={styles.accountBalance}>
-                            Balance: RM {account.current_balance.toFixed(2)}
-                          </Text>
-
-                          {account.interest_rate > 0 && (
-                            <Text style={styles.accountRate}>
-                              Rate: {account.interest_rate}%
-                            </Text>
-                          )}
+                          <Text style={styles.goalName}>{g.goalName}</Text>
+                          <Text style={styles.goalSmall}>RM {(g.targetAmount || 0).toFixed(2)}</Text>
                         </TouchableOpacity>
-                      ))}
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.hint}>No goals found. Add one in Savings Planner.</Text>
+                  )}
 
-                    {/* Add New Account Button */}
-                    <TouchableOpacity
-                      style={styles.addAccountButton}
-                      onPress={() => setShowAccountModal(true)}
-                    >
-                      <Ionicons
-                        name="add-circle-outline"
-                        size={20}
-                        color="#8AD0AB"
-                        style={{ marginRight: 6 }}
-                      />
+                </View>
+              </FDSCard>
+
+              {/* Saving method & account selection */}
+              <FDSCard>
+                <FDSLabel>Select Saving Method</FDSLabel>
+                <View>
+                  {savingMethods.map((m) => (
+                    <TouchableOpacity key={m.id} style={[styles.methodRow, selectedSavingMethod?.id === m.id && styles.methodRowActive]} onPress={() => { setSelectedSavingMethod(m); setSelectedSavingAccount(null); }}>
+                      <Text style={styles.methodIcon}>{m.icon_name}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.methodTitle}>{m.method_name}</Text>
+                        <Text style={styles.methodSub}>Return: {m.expected_return}% • Risk: {"⭐".repeat(m.risk_level)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {selectedSavingMethod && (
+                  <>
+                    <FDSLabel style={{ marginTop: 12 }}>Select Account</FDSLabel>
+                    {savingAccounts.filter(a => a.method_id === selectedSavingMethod.id).map((acc) => (
+                      <TouchableOpacity key={acc.id} style={[styles.accountRow, selectedSavingAccount?.id === acc.id && styles.accountRowActive]} onPress={() => setSelectedSavingAccount(acc)}>
+                        <Text style={styles.accountName}>{acc.institution_name} - {acc.account_name}</Text>
+                        <Text style={styles.accountBal}>Balance: RM {acc.current_balance.toFixed(2)}</Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity style={styles.addAccountBtn} onPress={() => setShowAccountModal(true)}>
+                      <Ionicons name="add-circle-outline" size={18} color={FDSColors.primary} />
                       <Text style={styles.addAccountText}>Add New Account</Text>
                     </TouchableOpacity>
-                  </Animated.View>
-                </>
-              )}
+                  </>
+                )}
+              </FDSCard>
 
-              <View style={styles.divider} />
-
-              {/* ------------------ SLIDER + MANUAL INPUT ------------------ */}
-              <View style={styles.amountSection}>
-                <Text style={styles.subLabel}>Select amount to save:</Text>
-
-                <View style={styles.amountInputRow}>
-                  <Ionicons name="cash-outline" size={20} color="#2E5E4E" />
+              {/* Amount slider card */}
+              <FDSCard>
+                <FDSLabel>Amount to allocate</FDSLabel>
+                <View style={styles.amountRow}>
+                  <Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />
                   <TextInput
-                    style={styles.amountInput}
+                    style={styles.manualAmount}
                     keyboardType="numeric"
                     value={sliderValue.toString()}
                     onChangeText={(text) => {
                       let val = parseFloat(text);
                       if (isNaN(val)) val = 0;
                       if (val > userSummary.total_balance) val = userSummary.total_balance;
-
                       setSliderValue(val);
-                      const percent = ((val / userSummary.total_balance) * 100).toFixed(1);
+                      const percent = ((val / (userSummary.total_balance || 1)) * 100).toFixed(1);
                       setSliderPercent(percent);
                     }}
                     placeholder="Enter amount"
                     placeholderTextColor={"#c5c5c5ff"}
                   />
-                  <Text style={styles.balanceText}>
-                    / {userSummary.total_balance.toFixed(2)}
-                  </Text>
+                  <Text style={styles.balanceShort}>/ {userSummary.total_balance.toFixed(2)}</Text>
                 </View>
 
-                {/* ------------- WARNING LOGIC (保留你的逻辑) ------------- */}
                 {lastMonthExpenses && userSummary.total_balance > 0 && (
                   <View style={{ marginTop: 8 }}>
-                    {sliderValue >
-                      userSummary.total_balance - lastMonthExpenses.essentialTotal ? (
-                      <Text style={{ color: "#D32F2F", fontWeight: "600" }}>
-                        ❌ Allocating this will leave only{" "}
-                        {(userSummary.total_balance - sliderValue).toFixed(2)}{" "}
-                        for essential expenses!
-                      </Text>
-                    ) : sliderValue >
-                      userSummary.total_balance - lastMonthExpenses.total ? (
-                      <Text style={{ color: "#F57C00", fontWeight: "600" }}>
-                        ⚠️ You may not have enough for last month's total spending.
-                      </Text>
+                    {sliderValue > userSummary.total_balance - lastMonthExpenses.essentialTotal ? (
+                      <Text style={{ color: "#D32F2F", fontWeight: "600" }}>❌ Allocating this will leave only {(userSummary.total_balance - sliderValue).toFixed(2)} for essential expenses!</Text>
+                    ) : sliderValue > userSummary.total_balance - lastMonthExpenses.total ? (
+                      <Text style={{ color: "#F57C00", fontWeight: "600" }}>⚠️ You may not have enough for last month's total spending.</Text>
                     ) : sliderValue > userSummary.total_balance / 2 ? (
-                      <Text style={{ color: "#FBC02D", fontWeight: "600" }}>
-                        ⚠️ Allocation exceeds 50% of your total balance.
-                      </Text>
+                      <Text style={{ color: "#FBC02D", fontWeight: "600" }}>⚠️ Allocation exceeds 50% of your total balance.</Text>
                     ) : null}
                   </View>
                 )}
@@ -1058,533 +886,183 @@ export default function AddExpenseScreen({ route, navigation }) {
                   maximumValue={parseFloat(userSummary.total_balance.toFixed(2)) || 0}
                   step={1}
                   value={sliderValue}
-                  onValueChange={(val) => {
-                    setSliderValue(val);
-                    const percent = ((val / userSummary.total_balance) * 100).toFixed(1);
-                    setSliderPercent(percent);
-                  }}
+                  onValueChange={(val) => { setSliderValue(val); const percent = ((val / (userSummary.total_balance || 1)) * 100).toFixed(1); setSliderPercent(percent); }}
                   minimumTrackTintColor={sliderColor}
                   maximumTrackTintColor="#ccc"
                   thumbTintColor={sliderColor}
                 />
 
-                <Text style={styles.sliderValueText}>
-                  Amount: {sliderValue} ({sliderPercent}% of balance)
-                </Text>
+                <Text style={styles.sliderNote}>Amount: {sliderValue} ({sliderPercent}% of balance)</Text>
+              </FDSCard>
+
+              {/* Goal Save Button */}
+              <View style={{ paddingHorizontal: 16 }}>
+                <TouchableOpacity
+                  style={[styles.goalSaveButton, isLoading && styles.disabledBtn]}
+                  disabled={isLoading}
+                  onPress={() => {
+                    let hasError = false;
+                    if (!selectedGoal) {
+                      setGoalError(true);
+                      hasError = true;
+                    } else {
+                      const selectedObj = goals.find(g => g.id === selectedGoal);
+                      if (isGoalOverdue(selectedObj)) {
+                        Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
+                        hasError = true;
+                      }
+                      else setGoalError(false);
+                    }
+
+                    if (!selectedSavingMethod) { setMethodError(true); hasError = true; } else setMethodError(false);
+                    if (!selectedSavingAccount) { setAccountError(true); hasError = true; } else setAccountError(false);
+                    if (hasError) { triggerShake(); Alert.alert("Missing Information", "Please complete all required fields."); return; }
+                    onSave(sliderValue); // 保留原 onSave
+                  }}
+                >
+                  {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.goalSaveText}>Save to {selectedGoal ? goals.find(g => g.id === selectedGoal).goalName : "Goal"}</Text>}
+                </TouchableOpacity>
               </View>
+            </>
+          )}
 
-              {/* ------------------ ADD SAVING ACCOUNT MODAL ------------------ */}
-              <AddSavingAccountModal
-                visible={showAccountModal}
-                onClose={() => setShowAccountModal(false)}
-                methodId={selectedSavingMethod?.id || null}
-                methodName={selectedSavingMethod?.method_name || ""}
-                savingMethods={savingMethods}
-                onSaved={async () => {
-                  const accounts = await getSavingAccounts(userId);
-                  setSavingAccounts(accounts);
-                }}
-                userId={userId}
-              />
-
-              {/* Save Button */}
-              <TouchableOpacity
-                style={[
-                  styles.goalSaveButton,
-                  isLoading && styles.saveButtonDisabled
-                ]}
-                disabled={isLoading}
-                onPress={() => {
-
-                  let hasError = false;
-
-                  if (!selectedGoal) {
-                    setGoalError(true);
-                    hasError = true;
-                  } else setGoalError(false);
-
-                  if (!selectedSavingMethod) {
-                    setMethodError(true);
-                    hasError = true;
-                  } else setMethodError(false);
-
-                  if (!selectedSavingAccount) {
-                    setAccountError(true);
-                    hasError = true;
-                  } else setAccountError(false);
-
-                  if (hasError) {
-                    triggerShake();  // <-- 使用你现成的 shake 动画
-                    Alert.alert("Missing Information", "Please complete all required fields.");
-                    return;
-                  }
-
-                  onSave(sliderValue);
-                }}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.goalSaveText}>
-                    Save to {selectedGoal ? goals.find(g => g.id === selectedGoal).goalName : 'Goal'}
-                  </Text>
-                )}
+          {/* 普通 Save Button */}
+          {!(selectedOption === "Transaction" && allocateToGoal) && (
+            <View style={{ paddingHorizontal: 16 }}>
+              <TouchableOpacity style={[styles.saveButton, isLoading && styles.disabledBtn]} disabled={isLoading} onPress={() => onSave()}>
+                {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{selectedOption === "Income" ? "Save Income" : (selectedOption === "Expenses" ? "Save Expense" : "Save Transaction")}</Text>}
               </TouchableOpacity>
-
             </View>
           )}
 
-
-
-
+          {/* Tip cards */}
+          {confidenceLevel === "medium" && (<View style={styles.tipCard}><Text style={styles.tipText}>⚠️ The automatically identified amount may not be completely accurate. Please confirm.</Text></View>)}
+          {confidenceLevel === "low" && (<View style={styles.tipCard}><Text style={styles.tipText}>⚠️ The identification result is uncertain. Please enter the amount.</Text></View>)}
 
         </ScrollView>
       </KeyboardAwareScrollView>
-    </View >
+
+      <AddSavingAccountModal visible={showAccountModal} onClose={() => setShowAccountModal(false)} methodId={selectedSavingMethod?.id || null} methodName={selectedSavingMethod?.method_name || ""} savingMethods={savingMethods} onSaved={async () => { const accounts = await getSavingAccounts(userId); setSavingAccounts(accounts); }} userId={userId} />
+
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-
   container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    padding: 20,
+    padding: 16,
+    backgroundColor: "transparent",
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  header: {
-    fontSize: 22,
-    fontWeight: "600",
-    marginBottom: 20,
-    color: "#2e2e2e",
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    elevation: 3,
-  },
-  input: {
-    flex: 1,
-    height: 45,
-    marginHorizontal: 8,
-  },
-  inputBox: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    height: 45,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginVertical: 10,
-    width: 190,
-  },
-  dateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    padding: 10,
-    flex: 1,
-    marginRight: 10,
-    elevation: 3,
-  },
-  dateText: {
-    marginLeft: 6,
-    color: "#333",
-  },
-  periodicContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginVertical: 15,
-  },
-  label: {
-    fontSize: 16,
-    color: "#333",
-  },
-  periodButton: {
-    flex: 1,
-    backgroundColor: "#f0f0f0",
-    paddingVertical: 10,
-    marginHorizontal: 5,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  periodButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  periodText: {
-    color: "#333",
-    fontWeight: "500",
-  },
-  saveButton: {
-    backgroundColor: "#9cd8b3",
-    paddingVertical: 15,
-    borderRadius: 10,
-    marginTop: 20,
-    alignItems: "center",
-  },
-  saveButtonDisabled: {
-    backgroundColor: "#cccccc",
-    opacity: 0.6,
-  },
-  saveText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  SelectionBarContainer: {
-    flexDirection: "row",
-    backgroundColor: "#8CCFB1", // green background
-    borderRadius: 8,
-    padding: 4,
-    justifyContent: "space-between",
-    marginBottom: 20,
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f6fbf8" },
+  errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "#f6fbf8" },
+  errorTitle: { fontSize: 20, fontWeight: "700", color: "#1E293B", marginTop: 16, marginBottom: 8 },
+  errorMessage: { fontSize: 16, color: "#64748B", textAlign: "center" },
 
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  selectedButton: {
-    backgroundColor: "#fff",
-  },
-  text: {
-    color: "#2E5E4E",
-    fontSize: 16,
-    fontWeight: "500",
+  /* Selection pill */
+  selectionBar: { flexDirection: "row", backgroundColor: "#8CCFB1", borderRadius: 10, padding: 6, marginBottom: 14 },
+  pill: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8 },
+  pillActive: { backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
+  pillText: { color: "#2E5E4E", fontWeight: "600" },
+  pillTextActive: { color: "#2E5E4E", fontWeight: "800" },
 
-  },
-  selectedText: {
-    color: "#2E5E4E",
-    fontWeight: "bold",
-  },
-  pickerContainer: {
-    flexDirection: "row",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 4,
-    justifyContent: "space-between",
-    marginBottom: 12,
-    elevation: 3,
-    paddingHorizontal: 10,  // keeps space on left and right
-    height: 45,
+  /* date/picker row */
+  dateButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#f3f6fa", borderRadius: 10, padding: 10 },
+  dateText: { marginLeft: 8, color: "#2E5E4E" },
 
-  },
-  picker: {
-    flex: 1,
-    color: "#2E5E4E",
-    fontSize: 14,
-    backgroundColor: "transparent", // avoid double background layers
-  },
-  icon: {
-    marginRight: 8,
-    alignSelf: "center",
-  },
-  dropdownContent: {
-    position: 'absolute',
-    left: 30,
-    color: '#6c757d',
-    zIndex: 1
-  },
-  goalCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 20,
-    marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
+  /* faux picker style */
+  pickerLike: { flexDirection: "row", alignItems: "center", backgroundColor: "#f3f6fa", borderRadius: 10, paddingHorizontal: 12, height: 44, marginTop: 6 },
+  dropdownText: { flex: 1, color: "#6b7280" },
+  invisiblePicker: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, opacity: 0 },
 
-  goalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#2E5E4E",
-    textAlign: "center",
-    marginBottom: 10,
-  },
+  rowInline: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 },
+  rowSpace: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
 
-  divider: {
-    height: 1,
-    backgroundColor: "#E3F1E7",
-    marginVertical: 15,
-  },
+  /* goal / method */
+  goalList: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
+  goalItem: { backgroundColor: "#F5F9F7", padding: 10, borderRadius: 10, margin: 6, borderWidth: 1, borderColor: "#CDE9D6" },
+  goalItemActive: { backgroundColor: "#9CD8B3", borderColor: "#7BC49E" },
+  goalName: { color: "#2E5E4E", fontWeight: "600" },
+  goalSmall: { color: "#555", fontSize: 12 },
 
-  subLabel: {
-    fontSize: 15,
-    color: "#2E5E4E",
-    marginBottom: 8,
-    fontWeight: "500",
-  },
+  methodRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#f3f6fa", marginBottom: 8 },
+  methodRowActive: { backgroundColor: "#9cd8b3" },
+  methodIcon: { fontSize: 20, marginRight: 12 },
+  methodTitle: { fontSize: 15, fontWeight: "600", color: "#2E5E4E" },
+  methodSub: { fontSize: 12, color: "#555" },
 
-  goalList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-  },
+  accountRow: { backgroundColor: "#f3f6fa", padding: 12, borderRadius: 10, marginTop: 8 },
+  accountRowActive: { backgroundColor: "#8ad0ab" },
+  accountName: { fontWeight: "600", color: "#2E5E4E" },
+  accountBal: { color: "#555", fontSize: 12 },
 
-  goalButton: {
-    backgroundColor: "#F5F9F7",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    margin: 6,
-    borderWidth: 1,
-    borderColor: "#CDE9D6",
-  },
+  addAccountBtn: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  addAccountText: { marginLeft: 8, color: "#2E5E4E", fontWeight: "600" },
 
-  goalButtonActive: {
-    backgroundColor: "#9CD8B3",
-    borderColor: "#7BC49E",
-  },
+  amountRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
+  manualAmount: { marginLeft: 8, borderWidth: 1, borderColor: "#CDE9D6", borderRadius: 8, paddingHorizontal: 8, height: 40, width: 140, backgroundColor: "#F8FDF9", color: "#2E5E4E" },
+  balanceShort: { marginLeft: 8, color: "#555" },
 
-  goalButtonText: {
-    color: "#2E5E4E",
-    fontWeight: "500",
-  },
+  sliderNote: { marginTop: 8, color: "#555", fontWeight: "600" },
 
-  goalButtonTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
+  saveButton: { backgroundColor: "#8AD0AB", paddingVertical: 14, borderRadius: 12, marginTop: 12, alignItems: "center", marginBottom: 20 },
+  saveText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  goalSaveButton: { backgroundColor: "#2E5E4E", paddingVertical: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  goalSaveText: { color: "#fff", fontWeight: "600" },
 
-  emptyGoalText: {
-    color: "#777",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 10,
-  },
+  disabledBtn: { opacity: 0.6 },
 
-  amountSection: {
-    marginTop: 5,
-  },
+  hint: { color: "#6b7280", fontStyle: "italic", marginTop: 6 },
+  hintSmall: { color: "#6b7280", fontSize: 12 },
 
-  amountInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
+  tipCard: { backgroundColor: "#FFF8D3", padding: 12, borderRadius: 12, margin: 12, borderWidth: 1, borderColor: "#E6D79B" },
+  tipText: { color: "#A87B00", fontWeight: "600" },
 
-  amountInput: {
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: "#CDE9D6",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    height: 40,
-    width: 130,
-    textAlign: "center",
-    fontWeight: "500",
-    color: "#2E5E4E",
-    backgroundColor: "#F8FDF9",
-  },
-
-  balanceText: {
-    marginLeft: 8,
-    color: "#555",
-    fontSize: 14,
-  },
-
-  goalSaveButton: {
-    backgroundColor: "#2E5E4E",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-
-  goalSaveText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  eventTagContainer: {
-    borderTopWidth: 1,
-    borderTopColor: "#d6e8de",
-    marginTop: 10,
-    paddingHorizontal: 15,
-    paddingTop: 15,
-    paddingBottom: 20,
-    backgroundColor: "#F6FBF7",
+  smallPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-
-  eventTagTitle: {
-    fontWeight: "600",
-    color: "#2E5E4E",
-    fontSize: 15,
-    marginBottom: 8,
-  },
-
-  dropdownWrapper: {
-    backgroundColor: "#fff",
+    backgroundColor: "#F0F4F8",        // 更柔和的淡灰蓝
     borderWidth: 1,
-    borderColor: "#8AD0AB",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-
-  periodicPicker: {
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  selectionBarContainer: {
-    flexDirection: "row",
-    backgroundColor: "#8CCFB1",
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 20,
-  },
-
-  typeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
+    borderColor: "#D0D7DF",            // 细银灰边框
+    marginRight: 10,
+    minWidth: 80,
     alignItems: "center",
   },
-  typeButtonActive: {
-    backgroundColor: "#fff",
+
+  smallPillActive: {
+    backgroundColor: "#8AD0AB",        // Fundora 主色
+    borderColor: "#72BD99",
+    shadowColor: "#8AD0AB",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  typeButtonText: {
-    color: "#2E5E4E",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  typeButtonTextActive: {
-    color: "#2E5E4E",
-    fontWeight: "bold",
-  },
-  subLabel: {
+
+  smallPillText: {
+    color: "#4B5563",                  // slate gray
+    fontWeight: "600",
     fontSize: 14,
-    fontWeight: "600",
-    color: "#2E5E4E",
-    marginTop: 10,
-    marginBottom: 6,
   },
 
-  /* Saving Method Styles */
-  methodList: {
-    marginTop: 5,
-    marginBottom: 10,
+  smallPillTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 14,
   },
-  methodButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#f5f5f5",
-    marginBottom: 8,
-  },
-  methodButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  methodIcon: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  methodInfo: {
-    flex: 1,
-  },
-  methodName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  methodDetails: {
-    fontSize: 12,
-    color: "#555",
-  },
-
-  /* Account Styles */
-  accountSection: {
+  repeatContainer: {
     marginTop: 8,
-  },
-  accountButton: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  accountButtonActive: {
-    backgroundColor: "#8AD0AB",
-  },
-  accountName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  accountBalance: {
-    fontSize: 12,
-    color: "#555",
-  },
-  accountRate: {
-    fontSize: 12,
-    color: "#4CAF50",
-    marginTop: 2,
+    marginBottom: 12,
   },
 
-  addAccountButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 8,
+  repeatPickerWrapper: {
+    backgroundColor: "#F0F4F8",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D0D7DF",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    justifyContent: "center",
   },
-  addAccountText: {
-    marginLeft: 6,
-    color: "#2E5E4E",
-    fontWeight: "600",
-  },
-  errorBorder: {
-    borderWidth: 1.5,
-    borderColor: "#D9534F",
-    borderRadius: 8,
-  }
+
 
 });

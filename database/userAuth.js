@@ -2,6 +2,7 @@ import { openDatabaseAsync } from "expo-sqlite";
 import bcrypt from "bcryptjs";
 import * as Crypto from "expo-crypto";
 import quizData from "../assets/financial_quiz.json";
+
 let db = null;
 let isConnecting = false;
 let connectionPromise = null;
@@ -123,6 +124,14 @@ export const initUserDB = async () => {
   );
 `);
 
+    await db.execAsync(`
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  email TEXT,
+  otp TEXT,
+  expiresAt INTEGER
+);
+
+`);
 
     console.log("✅ User, Face, and Quiz tables initialized successfully");
 
@@ -155,19 +164,7 @@ export const getTodayQuizStatus = async (userId) => {
   );
   return !!result;
 };
-/** ✅ Get User Income */
-export const getUserIncome = async (userId) => {
-  const db = await connectUserDB();
 
-  const result = await db.getFirstAsync(
-    "SELECT monthlyIncome FROM users WHERE userId = ?",
-    [userId]
-  );
-
-  return result && result.monthlyIncome !== null
-    ? Number(result.monthlyIncome)
-    : 0;
-};
 
 
 
@@ -790,3 +787,20 @@ export const closeUserDB = async () => {
   }
 };
 export default connectUserDB;
+
+function generate6DigitOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+export async function createOtpForUser(email) {
+  const otp = generate6DigitOtp();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 分钟有效
+
+  await db.execAsync(`DELETE FROM password_reset_requests WHERE email = ?`, [email]);
+  await db.execAsync(
+    `INSERT INTO password_reset_requests (email, otp, expiresAt) VALUES (?, ?, ?)`,
+    [email, otp, expiresAt]
+  );
+
+  return otp;
+}

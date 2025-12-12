@@ -16,8 +16,14 @@ import {
   initDB,
   createEventTagTable,
 } from "../../../database/SQLite";
-import { useUser } from "../../reuseComponet/UserContext"; 
-import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import { useUser } from "../../reuseComponet/UserContext";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSButton,
+  FDSLabel,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function AddEventTag({ navigation }) {
   const [tagName, setTagName] = useState("");
@@ -141,19 +147,18 @@ export default function AddEventTag({ navigation }) {
         onLeftPress={() => navigation.goBack()}
       />
 
-      <View style={styles.card}>
+      <FDSCard>
 
         {/* Event Tag Name */}
-        <ValidatedInput
+        <FDSValidatedInput
           ref={tagNameRef}
           label="Event Tag Name"
           value={tagName}
           onChangeText={setTagName}
           placeholder="e.g. Birthday, Trip"
-          placeholderTextColor={"#c5c5c5ff"}
-          validate={(v) => v.trim().length > 0}
+          validate={(v) => v && v.trim().length > 0}
           errorMessage="Tag name cannot be empty"
-          icon={<Ionicons name="pricetag-outline" size={20} color="#6c757d" />}
+          icon={<Ionicons name="pricetag-outline" size={18} color={FDSColors.textGray} />}
         />
 
         {/* Description */}
@@ -169,25 +174,15 @@ export default function AddEventTag({ navigation }) {
         />
 
         {/* Save Button */}
-        <TouchableOpacity
-          style={[
-            styles.saveBtn,
-            (isLoading || !tagName.trim()) && styles.saveBtnDisabled,
-          ]}
+        <FDSButton
+          title="Save Tag"
+          icon="save-outline"
+          loading={isLoading}
+          disabled={!tagName.trim()}
           onPress={handleAddEventTag}
-          disabled={isLoading || !tagName.trim()}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.saveText}>Save Tag</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        />
 
-      </View>
+      </FDSCard>
     </View>
   );
 }
@@ -196,9 +191,9 @@ export default function AddEventTag({ navigation }) {
 // Styles
 // ------------------------------------------------------
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#f9f9fb" 
+  container: {
+    flex: 1,
+    backgroundColor: "#f9f9fb"
   },
   loadingContainer: {
     flex: 1,

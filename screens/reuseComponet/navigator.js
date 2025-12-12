@@ -9,6 +9,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
+import VerifyOTP from "../LaiWenYin/LoginModule/VerifyOTP";
 
 // 导入所有 screens
 import DashboardScreen from "../Loy Ying Zheng/dashboard";
@@ -158,6 +159,8 @@ function UnifiedDrawerNavigator() {
   );
 }
 
+
+
 // MAIN NAVIGATOR
 export default function Navigator() {
   const [firstLaunch, setFirstLaunch] = useState(null);
@@ -235,6 +238,11 @@ export default function Navigator() {
             name="FaceRegistration" 
             component={FaceRegistrationScreen} 
             options={{ title: "Face Registration", headerTitleAlign: 'center', headerShown: true }} 
+          />
+          <Stack.Screen
+            name="VerifyOTP"
+            component={VerifyOTP}
+            options={{ title: "Verify OTP", headerTitleAlign: 'center', headerShown: true }}
           />
 
           {/* 3. Main App Entry */}
