@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import {
@@ -13,15 +13,17 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../reuseComponet/header";
+import { FDSValidatedInput } from "../../reuseComponet/DesignSystem";
 import { useUser } from "../../reuseComponet/UserContext";
 import {
   getPendingWithdrawals,
   getAllWithdrawals,
   confirmWithdrawal,
   cancelWithdrawal,
-  updateAllocationCurrentValue,
-  processMaturedAllocations
+  processMaturedAllocations,
+  deleteWithdrawalHistory
 } from "../../../database/SQLite";
+import { FDSButton } from "../../reuseComponet/DesignSystem";
 
 export default function WithdrawalManagementScreen({ navigation }) {
   const [pendingWithdrawals, setPendingWithdrawals] = useState([]);
@@ -30,8 +32,10 @@ export default function WithdrawalManagementScreen({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedWithdrawal, setSelectedWithdrawal] = useState(null);
   const [confirmedAmount, setConfirmedAmount] = useState("");
-
-  const { userId } = useUser(); 
+  const [selectedMonth, setSelectedMonth] = useState(null); // '2025-12'
+  const confirmedAmountRef = useRef(null);
+  const [selectedGoalId, setSelectedGoalId] = useState(null);
+  const { userId } = useUser();
 
   const loadData = async () => {
     try {
@@ -58,9 +62,11 @@ export default function WithdrawalManagementScreen({ navigation }) {
     setModalVisible(true);
   };
 
+
   const confirmWithdrawalAction = async () => {
-    if (!confirmedAmount || isNaN(confirmedAmount)) {
-      Alert.alert("Error", "Please enter a valid amount");
+    const amountValid = confirmedAmountRef.current?.validate();
+
+    if (!amountValid) {
       return;
     }
 
@@ -97,6 +103,51 @@ export default function WithdrawalManagementScreen({ navigation }) {
     );
   };
 
+  const handleDeleteWithdrawal = (withdrawalId) => {
+    Alert.alert(
+      "Delete Record",
+      "This will permanently remove the withdrawal history. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteWithdrawalHistory(userId, withdrawalId);
+            await loadData();
+          }
+        }
+      ]
+    );
+  };
+  const filteredWithdrawals = allWithdrawals.filter(w => {
+    if (selectedGoalId && w.goalId !== selectedGoalId) return false;
+
+    if (w.status === 'pending') return false;
+
+    if (selectedMonth) {
+      const month = w.withdrawal_date.slice(0, 7);
+      if (month !== selectedMonth) return false;
+    }
+
+    return true;
+  });
+
+  const uniqueGoals = Array.from(
+    new Map(
+      allWithdrawals
+        .filter(w => w.goalId && w.goalName)
+        .map(w => [w.goalId, w.goalName])
+    )
+  ).map(([id, name]) => ({ id, name }));
+
+
+  const selectedGoalName =
+    selectedGoalId
+      ? uniqueGoals.find(g => g.id === selectedGoalId)?.name
+      : null;
+
+
   const renderWithdrawalItem = (withdrawal, isPending = false) => (
     <View key={withdrawal.id} style={styles.withdrawalItem}>
       <View style={styles.withdrawalHeader}>
@@ -114,7 +165,7 @@ export default function WithdrawalManagementScreen({ navigation }) {
         <View style={styles.amountRow}>
           <Text style={styles.amountLabel}>Interest:</Text>
           <Text style={[styles.amountValue, styles.interestText]}>
-            +RM {withdrawal.interest_amount.toFixed(2)}
+            RM {withdrawal.interest_amount.toFixed(2)}
           </Text>
         </View>
         <View style={styles.amountRow}>
@@ -164,8 +215,44 @@ export default function WithdrawalManagementScreen({ navigation }) {
           <Text style={styles.statusText}>Cancelled</Text>
         </View>
       )}
+
+      {withdrawal.status !== 'pending' && (
+        <View style={{ marginTop: 12 }}>
+          <FDSButton
+            title="Delete record"
+            mode="danger"
+            icon="trash-outline"
+            onPress={() => handleDeleteWithdrawal(withdrawal.id)}
+          />
+        </View>
+
+      )}
+
+
     </View>
   );
+
+const handleCycleGoalFilter = () => {
+  if (uniqueGoals.length === 0) return;
+
+  // If currently "All Goals", select first goal
+  if (selectedGoalId === null) {
+    setSelectedGoalId(uniqueGoals[0].id);
+    return;
+  }
+
+  // Find current index
+  const currentIndex = uniqueGoals.findIndex(
+    g => g.id === selectedGoalId
+  );
+
+  // If not found or last → reset to All Goals
+  if (currentIndex === -1 || currentIndex === uniqueGoals.length - 1) {
+    setSelectedGoalId(null);
+  } else {
+    setSelectedGoalId(uniqueGoals[currentIndex + 1].id);
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -211,15 +298,48 @@ export default function WithdrawalManagementScreen({ navigation }) {
 
         {selectedTab === "history" && (
           <>
-            {allWithdrawals.filter(w => w.status !== 'pending').length === 0 ? (
+            {/* FILTER BAR */}
+            <View style={styles.filterBar}>
+              <TouchableOpacity
+                style={styles.filterChip}
+                onPress={() => setSelectedMonth(new Date().toISOString().slice(0, 7))}
+              >
+                <Text style={styles.filterText}>
+                  {selectedMonth ? selectedMonth : "All Months"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.filterChip}
+                onPress={handleCycleGoalFilter}
+              >
+                <Text style={styles.filterText}>
+                  {selectedGoalName || "All Goals"}
+                </Text>
+              </TouchableOpacity>
+
+              {(selectedMonth || selectedGoalId) && (
+                <TouchableOpacity
+                  style={[styles.filterChip, styles.clearChip]}
+                  onPress={() => {
+                    setSelectedMonth(null);
+                    setSelectedGoalId(null);
+                  }}
+                >
+                  <Text style={styles.clearText}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {/* HISTORY LIST */}
+            {filteredWithdrawals.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="time-outline" size={64} color="#ccc" />
                 <Text style={styles.emptyText}>No withdrawal history</Text>
               </View>
             ) : (
-              allWithdrawals
-                .filter(withdrawal => withdrawal.status !== 'pending')
-                .map(withdrawal => renderWithdrawalItem(withdrawal, false))
+              filteredWithdrawals.map(w =>
+                renderWithdrawalItem(w, false)
+              )
             )}
           </>
         )}
@@ -248,14 +368,34 @@ export default function WithdrawalManagementScreen({ navigation }) {
                   Original Amount: RM {selectedWithdrawal.withdrawal_amount.toFixed(2)}
                 </Text>
 
-                <TextInput
-                  style={styles.amountInput}
-                  placeholder="Enter confirmed amount"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  keyboardType="numeric"
+                <FDSValidatedInput
+                  ref={confirmedAmountRef}
+                  label="Confirmed Amount"
                   value={confirmedAmount}
-                  onChangeText={setConfirmedAmount}
+                  editable={false}
+                  selectTextOnFocus={false}
+                  placeholder="Confirmed amount"
+                  keyboardType="numeric"
+                  validate={(v) => {
+                    const amount = parseFloat(v);
+                    return v && !isNaN(amount) && amount > 0;
+                  }}
+                  errorMessage="Amount must be > 0"
+                  inputStyle={{
+                    backgroundColor: "#F2F2F2",
+                    color: "#888"
+                  }}
                 />
+                <Text style={{
+                  fontSize: 12,
+                  color: "#666",
+                  marginTop: 4
+                }}>
+                  To change the amount, please cancel this withdrawal and enter the correct
+                  amount in the fund allocation or withdraw funds step.
+                </Text>
+
+
 
                 <View style={styles.modalButtons}>
                   <TouchableOpacity
@@ -469,6 +609,33 @@ const styles = StyleSheet.create({
   modalButtonText: {
     color: "#fff",
     fontWeight: "500",
+  },
+  deleteButton: {
+    backgroundColor: "#9E9E9E",
+  },
+  filterBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 12,
+  },
+  filterChip: {
+    backgroundColor: "#eee",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 6,
+  },
+  filterText: {
+    fontSize: 12,
+    color: "#333",
+  },
+  clearChip: {
+    backgroundColor: "#F44336",
+  },
+  clearText: {
+    color: "#fff",
+    fontSize: 12,
   },
 
 });

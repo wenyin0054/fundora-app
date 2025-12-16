@@ -12,10 +12,17 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AppHeader from "../../reuseComponet/header";
-import { addBillLocal,isBillNameDuplicate } from "../../../database/SQLite";
+import { addBillLocal, isBillNameDuplicate } from "../../../database/SQLite";
 import { Picker } from '@react-native-picker/picker';
 import { useUser } from "../../reuseComponet/UserContext";
-import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSValidatedPicker,
+  FDSLabel,
+  FDSButton,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function AddBill({ navigation }) {
   const [billName, setBillName] = useState("");
@@ -34,6 +41,7 @@ export default function AddBill({ navigation }) {
 
   const nameRef = useRef(null);
   const amountRef = useRef(null);
+  const categoryRef = useRef(null);
 
   const categories = [
     "Rent / Mortgage",
@@ -74,7 +82,8 @@ export default function AddBill({ navigation }) {
     }
 
     if (!category) {
-      Alert.alert("Missing Category", "Please select a category.");
+      categoryRef.current?.setError(true);
+      categoryRef.current?.shake();
       valid = false;
     }
 
@@ -122,113 +131,160 @@ export default function AddBill({ navigation }) {
       <AppHeader title="Add New Bill" showLeftButton onLeftPress={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.container}>
+        <FDSCard>
 
-        {/* BILL NAME */}
-        <ValidatedInput
-          ref={nameRef}
-          label="Bill Name"
-          value={billName}
-          onChangeText={setBillName}
-          placeholder="e.g. Credit Card"
-          placeholderTextColor={"#c5c5c5ff"}
-          validate={(v) => v.trim().length > 0}
-          errorMessage="Bill name cannot be empty"
-        />
+          {/* BILL NAME */}
+          <FDSValidatedInput
+            ref={nameRef}
+            label="Bill Name"
+            value={billName}
+            onChangeText={setBillName}
+            placeholder="e.g. Credit Card"
+            validate={(v) => v && v.trim().length > 0}
+            errorMessage="Bill name cannot be empty"
+            icon={<Ionicons name="document-text-outline" size={18} color={FDSColors.textGray} />}
+          />
 
-        {/* CATEGORY */}
-        <Text style={styles.label}>Category</Text>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={category}
-            onValueChange={(itemValue) => setCategory(itemValue)}
+          {/* AMOUNT */}
+          <FDSValidatedInput
+            ref={amountRef}
+            label="Amount (RM)"
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+            validate={(v) => !isNaN(v) && Number(v) > 0}
+            errorMessage="Please enter a valid amount"
+            icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
+          />
+
+
+          {/* CATEGORY */}
+          <FDSValidatedPicker
+            ref={categoryRef}
+            label="Category"
+            value={category}
+            validate={(v) => v && v !== ""}
+            errorMessage="Category is required"
+            icon={<Ionicons name="list-circle-outline" size={18} color={FDSColors.textGray} />}
           >
-            <Picker.Item label="Select category..." value="" />
-            {categories.map((c) => (
-              <Picker.Item key={c} label={c} value={c} />
-            ))}
-          </Picker>
-        </View>
-
-        {/* AMOUNT */}
-        <ValidatedInput
-          ref={amountRef}
-          label="Amount (RM)"
-          value={amount}
-          onChangeText={setAmount}
-          placeholder="Enter amount"
-          placeholderTextColor={"#c5c5c5ff"}
-          keyboardType="numeric"
-          validate={(v) => !isNaN(v) && Number(v) > 0}
-          errorMessage="Please enter a valid amount"
-        />
-
-        {/* DUE DATE */}
-        <Text style={styles.label}>Due Date</Text>
-        <TouchableOpacity style={styles.dateInput} onPress={() => setShowPicker(true)}>
-          <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-          <Text style={styles.dateText}>
-            {dueDate.toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
-          </Text>
-        </TouchableOpacity>
-
-        {showPicker && (
-          <DateTimePicker
-            value={dueDate}
-            mode="date"
-            display="default"
-            onChange={(event, date) => {
-              setShowPicker(false);
-              if (date) setDueDate(date);
-            }}
-          />
-        )}
-
-        {/* PERIODIC SWITCH */}
-        <View style={styles.periodicContainer}>
-          <Text style={styles.label}>Is it periodic?</Text>
-          <Switch
-            value={isPeriodic}
-            onValueChange={setIsPeriodic}
-            trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-            thumbColor={isPeriodic ? "#4CAF50" : "#f4f3f4"}
-          />
-        </View>
-
-        {isPeriodic && (
-          <>
-            <View style={styles.selectionBarContainer}>
-              {["Yearly", "Monthly"].map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.typeButton, selectedType === type && styles.typeButtonActive]}
-                  onPress={() => setSelectedType(type)}
-                >
-                  <Text style={[styles.typeButtonText, selectedType === type && styles.typeButtonTextActive]}>
-                    {type}
-                  </Text>
-                </TouchableOpacity>
+            <Picker
+              selectedValue={category}
+              onValueChange={setCategory}
+              style={{ position: "absolute", opacity: 0, width: "100%" }}
+            >
+              <Picker.Item label="Select category..." value="" />
+              {categories.map((c) => (
+                <Picker.Item key={c} label={c} value={c} />
               ))}
+            </Picker>
+          </FDSValidatedPicker>
+
+          {/* DUE DATE */}
+          <FDSLabel>Due Date</FDSLabel>
+          <TouchableOpacity style={[styles.dateInput, { backgroundColor: FDSColors.bgLight, borderColor: FDSColors.border }]} onPress={() => setShowPicker(true)}>
+            <Ionicons name="calendar-outline" size={18} color="#6c757d" />
+            <Text style={styles.dateText}>
+              {dueDate.toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </Text>
+          </TouchableOpacity>
+
+          {showPicker && (
+            <DateTimePicker
+              value={dueDate}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowPicker(false);
+                if (date) setDueDate(date);
+              }}
+            />
+          )}
+
+          {/* Loan Commitment */}
+          <View style={styles.toggleRow}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={styles.label}>Count as Loan Commitment?</Text>
+              <TouchableOpacity
+                style={{ marginLeft: 6 }}
+                onPress={() =>
+                  Alert.alert(
+                    "What is Loan Commitment?",
+                    "Select YES if this bill is a loan or financing repayment."
+                  )
+                }
+              >
+                <Ionicons name="information-circle-outline" size={18} color="#6c757d" />
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Repeat every:</Text>
-            <View style={styles.pickerContainer}>
-              <Picker selectedValue={periodInterval} onValueChange={(val) => setPeriodInterval(val)}>
-                {[1, 2, 3, 6, 12].map((n) => (
-                  <Picker.Item key={n} label={`${n}`} value={n} />
+            <TouchableOpacity
+              style={[styles.toggleBtn, isCommitment ? styles.toggleOn : styles.toggleOff]}
+              onPress={() => setIsCommitment(!isCommitment)}
+            >
+              <Text style={styles.toggleText}>{isCommitment ? "Yes" : "No"}</Text>
+            </TouchableOpacity>
+          </View>
+
+
+          {/* PERIODIC SWITCH */}
+          <View style={styles.periodicContainer}>
+            <FDSLabel>Is it periodic?</FDSLabel>
+            <Switch
+              value={isPeriodic}
+              onValueChange={setIsPeriodic}
+              trackColor={{ false: "#ccc", true: "#9cd8b3" }}
+              thumbColor={isPeriodic ? "#4CAF50" : "#f4f3f4"}
+            />
+          </View>
+
+          {isPeriodic && (
+            <>
+              <View style={styles.selectionBarContainer}>
+                {["Yearly", "Monthly"].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.typeButton, selectedType === type && styles.typeButtonActive]}
+                    onPress={() => setSelectedType(type)}
+                  >
+                    <Text style={[styles.typeButtonText, selectedType === type && styles.typeButtonTextActive]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
-              </Picker>
-            </View>
-          </>
-        )}
+              </View>
+
+              <FDSValidatedPicker
+                label="Repeat every"
+                value={periodInterval}
+                validate={(v) => v !== null && v !== undefined}
+                errorMessage="Please select an interval"
+                icon={<Ionicons name="repeat-outline" size={16} color={FDSColors.textGray} />}
+              >
+                <Picker
+                  selectedValue={periodInterval}
+                  onValueChange={(val) => setPeriodInterval(val)}
+                  style={{ position: "absolute", opacity: 0, width: "100%" }}
+                >
+                  {[1, 2, 3, 6, 12].map((n) => (
+                    <Picker.Item key={n} label={`${n}`} value={n} />
+                  ))}
+                </Picker>
+              </FDSValidatedPicker>
+            </>
+          )}
+
+        </FDSCard>
 
         {/* Save Button */}
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveText}>Add Bill</Text>}
-        </TouchableOpacity>
+        <FDSButton
+          title={isLoading ? "Saving..." : "Add Bill"}
+          onPress={handleSave}
+          icon="save-outline"
+        />
 
       </ScrollView>
     </View>
@@ -276,4 +332,18 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   saveText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  toggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  toggleBtn: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  toggleOn: { backgroundColor: "#8AD0AB" },
+  toggleOff: { backgroundColor: "#ddd" },
+  toggleText: { color: "#fff", fontWeight: "600" },
 });

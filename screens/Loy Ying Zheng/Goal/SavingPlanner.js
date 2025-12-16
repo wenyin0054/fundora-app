@@ -29,15 +29,23 @@ export default function SavingsPlanner() {
 
       const results = await getGoalsLocal(userId);
 
-      const mapped = results.map((g) => ({
-        id: g.id.toString(),
-        title: g.goalName,
-        desc: g.description,
-        saved: parseFloat(g.currentAmount),
-        target: parseFloat(g.targetAmount),
-        due: g.deadline,
-        suggested: calculateSuggestedSaving(g.currentAmount, g.targetAmount, g.deadline),
-      }));
+      const mapped = results.map((g) => {
+        const deadlineInfo = getDeadlineStatus(g.deadline);
+
+        return {
+          id: g.id.toString(),
+          title: g.goalName,
+          desc: g.description,
+          saved: parseFloat(g.currentAmount),
+          target: parseFloat(g.targetAmount),
+          due: g.deadline,
+          isOverdue: deadlineInfo.isOverdue,
+          overdueMonths: deadlineInfo.overdueMonths,
+          monthsRemaining: deadlineInfo.monthsRemaining,
+          suggested: calculateSuggestedSaving(g.currentAmount, g.targetAmount, g.deadline),
+        };
+      });
+
       setGoals(mapped);
     } catch (error) {
       console.error("❌ Error loading goals:", error);
@@ -78,7 +86,13 @@ export default function SavingsPlanner() {
           goals.map((goal) => {
             const progress = goal.target ? goal.saved / goal.target : 0;
             return (
-              <View key={goal.id} style={styles.card}>
+              <View
+                key={goal.id}
+                style={[
+                  styles.card,
+                  goal.isOverdue && styles.cardOverdue
+                ]}
+              >
                 <Text style={styles.goalTitle}>{goal.title}</Text>
                 <Text style={styles.goalDesc}>{goal.desc}</Text>
                 <Text style={styles.saved}>
@@ -95,10 +109,27 @@ export default function SavingsPlanner() {
                     <Text style={styles.withdrawPromptText}>Goal completed! Tap to withdraw funds</Text>
                   </TouchableOpacity>
                 )}
-                <Text style={styles.due}>Due Date: {goal.due}</Text>
-                <Text style={styles.suggested}>
-                  Suggested Saving: RM{goal.suggested} per month
-                </Text>
+                {goal.isOverdue && (
+                  <View style={styles.overdueCard}>
+                    <Ionicons name="warning" size={18} color="#B91C1C" />
+                    <Text style={styles.overdueCardText}>
+                      Your goal deadline has passed. Consider updating your target date
+                      or increasing monthly savings.
+                    </Text>
+                  </View>
+                )}
+
+                {!goal.isOverdue && (
+                  <Text style={styles.due}>
+                    Due Date: {goal.due} ({goal.monthsRemaining} months left)
+                  </Text>
+                )}
+                {!goal.isOverdue && (
+                  <Text style={styles.suggested}>
+                    Suggested Saving: RM{goal.suggested} per month
+                  </Text>
+                )}
+
                 <TouchableOpacity
                   style={styles.btn}
                   onPress={() => navigation.navigate("GoalDetail", { goal })}
@@ -129,6 +160,48 @@ export default function SavingsPlanner() {
 }
 
 // ---------------- Helper Function ----------------
+function getDeadlineStatus(deadline) {
+  const now = new Date();
+  const end = new Date(deadline);
+
+  if (isNaN(end)) {
+    return { isOverdue: false, overdueMonths: 0, monthsRemaining: 0 };
+  }
+
+  // --------------- overdue check ---------------
+  if (end < now) {
+    // deadline passed → overdue 
+    // // calculate how many months overdue
+    const yDiff = now.getFullYear() - end.getFullYear();
+    const mDiff = now.getMonth() - end.getMonth();
+    let overdueMonths = yDiff * 12 + mDiff;
+
+    // If today has exceeded the deadline, an additional month will be counted (more accurately).
+    if (now.getDate() > end.getDate()) overdueMonths += 1;
+
+    return {
+      isOverdue: true,
+      overdueMonths,
+      monthsRemaining: 0
+    };
+  }
+
+  // --------------- deadline  ---------------
+  // Calculate the remaining months
+  const yDiff = end.getFullYear() - now.getFullYear();
+  const mDiff = end.getMonth() - now.getMonth();
+  let monthsRemaining = yDiff * 12 + mDiff;
+
+  if (end.getDate() > now.getDate()) monthsRemaining += 1;
+
+  return {
+    isOverdue: false,
+    overdueMonths: 0,
+    monthsRemaining
+  };
+}
+
+
 function calculateSuggestedSaving(currentAmount, targetAmount, deadline) {
   const now = new Date();
   const end = new Date(deadline);
@@ -266,7 +339,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // 在 GoalDetailScreen 的樣式中添加
+  // Add in GoalDetailScreen styles
   completedSection: {
     backgroundColor: "#E8F5E8",
     borderRadius: 10,
@@ -315,4 +388,65 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginLeft: 4,
   },
+  overdueBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginTop: 6,
+    alignSelf: "flex-start",
+  },
+
+  overdueText: {
+    color: "#B91C1C",
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: "600",
+  },
+
+  overdueCard: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    flexDirection: "row",
+    gap: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#DC2626",
+    marginBottom: 8,
+  },
+
+  overdueCardText: {
+    color: "#7F1D1D",
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
+  },
+
+  cardOverdue: {
+    backgroundColor: "#FEF2F2",      // Light red background
+    borderWidth: 1.5,
+    borderColor: "#DC2626",          // Dark red border
+    shadowOpacity: 0.02,             // Shadow weakened (fits warning UI)
+  },
+
+  overdueHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FECACA",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+
+  overdueHeaderText: {
+    color: "#B91C1C",
+    fontWeight: "700",
+    fontSize: 12,
+    marginLeft: 6,
+  },
+
 });

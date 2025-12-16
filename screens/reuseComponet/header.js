@@ -20,18 +20,18 @@ export default function AppHeader({
   const [localProfileImage, setLocalProfileImage] = useState(null);
   const [imageVersion, setImageVersion] = useState(0);
 
-  // 使用 useFocusEffect 替代 useEffect + useIsFocused
+  // Use useFocusEffect instead of useEffect + useIsFocused
   useFocusEffect(
     useCallback(() => {
       if (!externalProfileImage) {
         loadProfileImage();
       }
 
-      // 可选的清理函数
+      // Optional cleanup function
       return () => {
-        // 如果需要清理操作，可以在这里进行
+        // If cleanup is needed, do it here
       };
-    }, [externalProfileImage]) // 依赖数组
+    }, [externalProfileImage]) // Dependency array
   );
 
   const loadProfileImage = async () => {
@@ -78,7 +78,7 @@ export default function AppHeader({
     }
   };
 
-  // 生成带时间戳的图片URL，避免缓存
+  // Generate image URL with timestamp to avoid cache
   const getImageSource = () => {
     if (displayProfileImage) {
       return { 

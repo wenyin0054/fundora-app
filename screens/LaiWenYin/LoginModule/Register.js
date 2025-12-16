@@ -426,6 +426,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
+    color: "#000",
   },
 
   // Validation Styles

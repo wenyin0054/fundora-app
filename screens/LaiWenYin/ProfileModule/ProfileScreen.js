@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Image,
@@ -16,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserById, updateUserProfile, logUserTable } from "../../../database/userAuth";
 import { Picker } from "@react-native-picker/picker";
+import { FDSValidatedInput, FDSButton } from "../../reuseComponet/DesignSystem";
 
 export default function ProfileScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -30,6 +30,8 @@ export default function ProfileScreen({ navigation }) {
   const [profileImage, setProfileImage] = useState(null);
   const [budgetCategory, setBudgetCategory] = useState("Food & Groceries");
   const [userLevel, setUserLevel] = useState("");
+
+  const fullNameRef = useRef(null);
   useEffect(() => {
     fetchUserData();
     logUserTable();
@@ -140,8 +142,9 @@ export default function ProfileScreen({ navigation }) {
 
   const handleSave = async () => {
     if (!currentUser) return Alert.alert("Error", "No user data found.");
-    if (!fullName.trim())
-      return Alert.alert("Error", "Please enter your full name.");
+
+    const validName = fullNameRef.current?.validate();
+    if (!validName) return;
 
     setIsLoading(true);
     try {
@@ -264,36 +267,43 @@ export default function ProfileScreen({ navigation }) {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Personal Details</Text>
 
-        <Text style={styles.label}>Full Name</Text>
-        <TextInput
-          style={styles.input}
+        <FDSValidatedInput
+          ref={fullNameRef}
+          label="Full Name"
           value={fullName}
           onChangeText={setFullName}
+          placeholder="Enter your full name"
+          validate={(v) => v && v.trim().length > 0}
+          errorMessage="Full name is required"
           editable={isEditing}
         />
 
-        <Text style={styles.label}>Age</Text>
-        <TextInput
-          style={styles.input}
+        <FDSValidatedInput
+          label="Age"
           value={age}
           onChangeText={setAge}
-          editable={isEditing}
+          placeholder="Enter your age"
           keyboardType="numeric"
+          validate={(v) => !v || (!isNaN(v) && Number(v) > 0)}
+          errorMessage="Please enter a valid age"
+          editable={isEditing}
         />
 
-        <Text style={styles.label}>Monthly Income (RM)</Text>
-        <TextInput
-          style={styles.input}
+        <FDSValidatedInput
+          label="Monthly Income (RM)"
           value={income}
           onChangeText={setIncome}
-          editable={isEditing}
+          placeholder="Enter your monthly income"
           keyboardType="numeric"
+          validate={(v) => !v || (!isNaN(v.replace(/,/g, '')) && Number(v.replace(/,/g, '')) >= 0)}
+          errorMessage="Please enter a valid income amount"
+          editable={isEditing}
         />
-        <Text style={styles.label}>Occupation</Text>
-        <TextInput
-          style={styles.input}
+        <FDSValidatedInput
+          label="Occupation"
           value={occupation}
           onChangeText={setOccupation}
+          placeholder="Enter your occupation"
           editable={isEditing}
         />
       </View>
@@ -312,7 +322,7 @@ export default function ProfileScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.faceCardButton}
-          onPress={() => navigation.navigate("FaceRegistration")}
+          onPress={() => navigation.navigate("FaceRegistration", { fromProfile: true })}
         >
           <Text style={styles.faceCardButtonText}>Register</Text>
         </TouchableOpacity>
@@ -334,17 +344,11 @@ export default function ProfileScreen({ navigation }) {
       {/* Buttons */}
       {isEditing ? (
         <View style={styles.editButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.saveButton, isLoading && styles.disabledButton]}
+          <FDSButton
+            title="Save Changes"
+            loading={isLoading}
             onPress={handleSave}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            )}
-          </TouchableOpacity>
+          />
           <TouchableOpacity
             style={styles.cancelButton}
             onPress={handleCancelEdit}
@@ -445,22 +449,6 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     color: "#333",
   },
-  label: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginBottom: 6,
-    color: "#444",
-  },
-  input: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#E9ECEF",
-    fontSize: 15,
-  },
   textArea: {
     height: 90,
     textAlignVertical: "top",
@@ -484,21 +472,6 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   editButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  saveButton: {
-    backgroundColor: "#57C0A1",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    flex: 1,
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",

@@ -13,7 +13,14 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import AppHeader from "../../reuseComponet/header";
 import { addGoalLocal, initDB, isGoalNameDuplicate } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
-import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSLabel,
+  FDSButton,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
+
 
 export default function AddGoalScreen({ navigation }) {
   const [projectName, setProjectName] = useState("");
@@ -37,7 +44,7 @@ export default function AddGoalScreen({ navigation }) {
   const handleSave = async () => {
     console.log("🔥 Saving goal...");
 
-    // 1️⃣ Local input validation (from ValidatedInput)
+    // Local input validation (from ValidatedInput)
     const validGoalName = goalNameRef.current?.validate();
     const validAmount = savingAmountRef.current?.validate();
 
@@ -45,7 +52,7 @@ export default function AddGoalScreen({ navigation }) {
       return; // error already shown
     }
 
-    // 2️⃣ Duplicate name check
+    // Duplicate name check
     const isDuplicate = await isGoalNameDuplicate(userId, projectName.trim());
     if (isDuplicate) {
       goalNameRef.current?.shake();
@@ -53,7 +60,19 @@ export default function AddGoalScreen({ navigation }) {
       return Alert.alert("Duplicate Goal Name", "A goal with this name already exists.");
     }
 
-    // 3️⃣ User selection validation
+    // Validate date range
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (end <= start) {
+      return Alert.alert(
+        "Invalid End Date",
+        "End Date must be later than the Start Date."
+      );
+    }
+
+
+    // User selection validation
     if (!endDate) {
       return Alert.alert("Missing End Date", "Please select your goal end date.");
     }
@@ -83,6 +102,14 @@ export default function AddGoalScreen({ navigation }) {
       Alert.alert("Error", "Failed to save goal. Please try again.");
     }
   };
+  const formatDateDMY = (date) => {
+  if (!date) return "";
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}-${m}-${y}`;
+};
+
 
   // -----------------------------------------
   // RENDER UI
@@ -98,94 +125,95 @@ export default function AddGoalScreen({ navigation }) {
       />
 
       <ScrollView style={styles.container}>
-
-        {/* Project Name */}
-        <ValidatedInput
-          ref={goalNameRef}
-          label="Project Name"
-          value={projectName}
-          onChangeText={setProjectName}
-          placeholder="Enter goal name"
-          placeholderTextColor={"#c5c5c5ff"}
-          validate={(v) => v.trim().length > 0}
-          errorMessage="Goal name cannot be empty"
-          icon={<Ionicons name="clipboard-outline" size={20} color="#6c757d" />}
-        />
-
-        {/* Saving Amount */}
-        <ValidatedInput
-          ref={savingAmountRef}
-          label="Saving Amount (RM)"
-          value={savingAmount}
-          onChangeText={setSavingAmount}
-          placeholder="Enter target amount"
-          placeholderTextColor={"#c5c5c5ff"}
-          keyboardType="numeric"
-          validate={(v) => !isNaN(v) && Number(v) > 0}
-          errorMessage="Please enter a valid amount"
-          icon={<Ionicons name="cash-outline" size={20} color="#6c757d" />}
-        />
-
-        {/* Start Date */}
-        <Text style={styles.label}>Start Date</Text>
-        <TouchableOpacity
-          style={styles.dateInput}
-          onPress={() => setShowStartPicker(true)}
-        >
-          <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-          <Text style={styles.dateText}>{startDate.toDateString().slice(4)}</Text>
-        </TouchableOpacity>
-
-        {showStartPicker && (
-          <DateTimePicker
-            value={startDate}
-            mode="date"
-            display="default"
-            onChange={(event, date) => {
-              setShowStartPicker(false);
-              if (date) setStartDate(date);
-            }}
+        <FDSCard>
+          {/* Project Name */}
+          <FDSValidatedInput
+            ref={goalNameRef}
+            label="Project Name"
+            value={projectName}
+            onChangeText={setProjectName}
+            placeholder="Enter goal name"
+            validate={(v) => v && v.trim().length > 0}
+            errorMessage="Goal name cannot be empty"
+            icon={<Ionicons name="clipboard-outline" size={18} color={FDSColors.textGray} />}
           />
-        )}
 
-        {/* End Date */}
-        <Text style={styles.label}>End Date</Text>
-        <TouchableOpacity
-          style={styles.dateInput}
-          onPress={() => setShowEndPicker(true)}
-        >
-          <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-          <Text style={styles.dateText}>{endDate.toDateString().slice(4)}</Text>
-        </TouchableOpacity>
 
-        {showEndPicker && (
-          <DateTimePicker
-            value={endDate}
-            mode="date"
-            display="default"
-            onChange={(event, date) => {
-              setShowEndPicker(false);
-              if (date) setEndDate(date);
-            }}
+          {/* Saving Amount */}
+          <FDSValidatedInput
+            ref={savingAmountRef}
+            label="Saving Amount (RM)"
+            value={savingAmount}
+            onChangeText={setSavingAmount}
+            placeholder="Enter target amount"
+            keyboardType="numeric"
+            validate={(v) => v && !isNaN(v) && Number(v) > 0}
+            errorMessage="Please enter a valid amount"
+            icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
           />
-        )}
 
-        {/* Remark */}
-        <Text style={styles.label}>Remark</Text>
-        <TextInput
-          style={styles.textArea}
-          value={remark}
-          onChangeText={setRemark}
-          multiline
-          placeholder="Optional"
-          placeholderTextColor={"#c5c5c5ff"}
-        />
+          {/* Start Date */}
+          <Text style={styles.label}>Start Date</Text>
+          <TouchableOpacity
+            style={styles.dateInput}
+            onPress={() => setShowStartPicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#6c757d" />
+<Text style={styles.dateText}>{formatDateDMY(startDate)}</Text>
+          </TouchableOpacity>
 
-        {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveText}>Save Goal</Text>
-        </TouchableOpacity>
+          {showStartPicker && (
+            <DateTimePicker
+              value={startDate}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowStartPicker(false);
+                if (date) setStartDate(date);
+              }}
+            />
+          )}
 
+          {/* End Date */}
+          <Text style={styles.label}>End Date</Text>
+          <TouchableOpacity
+            style={styles.dateInput}
+            onPress={() => setShowEndPicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#6c757d" />
+            <Text style={styles.dateText}>{formatDateDMY(endDate)}</Text>
+          </TouchableOpacity>
+
+          {showEndPicker && (
+            <DateTimePicker
+              value={endDate}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowEndPicker(false);
+                if (date) setEndDate(date);
+              }}
+            />
+          )}
+
+          {/* Remark */}
+          <Text style={styles.label}>Remark</Text>
+          <TextInput
+            style={styles.textArea}
+            value={remark}
+            onChangeText={setRemark}
+            multiline
+            placeholder="Optional"
+            placeholderTextColor={"#c5c5c5ff"}
+          />
+
+          {/* Save Button */}
+          <FDSButton
+            title="Save Goal"
+            icon="save-outline"
+            onPress={handleSave}
+          />
+        </FDSCard>
       </ScrollView>
     </View>
   );

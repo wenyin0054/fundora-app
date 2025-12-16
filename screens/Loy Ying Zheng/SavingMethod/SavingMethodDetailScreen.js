@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import { updateSavingMethod, deleteSavingMethod, initDB } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
+import { FDSValidatedInput } from "../../reuseComponet/DesignSystem";
 
 export default function SavingMethodDetailScreen({ navigation, route }) {
   const { method, onMethodUpdated } = route.params;
@@ -27,6 +28,9 @@ export default function SavingMethodDetailScreen({ navigation, route }) {
   const [iconName, setIconName] = useState(method.icon_name);
 
   const { userId } = useUser();
+
+  const methodNameRef = useRef(null);
+  const expectedReturnRef = useRef(null);
 
   const methodTypes = [
     { value: "bank", label: "Bank" },
@@ -51,8 +55,10 @@ const handleUpdateMethod = async () => {
   console.log("🔥 Updating saving method...");
 
   // 1️⃣ VALIDATION (STRICT & COMPLETE)
-  if (!methodName || !methodName.trim()) {
-    Alert.alert("Missing Name", "Please enter a method name.");
+  const nameValid = methodNameRef.current?.validate();
+  const returnValid = expectedReturnRef.current?.validate();
+
+  if (!nameValid || !returnValid) {
     return;
   }
 
@@ -70,8 +76,6 @@ const handleUpdateMethod = async () => {
     Alert.alert("Invalid Liquidity Level", "Liquidity level must be between 1 and 5.");
     return;
   }
-
-  if (!validateAmount(expectedReturn, "Expected Return")) return;
 
   const parsedReturn = parseFloat(expectedReturn);
 
@@ -208,13 +212,14 @@ const handleUpdateMethod = async () => {
       <ScrollView style={styles.scrollContainer}>
         <View style={styles.card}>
           {/* Method Name */}
-          <Text style={styles.label}>Method Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Cryptocurrency, Real Estate, Bonds"
-            placeholderTextColor={"#c5c5c5ff"}
+          <FDSValidatedInput
+            ref={methodNameRef}
+            label="Method Name"
             value={methodName}
             onChangeText={setMethodName}
+            placeholder="e.g., Cryptocurrency, Real Estate, Bonds"
+            validate={(v) => v && v.trim().length > 0}
+            errorMessage="Method name is required"
           />
 
           {/* Method Type */}
@@ -276,14 +281,15 @@ const handleUpdateMethod = async () => {
           </View>
 
           {/* Expected Return */}
-          <Text style={styles.label}>Expected Annual Return (%)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 5.0"
-            placeholderTextColor={"#c5c5c5ff"}
+          <FDSValidatedInput
+            ref={expectedReturnRef}
+            label="Expected Annual Return (%)"
             value={expectedReturn}
             onChangeText={setExpectedReturn}
+            placeholder="e.g., 5.0"
             keyboardType="numeric"
+            validate={(v) => v && !isNaN(v) && parseFloat(v) >= 0}
+            errorMessage="Please enter a valid return percentage"
           />
 
           {/* Icon Selection */}

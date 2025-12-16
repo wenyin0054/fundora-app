@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
-import { updateUserOnboardingInfo,completeOnboarding } from "../../../database/userAuth";
+import { updateUserOnboardingInfo,completeOnboarding, hasRegisteredFace } from "../../../database/userAuth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get("window");
@@ -81,8 +81,15 @@ const handleFinish = async () => {
     // Mark onboarding as completed
     await completeOnboarding(currentUser.userId);
 
+    // Check if face is registered
+    const hasFace = await hasRegisteredFace(currentUser.userId);
+
     Alert.alert("✅ Success", "Your information has been saved!");
-    navigation.replace("MainApp");
+    if (!hasFace) {
+      navigation.replace("FaceRegistration", { showSkipOption: true, fromLogin: false });
+    } else {
+      navigation.replace("MainApp");
+    }
   } catch (error) {
     console.error("Error saving onboarding info:", error);
     Alert.alert("Error", "Failed to save your details. Please try again.");
@@ -217,6 +224,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginVertical: 10,
+      color: "#000",
   },
   label: {
     fontSize: 14,
@@ -225,22 +233,22 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    borderWidth: 2,
-    borderColor: "#9CA3AF",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: "#F3F4F6",
-    height: 60,
-    color: "#111827",
-  },
-  picker: {
-    height: 50,
-    borderWidth: 2,
-    borderColor: "#9CA3AF",
-    borderRadius: 8,
-    backgroundColor: "#F3F4F6",
-  },
+  borderWidth: 2,
+  borderColor: "#9CA3AF",
+  borderRadius: 8,
+  padding: 12,
+  fontSize: 14,
+  backgroundColor: "#FFFFFF",  
+  color: "#000000",            
+},
+ picker: {
+  height: 50,
+  borderWidth: 2,
+  borderColor: "#9CA3AF",
+  borderRadius: 8,
+  backgroundColor: "#FFFFFF",
+  color: "#4e4444ff",     
+},
   dotsContainer: {
     flexDirection: "row",
     justifyContent: "center",

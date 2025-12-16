@@ -1,4 +1,4 @@
-# face_registration_server.py - FIXED VERSION
+# face_registration_server.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import cv2
@@ -13,6 +13,12 @@ import torch.nn.functional as F
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import sqlite3
 from datetime import datetime
+import random
+import time
+import resend
+resend.api_key = "re_bdewNEuz_5Ymy5iX1qnfg81MZ8kbH6R64"   # 放你的 resend API Key
+
+
 
 app = Flask(__name__)
 CORS(app)
@@ -37,6 +43,20 @@ def init_database():
     ''')
     conn.commit()
     conn.close()
+
+def init_auth_database():
+    conn = sqlite3.connect('auth.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS password_reset_requests (
+            email TEXT,
+            otp TEXT,
+            expiresAt INTEGER
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 
 def base64_to_image(base64_string):
     """Convert base64 string to PIL Image for MTCNN"""
@@ -267,6 +287,7 @@ def get_user_faces(user_id):
         
     except Exception as e:
         return jsonify({"success": False, "error": f"Error getting user faces: {str(e)}"})
+    
 
 @app.route('/register-face', methods=['POST'])
 def register_face():
@@ -401,9 +422,99 @@ def recognize_face():
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Recognition error: {str(e)}"})
 
+
+@app.route('/send-otp', methods=['POST'])
+def send_otp():
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"success": False, "error": "Email is required"})
+
+    otp = str(random.randint(100000, 999999))
+    expires_at = int(time.time()) + 300
+
+    conn = sqlite3.connect('auth.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM password_reset_requests WHERE email = ?", (email,))
+    c.execute("INSERT INTO password_reset_requests (email, otp, expiresAt) VALUES (?, ?, ?)", 
+              (email, otp, expires_at))
+    conn.commit()
+    conn.close()
+
+    # ⚠️ 为开发阶段保留 print（你可以看到 OTP）
+    print(f"📧 OTP sent to {email}: {otp}")
+
+    # ⭐ 这里加入 Resend Email（最简单）
+    try:
+        resend.Emails.send({
+            "from": "Fundora App <onboarding@resend.dev>",
+            "to": email,
+            "subject": "Your OTP Code",
+            "html": f"<p>Your OTP is <b>{otp}</b></p>"
+        })
+        print("📨 Email sent successfully")
+    except Exception as e:
+        print("❌ Email sending error:", e)
+
+    return jsonify({"success": True, "message": "OTP generated and sent"})
+
+
+@app.route('/verify-otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    email = data.get("email")
+    otp = data.get("otp")
+
+    conn = sqlite3.connect('auth.db')
+    c = conn.cursor()
+    c.execute("SELECT otp, expiresAt FROM password_reset_requests WHERE email = ?", (email,))
+    row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "error": "No OTP request found"})
+
+    saved_otp, expires_at = row
+
+    if otp != saved_otp:
+        conn.close()
+        return jsonify({"success": False, "error": "Invalid OTP"})
+
+    if time.time() > expires_at:
+        conn.close()
+        return jsonify({"success": False, "error": "OTP expired"})
+
+    # Delete the OTP after successful verification (single-use)
+    c.execute("DELETE FROM password_reset_requests WHERE email = ?", (email,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": "OTP verified"})
+
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data.get("email")
+    new_password = data.get("newPassword")
+
+    conn = sqlite3.connect('auth.db')
+    c = conn.cursor()
+    
+    user_conn = sqlite3.connect('userAuth.db')
+    user_c = user_conn.cursor()
+
+    user_c.execute("UPDATE users SET password=? WHERE email=?", (new_password, email))
+    user_conn.commit()
+    user_conn.close()
+
+    return jsonify({"success": True, "message": "Password reset successful"})
+
+
 if __name__ == '__main__':
     # Initialize database
     init_database()
+    init_auth_database()
     
     # Check and display stored faces on startup
     stats = get_face_stats()

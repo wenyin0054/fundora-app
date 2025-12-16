@@ -1,56 +1,110 @@
-import { runMLKitOCR } from "./runMLKitOCR";
-import { EnhancedReceiptParser } from "./enhancedReceiptParser";
-import { RECEIPT_CONFIG } from "./receiptConfig";
-import { runMindeeOCR } from "./runMindeeOCR";
+// processReceipt.js
 import { ReceiptImagePreprocessor } from "./imagePreprocessor";
+import { runMLKitOCR } from "./runMLKitOCR";
+import { runMindeeOCR } from "./runMindeeOCR";
+import { EnhancedReceiptParser } from "./enhancedReceiptParser";
 
-export async function processReceipt(imageUri) {
-  console.log("🔍 Starting hybrid receipt processing...");
-
-  // 1️⃣ 预处理（增强亮度、对比、锐化等）
-  let imageForOCR = imageUri;
+export async function processReceipt(originalImageUri) {
   try {
-    const processedImg = await ReceiptImagePreprocessor.preprocessForReceipt(imageUri);
-    if (processedImg?.uri) imageForOCR = processedImg.uri;
-  } catch (err) {
-    console.warn("⚠️ Image preprocessing failed, using original image");
-  }
+    console.log("📸 Starting receipt processing.", originalImageUri);
 
-  // 2️⃣ 本地 ML KIT OCR
-  const local = await runMLKitOCR(imageForOCR);
-  let finalText = local.text || "";
-  let source = "mlkit_local";
+    const preprocessed = await ReceiptImagePreprocessor.preprocessForReceipt(
+      originalImageUri,
+      { returnBase64: true }
+    );
 
-  // 3️⃣ 第一次解析（用本地 OCR 结果）
-  let parsed = EnhancedReceiptParser.parseReceiptText(finalText);
+    console.log("✅ Preprocess OK:", preprocessed.uri);
 
-  // 4️⃣ Fallback 条件：
-  const requireFallback =
-    !local.success ||
-    local.confidence < RECEIPT_CONFIG.CONFIDENCE.MEDIUM ||
-    parsed.total_amount === "" ||
-    parsed.merchant_name === "";
+    // ------------------------------
+    //  MLKIT OCR
+    // ------------------------------
+    const mlkitResult = await runMLKitOCR(preprocessed.uri);
 
-  if (requireFallback) {
-    console.log("⚠️ Triggering fallback → Mindee Cloud OCR");
+    if (mlkitResult.success && mlkitResult.text?.trim()?.length > 5) {
+      console.log("🟢 MLKit result OK");
 
-    const cloud = await runMindeeOCR(imageUri); // 原图用于 Mindee
+      const parsed = EnhancedReceiptParser.parseReceiptText(mlkitResult.text);
 
-    if (cloud?.text) {
-      finalText = cloud.text;
-      source = "mindee_cloud";
 
-      // 使用云端结果重新解析
-      parsed = EnhancedReceiptParser.parseReceiptText(finalText);
+      return {
+        success: true,
+        provider: "mlkit",
+
+        // unify field names for ScanReceipt + AddExpensesOrIncome
+        text: parsed.raw_text,
+        merchant_name: parsed.merchant || null,
+        total_amount: parsed.total || null,
+        transaction_date: parsed.date || null,
+
+        // parser metadata
+        quality_score: parsed.quality_score || null,
+        confidence_level: parsed.confidence_level || null,
+        is_receipt_like: parsed.is_receipt_like,
+        validation_message: parsed.validation_message,
+
+        // Enhanced quality metrics
+        hasMerchant: !!parsed.merchant,
+        hasTotal: !!parsed.total,
+        hasDate: !!parsed.date,
+        merchantConfidence: parsed.merchant ? 1 : 0,
+        totalConfidence: parsed.total ? parsed.confidence_score : 0,
+        dateConfidence: parsed.date ? 1 : 0
+      };
     }
-  }
 
-  // 5️⃣ 输出统一结构
-  return {
-    ...parsed,
-    raw_text: finalText,
-    source,
-    local_confidence: local.confidence,
-    success: true,
-  };
+    // ------------------------------
+    // MINDEE FALLBACK
+    // ------------------------------
+    console.warn("⚠️ MLKit failed, switching to Mindee...");
+    const mindeeResult = await runMindeeOCR(preprocessed);
+
+    if (!mindeeResult.success || !mindeeResult.text) {
+      return {
+        success: false,
+        provider: "none",
+        text: "",
+        merchant_name: null,
+        total_amount: null,
+        transaction_date: null,
+        error: "All OCR failed",
+      };
+    }
+
+    const parsed = EnhancedReceiptParser.parseReceiptText(mindeeResult.text);
+
+    return {
+      success: true,
+      provider: "mindee",
+
+      text: parsed.raw_text,
+      merchant_name: parsed.merchant || null,
+      total_amount: parsed.total || null,
+      transaction_date: parsed.date || null,
+
+      quality_score: parsed.quality_score || null,
+      confidence_level: parsed.confidence_level || null,
+      is_receipt_like: parsed.is_receipt_like,
+      validation_message: parsed.validation_message,
+
+      // Enhanced quality metrics
+      hasMerchant: !!parsed.merchant,
+      hasTotal: !!parsed.total,
+      hasDate: !!parsed.date,
+      merchantConfidence: parsed.merchant ? 1 : 0,
+      totalConfidence: parsed.total ? parsed.confidence_score : 0,
+      dateConfidence: parsed.date ? 1 : 0
+    };
+
+  } catch (err) {
+    console.error("❌ processReceipt Error:", err);
+    return {
+      success: false,
+      provider: "error",
+      text: "",
+      merchant_name: null,
+      total_amount: null,
+      transaction_date: null,
+      error: err.message,
+    };
+  }
 }

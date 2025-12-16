@@ -27,7 +27,7 @@ import { MotiView } from "moti";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useUser } from '../../reuseComponet/UserContext.js';
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation,route }) {
   const { setUserId } = useUser();
   // form fields
   const [email, setEmail] = useState('');
@@ -39,6 +39,9 @@ export default function LoginScreen({ navigation }) {
   const [faceLoginLoading, setFaceLoginLoading] = useState(false);
   const [navigationLoading, setNavigationLoading] = useState(false);
   const [autoFaceLoginAvailable, setAutoFaceLoginAvailable] = useState(false);
+  const [disableAutoFaceLogin, setDisableAutoFaceLogin] = useState(false);
+const [readyToAutoLogin, setReadyToAutoLogin] = useState(false);
+
 
   // validation state
   const [emailError, setEmailError] = useState('');
@@ -57,16 +60,31 @@ export default function LoginScreen({ navigation }) {
   // prevent multiple auto-face-login attempts
   const autoFaceLoginTriggeredRef = useRef(false);
 
-  // component mount
   useEffect(() => {
-    initUserDB();
-    logUserTable();
-    checkAutoFaceLoginAndNavigate();
+    if (route?.params?.disableAuto) {
+      setDisableAutoFaceLogin(true);
+      console.log("Testing.....",disableAutoFaceLogin);
+    }
 
-    return () => {
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    };
-  }, []);
+    setReadyToAutoLogin(true);
+  }, [route?.params]);
+
+
+useEffect(() => {
+  console.log("Ready to auto login:", readyToAutoLogin);
+  if (!readyToAutoLogin) return;
+  initUserDB();
+  logUserTable();
+
+  if (!disableAutoFaceLogin) {
+    checkAutoFaceLoginAndNavigate();
+  }
+
+  return () => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+  };
+}, [disableAutoFaceLogin]);
+
 
   useFocusEffect(
     React.useCallback(() => {
@@ -127,27 +145,45 @@ export default function LoginScreen({ navigation }) {
   // --------------- Auto-face login check ---------------
   // If recentUsersWithFaceAuth exists, auto navigate to FaceLoginScreen once.
   const checkAutoFaceLoginAndNavigate = async () => {
+    if (disableAutoFaceLogin) return;
     try {
-      const recentUsers = await AsyncStorage.getItem('recentUsersWithFaceAuth');
-      if (!recentUsers) return;
-      const users = JSON.parse(recentUsers);
-      if (!Array.isArray(users) || users.length === 0) return;
+      const lastUserJson = await AsyncStorage.getItem("lastLoggedInUser");
+      if (!lastUserJson) {
+        console.log("⚠️ No last logged-in user found");
+        return;
+      }
 
-      // Avoid repeating auto navigation if already triggered
+      const lastUser = JSON.parse(lastUserJson);
+      const userId = lastUser.userId;
+
+      const faceRegistered = await hasRegisteredFace(userId);
+      if (!faceRegistered) {
+        console.log("⚠️ User has no face registered");
+        return;
+      }
+
       if (autoFaceLoginTriggeredRef.current) return;
-
-      // set flag so we don't re-trigger
       autoFaceLoginTriggeredRef.current = true;
-      setAutoFaceLoginAvailable(true);
 
-      // Small delay to let the UI render, then navigate
-      setTimeout(() => {
-        handleAutoFaceLogin();
-      }, 300);
+      console.log("🔐 Auto Face Login triggered for:", userId);
+
+      navigation.navigate("FaceLoginScreen", {
+        onSuccess: async (userData) => {
+          console.log("🎉 Face login success");
+          setFaceLoginLoading(false);
+          await handleLoginSuccess(userData);
+        },
+        onCancel: () => {
+          console.log("🛑 Face login cancelled");
+          setFaceLoginLoading(false);
+        },
+      });
+
     } catch (err) {
-      console.error('Error checking auto face login:', err);
+      console.error("❌ Auto face login error", err);
     }
   };
+
 
   // --------------- Auto face login flow ---------------
   const handleAutoFaceLogin = async () => {
@@ -266,6 +302,12 @@ export default function LoginScreen({ navigation }) {
         email: user.email,
       }));
 
+      await AsyncStorage.setItem('lastLoggedInUser', JSON.stringify({
+        userId: user.userId,
+        username: user.username,
+        email: user.email,
+      }));
+
       // 🔥 IMPORTANT: update UserContext
       setUserId(user.userId);
 
@@ -294,41 +336,52 @@ export default function LoginScreen({ navigation }) {
   };
 
   const determineNextScreen = async (userId) => {
-    try {
-      const onboardingDone = await checkOnboardingStatus(userId);
-      const userData = await getUserById(userId);
-      const hasFace = await hasRegisteredFace(userId);
-      const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
+  try {
+    const onboardingDone = await checkOnboardingStatus(userId);
+    const userData = await getUserById(userId);
+    const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
 
-      // not done onboarding
-      if (!onboardingDone) {
-        return { screen: 'OnboardingScreen' };
-      }
-
-      // no face registered
-      if (!hasFace) {
-        return {
-          screen: 'FaceRegistration',
-          params: { showSkipOption: true, fromLogin: true }
-        };
-      }
-
-      if (dailyQuizEnabled) {
-        const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
-        const todayDone = await getTodayQuizStatus(userId);
-        if (!hasSeenQuizIntro) {
-          return { screen: 'QuizIntroductionScreen', params: { userId } };
-        } else if (!todayDone) {
-          return { screen: 'DailyQuiz', params: { userId } };
-        }
-      }
-
-      return { screen: 'MainApp' };
-    } catch (err) {
-      console.error('determineNextScreen error:', err);
-      return { screen: 'MainApp' };
+    // 1. Not done onboarding
+    if (!onboardingDone) {
+      return { screen: 'OnboardingScreen' };
     }
-  };
+
+    // 2. Daily quiz system ON
+    if (dailyQuizEnabled) {
+
+      const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
+      const skippedToday = await AsyncStorage.getItem(`quizSkippedToday_${userId}`);
+      const todayDone = await AsyncStorage.getItem(`hasCompletedQuiz_${userId}`);
+
+      const today = new Date().toDateString();
+      const lastQuizDate = await AsyncStorage.getItem(`lastQuizDate_${userId}`);
+
+      // 3. Reset skip/completed when day changes
+      if (lastQuizDate !== today) {
+        await AsyncStorage.removeItem(`quizSkippedToday_${userId}`);
+        await AsyncStorage.removeItem(`hasCompletedQuiz_${userId}`);
+        await AsyncStorage.setItem(`lastQuizDate_${userId}`, today);
+      }
+
+      // 4. Show quiz introduction (first time only)
+      if (!hasSeenQuizIntro) {
+        return { screen: 'QuizIntroductionScreen', params: { userId } };
+      }
+
+      // 5. Show daily quiz if NOT done and NOT skipped
+      if (!todayDone && !skippedToday) {
+        return { screen: 'DailyQuiz', params: { userId } };
+      }
+    }
+
+    // 6. Default
+    return { screen: 'MainApp' };
+
+  } catch (err) {
+    console.error('determineNextScreen error:', err);
+    return { screen: 'MainApp' };
+  }
+};
 
   // --------------- Render ---------------
   return (
@@ -393,6 +446,21 @@ export default function LoginScreen({ navigation }) {
             {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
             <Text style={styles.charCount}>{password.length}/20 characters</Text>
           </Animated.View>
+
+          {/* Face Login Option */}
+          <View style={styles.faceLoginContainer}>
+            <View style={styles.separatorContainer}>
+              <View style={styles.separator} />
+              <Text style={styles.separatorText}>or</Text>
+              <View style={styles.separator} />
+            </View>
+
+            <TouchableOpacity style={styles.faceLoginButton} onPress={handleAutoFaceLogin}>
+              <Ionicons name="person-circle-outline" size={36} color="#57C0A1" />
+              <Text style={styles.faceLoginText}>Use Face ID</Text>
+            </TouchableOpacity>
+          </View>
+
 
           <TouchableOpacity>
             <Text style={styles.forgot} onPress={() => navigation.navigate('ForgotPassword')}>
@@ -616,6 +684,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     paddingRight: 8,
+    color: "#000",
   },
   forgot: {
     color: '#57C0A1',
@@ -646,4 +715,40 @@ const styles = StyleSheet.create({
   registerLink: {
     color: '#57C0A1'
   },
+  faceLoginContainer: {
+    marginTop: 20,
+    alignItems: "center",
+  },
+
+  separatorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    width: "80%",
+  },
+
+  separator: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E5E7EB",
+  },
+
+  separatorText: {
+    marginHorizontal: 10,
+    color: "#6B7280",
+    fontSize: 14,
+  },
+
+  faceLoginButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  faceLoginText: {
+    marginTop: 6,
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#57C0A1",
+  },
+
 });

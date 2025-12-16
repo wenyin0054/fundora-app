@@ -2,6 +2,7 @@ import { openDatabaseAsync } from "expo-sqlite";
 import bcrypt from "bcryptjs";
 import * as Crypto from "expo-crypto";
 import quizData from "../assets/financial_quiz.json";
+
 let db = null;
 let isConnecting = false;
 let connectionPromise = null;
@@ -89,8 +90,6 @@ export const initUserDB = async () => {
         dailyQuiz INTEGER DEFAULT 1,
         occupation TEXT,
         profileImage TEXT, 
-        resetToken TEXT,
-        resetTokenExpiry INTEGER,
         updatedAt TEXT
       );
     `);
@@ -123,6 +122,14 @@ export const initUserDB = async () => {
   );
 `);
 
+    await db.execAsync(`
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  email TEXT,
+  otp TEXT,
+  expiresAt INTEGER
+);
+
+`);
 
     console.log("✅ User, Face, and Quiz tables initialized successfully");
 
@@ -148,26 +155,14 @@ export const insertQuizResult = async (quizResult) => {
 
 export const getTodayQuizStatus = async (userId) => {
   const db = await connectUserDB();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString('sv-SE');
   const result = await db.getFirstAsync(
     `SELECT * FROM quiz_results WHERE userId = ? AND date = ?`,
     [userId, today]
   );
   return !!result;
 };
-/** ✅ Get User Income */
-export const getUserIncome = async (userId) => {
-  const db = await connectUserDB();
 
-  const result = await db.getFirstAsync(
-    "SELECT monthlyIncome FROM users WHERE userId = ?",
-    [userId]
-  );
-
-  return result && result.monthlyIncome !== null
-    ? Number(result.monthlyIncome)
-    : 0;
-};
 
 
 
@@ -175,41 +170,25 @@ export const getUserIncome = async (userId) => {
 export const getQuizByLevel = (level) => {
   try {
     console.log("📊 Loading quiz for level:", level);
-    console.log("📁 Quiz data type:", Array.isArray(quizData) ? 'Array' : typeof quizData);
+    console.log("📁 Quiz data type:", typeof quizData);
 
-    // Check if quizData is an array (your current structure)
-    if (!Array.isArray(quizData)) {
-      console.error("❌ quizData is not an array");
+    // Check if quizData has levels
+    if (!quizData || !quizData.levels) {
+      console.error("❌ quizData does not have levels");
       return null;
     }
 
     // Normalize level name
     const normalizedLevel = level?.toLowerCase() || 'beginner';
-    console.log("🔍 Filtering for level:", normalizedLevel);
+    console.log("🔍 Loading for level:", normalizedLevel);
 
-    // Filter quizzes by level
-    const levelQuizzes = quizData.filter(quiz =>
-      quiz.level?.toLowerCase() === normalizedLevel
-    );
-
-    console.log(`📋 Found ${levelQuizzes.length} quizzes for level: ${normalizedLevel}`);
-
-    if (!levelQuizzes || levelQuizzes.length === 0) {
+    const levelQuizzes = quizData.levels[normalizedLevel];
+    if (!Array.isArray(levelQuizzes)) {
       console.error(`❌ No quizzes found for level: ${normalizedLevel}`);
-
-      // Fallback to beginner level
-      const fallbackQuizzes = quizData.filter(quiz =>
-        quiz.level?.toLowerCase() === 'beginner'
-      );
-
-      if (fallbackQuizzes && fallbackQuizzes.length > 0) {
-        console.log("🔄 Falling back to beginner level quizzes");
-        const randomIndex = Math.floor(Math.random() * fallbackQuizzes.length);
-        const selectedQuiz = fallbackQuizzes[randomIndex];
-        return transformQuizFormat(selectedQuiz);
-      }
       return null;
     }
+
+    console.log(`📋 Found ${levelQuizzes.length} quizzes for level: ${normalizedLevel}`);
 
     // Get a random quiz from the level
     const randomIndex = Math.floor(Math.random() * levelQuizzes.length);
@@ -391,76 +370,42 @@ export const loginUser = async (email, password) => {
 
 
 // ---------- Generate reset token ----------
-export const generateResetToken = async (email) => {
+// ---------- Reset password using OTP ----------
+export const resetPassword = async (email, otp, newPassword) => {
   try {
     const db = await connectUserDB();
-    const users = await db.getAllAsync("SELECT * FROM users WHERE email = ?", [email]);
-    const user = users && users.length > 0 ? users[0] : null;
+    const normalizedEmail = email.toLowerCase().trim();
 
-    if (!user) throw new Error("User not found");
-
-    // generate random token
-    const randomBytes = await Crypto.getRandomBytesAsync(16);
-    const token = Array.from(randomBytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    const expiry = Date.now() + 15 * 60 * 1000; // token valid for 15 min
-
-    await db.runAsync(
-      "UPDATE users SET resetToken = ?, resetTokenExpiry = ? WHERE email = ?",
-      [token, expiry, email]
+    const otpRecord = await db.getFirstAsync(
+      `SELECT * FROM password_reset_requests
+       WHERE LOWER(TRIM(email)) = ? AND otp = ? AND expiresAt > ?`,
+      [normalizedEmail, otp, Date.now()]
     );
 
-    console.log("✅ Reset token generated for:", email, token);
-    return token;
-  } catch (error) {
-    console.error("❌ generateResetToken error:", error);
-    throw error;
-  }
-};
-
-// ---------- Verify token ----------
-export const verifyResetToken = async (email, token) => {
-  try {
-    const db = await connectUserDB();
-    const users = await db.getAllAsync(
-      "SELECT * FROM users WHERE email = ? AND resetToken = ?",
-      [email, token]
-    );
-    const user = users && users.length > 0 ? users[0] : null;
-
-    if (!user) return false;
-    if (Date.now() > user.resetTokenExpiry) return false;
-    return true;
-  } catch (error) {
-    console.error("❌ verifyResetToken error:", error);
-    return false;
-  }
-};
-
-// ---------- Reset password ----------
-export const resetPassword = async (email, token, newPassword) => {
-  try {
-    const db = await connectUserDB();
-
-    const isValid = await verifyResetToken(email, token);
-    if (!isValid) throw new Error("Invalid or expired token");
+    if (!otpRecord) {
+      throw new Error("Invalid or expired OTP");
+    }
 
     const salt = bcrypt.genSaltSync(8);
-    const hashed = bcrypt.hashSync(newPassword, salt);
+    const hashedPassword = bcrypt.hashSync(newPassword, salt);
 
     await db.runAsync(
-      "UPDATE users SET password = ?, resetToken = NULL, resetTokenExpiry = NULL WHERE email = ?",
-      [hashed, email]
+      `UPDATE users SET password = ? WHERE LOWER(TRIM(email)) = ?`,
+      [hashedPassword, normalizedEmail]
     );
 
-    console.log("✅ Password successfully reset for", email);
+    await db.runAsync(
+      `DELETE FROM password_reset_requests WHERE LOWER(TRIM(email)) = ?`,
+      [normalizedEmail]
+    );
+
+    console.log("✅ Password successfully reset for", normalizedEmail);
   } catch (error) {
     console.error("❌ resetPassword error:", error);
     throw error;
   }
 };
+
 
 // ------------------- GET USER BY ID -------------------
 export const getExperienceLevel = async (userId) => {
@@ -790,3 +735,28 @@ export const closeUserDB = async () => {
   }
 };
 export default connectUserDB;
+
+function generate6DigitOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+export async function createOtpForUser(email) {
+  const db = await connectUserDB(); // 🔥 REQUIRED
+  const normalizedEmail = email.toLowerCase().trim();
+  const otp = generate6DigitOtp();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+  await db.runAsync(
+    `DELETE FROM password_reset_requests WHERE LOWER(TRIM(email)) = ?`,
+    [normalizedEmail]
+  );
+
+  await db.runAsync(
+    `INSERT INTO password_reset_requests (email, otp, expiresAt)
+     VALUES (?, ?, ?)`,
+    [normalizedEmail, otp, expiresAt]
+  );
+
+  console.log("✅ OTP created:", normalizedEmail, otp);
+  return otp;
+}

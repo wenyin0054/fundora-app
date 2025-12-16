@@ -15,6 +15,15 @@ import { Picker } from "@react-native-picker/picker";
 import Slider from "@react-native-community/slider";
 import { addSavingMethod, initDB } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
+import { useRef } from "react";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSValidatedPicker,
+  FDSLabel,
+  FDSButton,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function AddSavingMethodScreen({ navigation, route }) {
   const [methodName, setMethodName] = useState("");
@@ -24,7 +33,9 @@ export default function AddSavingMethodScreen({ navigation, route }) {
   const [expectedReturn, setExpectedReturn] = useState("5.0");
   const [colorCode, setColorCode] = useState("#4CAF50");
   const [iconName, setIconName] = useState("📊");
-
+  const nameRef = useRef(null);
+  const typeRef = useRef(null);
+  const returnRef = useRef(null);
   const { userId } = useUser();
 
   const methodTypes = [
@@ -46,10 +57,10 @@ export default function AddSavingMethodScreen({ navigation, route }) {
     "#00BCD4", "#8BC34A", "#FFC107", "#795548", "#607D8B"
   ];
 
-  // 使用 useFocusEffect 來重置表單
+  // Use useFocusEffect to reset form
   useFocusEffect(
     useCallback(() => {
-      // 當頁面獲得焦點時，重置表單狀態
+      // When page gains focus, reset form state
       setMethodName("");
       setMethodType("investment");
       setRiskLevel(3);
@@ -59,7 +70,7 @@ export default function AddSavingMethodScreen({ navigation, route }) {
       setIconName("📊");
 
       return () => {
-        // 可選的清理函數
+        // Optional cleanup function
       };
     }, [])
   );
@@ -99,48 +110,43 @@ export default function AddSavingMethodScreen({ navigation, route }) {
   const handleAddMethod = async () => {
     console.log("🔥 Adding Saving Method...");
 
-    // 1️⃣ Validate Method Name
-    if (!methodName || !methodName.trim()) {
-      Alert.alert("Missing Method Name", "Please enter a saving method name.");
+    let valid = true;
+    if (!nameRef.current?.validate()) valid = false;
+    if (!typeRef.current?.validate()) valid = false;
+    if (!returnRef.current?.validate()) valid = false;
+
+    if (!valid) {
+      console.log("❌ Validation failed — cannot save");
       return;
     }
 
-    // 2️⃣ Validate Method Type (e.g., Fixed, Flexible, Investment…)
-    if (!methodType) {
-      Alert.alert("Missing Method Type", "Please select a method type.");
-      return;
-    }
-
-    // 3️⃣ Validate Risk Level (1–5)
+    //  Validate Risk Level (1–5)
     if (riskLevel < 1 || riskLevel > 5) {
       Alert.alert("Invalid Risk Level", "Risk level must be between 1 and 5.");
       return;
     }
 
-    // 4️⃣ Validate Liquidity Level (1–5)
+    //  Validate Liquidity Level (1–5)
     if (liquidityLevel < 1 || liquidityLevel > 5) {
       Alert.alert("Invalid Liquidity Level", "Liquidity level must be between 1 and 5.");
       return;
     }
 
-    // 5️⃣ Validate Expected Return
-    if (!validateAmount(expectedReturn, "Expected Return")) return;
-
     const parsedReturn = parseFloat(expectedReturn);
 
-    // 6️⃣ Validate Color Code
+    //  Validate Color Code
     if (!colorCode) {
       Alert.alert("Missing Color", "Please pick a color for the method.");
       return;
     }
 
-    // 7️⃣ Validate Icon
+    // Validate Icon
     if (!iconName) {
       Alert.alert("Missing Icon", "Please select an icon.");
       return;
     }
 
-    // 8️⃣ Validate Logged-in User
+    //  Validate Logged-in User
     if (!userId) {
       Alert.alert("Error", "User not logged in");
       return;
@@ -193,34 +199,38 @@ export default function AddSavingMethodScreen({ navigation, route }) {
       />
 
       <ScrollView style={styles.scrollContainer}>
-        <View style={styles.card}>
+        <FDSCard>
           {/* Method Name */}
-          <Text style={styles.label}>Method Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Cryptocurrency, Real Estate, Bonds"
-            placeholderTextColor={"#c5c5c5ff"}
+          <FDSValidatedInput
+            ref={nameRef}
+            label="Method Name"
             value={methodName}
             onChangeText={setMethodName}
+            placeholder="e.g., Cryptocurrency, Real Estate, Bonds"
+            validate={(v) => v && v.trim().length > 0}
+            errorMessage="Method name is required"
+            icon={<Ionicons name="document-text-outline" size={18} color={FDSColors.textGray} />}
           />
 
           {/* Method Type */}
-          <Text style={styles.label}>Method Type</Text>
-          <View style={styles.pickerContainer}>
+          <FDSValidatedPicker
+            ref={typeRef}
+            label="Method Type"
+            value={methodType}
+            validate={(v) => !!v}
+            errorMessage="Please select a method type"
+            icon={<Ionicons name="options-outline" size={18} color={FDSColors.textGray} />}
+          >
             <Picker
               selectedValue={methodType}
-              onValueChange={setMethodType}
-              style={styles.picker}
+              onValueChange={(v) => setMethodType(v)}
+              style={{ position: "absolute", opacity: 0, width: "100%" }}
             >
-              {methodTypes.map(type => (
-                <Picker.Item
-                  key={type.value}
-                  label={type.label}
-                  value={type.value}
-                />
+              {methodTypes.map((type) => (
+                <Picker.Item key={type.value} label={type.label} value={type.value} />
               ))}
             </Picker>
-          </View>
+          </FDSValidatedPicker>
 
           {/* Risk Level */}
           <Text style={styles.label}>
@@ -263,15 +273,18 @@ export default function AddSavingMethodScreen({ navigation, route }) {
           </View>
 
           {/* Expected Return */}
-          <Text style={styles.label}>Expected Annual Return (%)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 5.0"
-            placeholderTextColor={"#c5c5c5ff"}
+          <FDSValidatedInput
+            ref={returnRef}
+            label="Expected Annual Return (%)"
             value={expectedReturn}
             onChangeText={setExpectedReturn}
             keyboardType="numeric"
+            validate={(v) => v && !isNaN(v) && parseFloat(v) > 0}
+            errorMessage="Please enter a valid return percentage"
+            icon={<Ionicons name="trending-up-outline" size={18} color={FDSColors.textGray} />}
+            placeholder="e.g. 5.0"
           />
+
 
           {/* Icon Selection */}
           <Text style={styles.label}>Select Icon</Text>
@@ -332,11 +345,13 @@ export default function AddSavingMethodScreen({ navigation, route }) {
           </View>
 
           {/* Save Button */}
-          <TouchableOpacity style={styles.saveButton} onPress={handleAddMethod}>
-            <Ionicons name="save-outline" size={18} color="#fff" />
-            <Text style={styles.saveText}>Save Saving Method</Text>
-          </TouchableOpacity>
-        </View>
+          <FDSButton
+            title="Save Saving Method"
+            icon="save-outline"
+            onPress={handleAddMethod}
+          />
+
+        </FDSCard>
       </ScrollView>
     </View>
   );

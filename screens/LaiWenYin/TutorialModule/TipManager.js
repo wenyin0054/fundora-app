@@ -7,8 +7,21 @@ export const useTipManager = (userLevel = 'beginner') => {
   const [isTipVisible, setIsTipVisible] = useState(false);
 
   const getTip = useCallback((module, context = 'default', level = userLevel) => {
+    // Support nested keys with dot notation
+    const keys = context.split('.');
+    let tipObject = tipData?.[module];
+    
+    for (const key of keys) {
+      if (tipObject && typeof tipObject === 'object') {
+        tipObject = tipObject[key];
+      } else {
+        tipObject = undefined;
+        break;
+      }
+    }
+    
     return (
-      tipData?.[module]?.[context]?.[level] ||
+      tipObject?.[level] ||
       tipData?.[module]?.default?.[level] ||
       "No tips available."
     );

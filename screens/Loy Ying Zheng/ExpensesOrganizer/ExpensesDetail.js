@@ -16,12 +16,12 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import Slider from "@react-native-community/slider";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import AddSavingAccountModal from "./AddSavingAccountModal";
 import {
   updateExpenseLocal,
   deleteExpenseLocal,
+  deleteExpenseWithSummary,
   updateGoalAmount,
   getUserSummary,
   updateUserSummaryOnEdit,
@@ -36,10 +36,22 @@ import {
   getSavingAccounts,
   allocateFundToGoal,
   getGoalFundAllocations,
-
+  recalculateMonthlyIncomeSnapshot,
+  updateUserSummaryDirect,
+  updateSavingAccountBalance,
+  deleteGoalAllocation
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
 import { useUser } from "../../reuseComponet/UserContext";
+import {
+  FDSCard,
+  FDSLabel,
+  FDSValidatedInput,
+  FDSValidatedPicker,
+  FDSButton,
+  FDSColors,
+  FDSValidatedBlock
+} from "../../reuseComponet/DesignSystem";
 
 export default function ExpenseDetail({ route, navigation }) {
   const { expense } = route.params;
@@ -85,6 +97,7 @@ export default function ExpenseDetail({ route, navigation }) {
 
   const options = ["Expenses", "Income", "Transaction"];
   const [selectedOption, setSelectedOption] = useState(dbToUiType(expense.typeLabel));
+  const originalSelectedOption = dbToUiType(expense.typeLabel); // Store original type
   const periodType = ["Yearly", "Monthly"];
   const [selectedPeriodType, setSelectedPeriodType] = useState(expense.type || "null");
 
@@ -108,35 +121,19 @@ export default function ExpenseDetail({ route, navigation }) {
 
   const { userId } = useUser();
 
-  // ---------- ERROR STATES ----------
-  const [payeeError, setPayeeError] = useState(false);
-  const [amountError, setAmountError] = useState(false);
-  const [tagError, setTagError] = useState(false);
-  const [paymentTypeError, setPaymentTypeError] = useState(false);
-  const [typeError, setTypeError] = useState(false);
-  const [dateError, setDateError] = useState(false);
-  const [goalError, setGoalError] = useState(false);
-  const [savingMethodError, setSavingMethodError] = useState(false);
 
-  // ---------- ANIMATED SHAKE ----------
-  const payeeShake = useRef(new Animated.Value(0)).current;
-  const amountShake = useRef(new Animated.Value(0)).current;
-  const tagShake = useRef(new Animated.Value(0)).current;
-  const paymentTypeShake = useRef(new Animated.Value(0)).current;
-  const goalShake = useRef(new Animated.Value(0)).current;
+  // ---------- ANIMATED SHAKE ---------- (removed - using FDS validation now)
 
-  const runShake = (animRef) => {
-    if (!animRef) return;
-    animRef.setValue(0);
-    Animated.sequence([
-      Animated.timing(animRef, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: 6, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: -6, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: 0, duration: 50, useNativeDriver: true }),
-    ]).start();
-    Vibration.vibrate(50);
-  };
+  // FDS Component Refs
+  const payeeRef = useRef(null);
+  const amountRef = useRef(null);
+  const tagRef = useRef(null);
+  const paymentTypeRef = useRef(null);
+  const goalRef = useRef(null);
+  const savingMethodRef = useRef(null);
+  const savingAccountRef = useRef(null);
+
+  // const runShake = (animRef) => { ... } (removed - using FDS validation now)
 
   // ---------- CONSTANT TAGS ----------
   const paymentTypeData = [
@@ -167,66 +164,66 @@ export default function ExpenseDetail({ route, navigation }) {
   ];
 
   // ---------- INIT DB & LOAD DATA ----------
-useEffect(() => {
-  const init = async () => {
-    console.log("🚀 [init] start");
-    try {
-      await initDB();
-      setDbReady(true);
+  useEffect(() => {
+    const init = async () => {
+      console.log("🚀 [init] start");
+      try {
+        await initDB();
+        setDbReady(true);
 
-      const [
-        loadedTags,
-        loadedEventTags,
-        active,
-        goalsData,
-        summary,
-        methods,
-        accounts,
-        allocations
-      ] = await Promise.all([
-        getTagsLocal(userId),
-        getEventTagsLocal(userId),
-        getActiveEventTagsLocal(userId),
-        getGoalsLocal(userId),
-        getUserSummary(userId),
-        getSavingMethods(userId),
-        getSavingAccounts(userId),
-        getGoalFundAllocations(userId, expense.goalId),
-      ]);
+        const [
+          loadedTags,
+          loadedEventTags,
+          active,
+          goalsData,
+          summary,
+          methods,
+          accounts,
+          allocations
+        ] = await Promise.all([
+          getTagsLocal(userId),
+          getEventTagsLocal(userId),
+          getActiveEventTagsLocal(userId),
+          getGoalsLocal(userId),
+          getUserSummary(userId),
+          getSavingMethods(userId),
+          getSavingAccounts(userId),
+          getGoalFundAllocations(userId, expense.goalId),
+        ]);
 
 
-      setTags(loadedTags);
-      setActiveEventTags(active);
-      setGoals(goalsData);
-      setUserSummary(summary);
-      setSavingMethods(methods);
-      setSavingAccounts(accounts);
+        setTags(loadedTags);
+        setActiveEventTags(active);
+        setGoals(goalsData);
+        setUserSummary(summary);
+        setSavingMethods(methods);
+        setSavingAccounts(accounts);
 
-      console.log("Allocation", allocations);
+        console.log("Allocation", allocations);
 
-      const allocation = allocations.find(a => a.transaction_id === expense.id);
-      console.log("🔍 Found allocation?", allocation);
+        const allocation = allocations.find(a => a.transaction_id === expense.id);
+        console.log("🔍 Found allocation?", allocation);
 
-      if (allocation) {
-        const method = methods.find(m => m.id === allocation.method_id);
-        const account = accounts.find(a => a.id === allocation.account_id);
+        if (allocation) {
+          const method = methods.find(m => m.id === allocation.method_id);
+          const account = accounts.find(a => a.id === allocation.account_id);
 
-        setSelectedSavingMethod(method || null);
-        setSelectedSavingAccount(account || null);
-      } else {
-        console.log("⚠️ No allocation found for this expense");
+          setSelectedSavingMethod(method || null);
+          setSelectedSavingAccount(account || null);
+        } else {
+          console.log("⚠️ No allocation found for this expense");
+        }
+
+        console.log("⚡ [init] all data loaded successfully");
+
+      } catch (err) {
+        console.error("❌ [init] error:", err);
       }
+    };
 
-      console.log("⚡ [init] all data loaded successfully");
+    if (userId) init();
 
-    } catch (err) {
-      console.error("❌ [init] error:", err);
-    }
-  };
-
-  if (userId) init();
-
-}, [userId, expense.id]);
+  }, [userId, expense.id]);
 
 
   // ---------- TYPE MAPPING ----------
@@ -251,51 +248,24 @@ useEffect(() => {
   // ---------- TYPE CHANGE ----------
   const handleTypeChange = (option) => {
     setSelectedOption(option);
-    setTypeError(false);
     if (option !== "Transaction") {
       setAllocateToGoal(false);
       setSelectedGoal(null);
     }
   };
 
-  // ---------- AMOUNT VALIDATION ----------
-  const validateAmount = (value, fieldName = "Amount", animRef) => {
-    if (!value || value === "") {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
-      return false;
-    }
+  const isGoalOverdue = (goal) => {
+    if (!goal.deadline && !goal.due) return false;
 
-    if (isNaN(value)) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
-      return false;
-    }
+    const d = goal.deadline || goal.due;
+    const deadlineDate = new Date(d + "T00:00:00");
+    const today = new Date();
 
-    const num = parseFloat(value);
-    if (num <= 0) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
-      return false;
-    }
-
-    if (num > 9999999999999999) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(
-        `Invalid ${fieldName}`,
-        `${fieldName} cannot exceed 9,999,999,999,999,999.`
-      );
-      return false;
-    }
-
-    setAmountError(false);
-    return true;
+    return deadlineDate < today; // true = overdue
   };
 
+  // ---------- AMOUNT VALIDATION ---------- (removed - using FDS validation now)
+  // const validateAmount = (value, fieldName = "Amount", animRef) => { ... } (removed)
   // ---------- UPDATE ----------
   const onUpdate = async () => {
     if (!dbReady) return Alert.alert("Database not ready yet!");
@@ -306,59 +276,39 @@ useEffect(() => {
     // ----------------------------------------------
     let valid = true;
 
-    if (!payee || !payee.trim()) {
-      setPayeeError(true); runShake(payeeShake);
-      Alert.alert("Missing Payee", "Please enter a payee or project.");
-      valid = false;
-    } else setPayeeError(false);
+    const validPayee = payeeRef.current?.validate();
+    if (!validPayee) return;
 
-    if (!validateAmount(amount, "Amount", amountShake)) valid = false;
+
+    const validAmount = amountRef.current?.validate();
+    if (!validAmount) return;
 
     if (!date) {
       setDateError(true);
-      Alert.alert("Missing Date", "Please select a date.");
-      valid = false;
+      // Could add FDS validation for date if needed
+      return;
     } else setDateError(false);
 
-    if (!selectedOption) {
-      setTypeError(true);
-      Alert.alert("Missing Type", "Please choose a type.");
-      valid = false;
-    } else setTypeError(false);
-
-    if (selectedOption !== "Income" && !tag) {
-      setTagError(true); runShake(tagShake);
-      Alert.alert("Missing Tag", "Please select a tag.");
-      valid = false;
-    } else setTagError(false);
-
-    if (selectedOption !== "Income" && !paymentType) {
-      setPaymentTypeError(true); runShake(paymentTypeShake);
-      Alert.alert("Missing Payment Type", "Please select a payment type.");
-      valid = false;
-    } else setPaymentTypeError(false);
-
-    if (selectedOption === "Transaction" && allocateToGoal) {
-      if (!selectedGoal) {
-        setGoalError(true); runShake(goalShake);
-        Alert.alert("Missing Goal", "Please select a goal.");
-        valid = false;
-      } else setGoalError(false);
-
-      if (!selectedSavingMethod) {
-        setSavingMethodError(true);
-        Alert.alert("Missing Saving Method", "Please select a saving method.");
-        valid = false;
-      } else setSavingMethodError(false);
-
-      if (!selectedSavingAccount) {
-        setSavingAccountError(true);
-        Alert.alert("Missing Account", "Please select a saving account.");
-        valid = false;
-      } else setSavingAccountError(false);
+    if (selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && !tag) {
+      const validTag = tagRef.current?.validate();
+      if (!validTag) return;
     }
 
-    if (!valid) return;
+    if (selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && !paymentType) {
+      const validPayment = paymentTypeRef.current?.validate();
+      if (!validPayment) return;
+    }
+
+    if (selectedOption === "Transaction" && allocateToGoal) {
+      const validGoal = goalRef.current?.validate();
+      if (!validGoal) return;
+
+      const validMethod = savingMethodRef.current?.validate();
+      if (!validMethod) return;
+
+      const validAccount = savingAccountRef.current?.validate();
+      if (!validAccount) return;
+    }
 
     // ----------------------------------------------
     //  2. Build newData + oldData
@@ -367,9 +317,9 @@ useEffect(() => {
       payee: payee.trim(),
       amount: parseFloat(amount),
       date: date.toISOString().split("T")[0],
-      tag: selectedOption === "Income" ? null : tag,
+      tag: selectedOption === "Income" || (selectedOption === "Transaction" && allocateToGoal) ? null : tag,
       eventTag: eventTag || null,
-      paymentType: selectedOption === "Income" ? null : paymentType,
+      paymentType: selectedOption === "Income" || (selectedOption === "Transaction" && allocateToGoal) ? null : paymentType,
       isPeriodic,
       type: isPeriodic ? selectedPeriodType : null,
       typeLabel: uiToDbType(selectedOption),
@@ -450,30 +400,14 @@ useEffect(() => {
           rollbackGoal: existingAllocation.goalId,
           rollbackAmount: existingAllocation.allocated_amount
         });
-
-
-        await db.runAsync(
-          `DELETE FROM goal_fund_allocations WHERE id = ? AND userId = ?`,
-          [existingAllocation.id, userId]
-        );
-
+        await deleteGoalAllocation(userId, existingAllocation.id);
         await updateGoalAmount(
           userId,
           existingAllocation.goalId,
           -existingAllocation.allocated_amount
         );
-
-        await db.runAsync(
-          `UPDATE saving_accounts SET current_balance = current_balance - ?
-         WHERE id = ? AND userId = ?`,
-          [
-            existingAllocation.allocated_amount,
-            existingAllocation.account_id,
-            userId,
-          ]
-        );
+        await updateSavingAccountBalance(userId, existingAllocation.account_id, existingAllocation.allocated_amount);
       }
-
       // 🟩 B. Add new allocation (old none → new has)
       if (!existingAllocation && newData.goalId) {
 
@@ -482,7 +416,6 @@ useEffect(() => {
           accountId: selectedSavingAccount.id,
           amount: newData.amount
         });
-
         await allocateFundToGoal(
           userId,
           newData.goalId,
@@ -494,30 +427,24 @@ useEffect(() => {
           "Allocated via edit",
           selectedSavingMethod.id
         );
-
         await updateGoalAmount(userId, newData.goalId, newData.amount);
       }
-
       // 🟩 C. Edit existing allocation
       if (existingAllocation && newData.goalId) {
         const allocationId = existingAllocation.id;
         const oldAllocAmount = existingAllocation.allocated_amount;
         const oldAccountId = existingAllocation.account_id;
         const oldGoalId = existingAllocation.goalId;
-
         // ① Amount changed
         if (newData.amount !== oldAllocAmount) {
           const diff = newData.amount - oldAllocAmount;
-
           await db.runAsync(
             `UPDATE goal_fund_allocations 
            SET allocated_amount = ?, current_value = ?
            WHERE id = ? AND userId = ?`,
             [newData.amount, newData.amount, allocationId, userId]
           );
-
           await updateGoalAmount(userId, oldGoalId, diff);
-
           await db.runAsync(
             `UPDATE saving_accounts SET current_balance = current_balance + ?
            WHERE id = ? AND userId = ?`,
@@ -597,35 +524,73 @@ useEffect(() => {
         newData.periodInterval
       );
 
-      // ----------------------------------------------
-      //  7. UPDATE USER SUMMARY（保留你原本的）
-      // ----------------------------------------------
-      const oldHadGoal = oldType === "transaction" && oldData.goalId != null;
-      const newHasGoal = newType === "transaction" && newData.goalId != null;
+      const oldIsGoalAllocation = oldData.typeLabel === "transaction" && oldData.goalId;
+      const newIsGoalAllocation = newData.typeLabel === "transaction" && newData.goalId;
 
-      const isIncomeInvolved =
-        oldType === "income" || newType === "income";
+      // ----------------------------------------------
+      //  7. UPDATE USER SUMMARY
+      // ----------------------------------------------
 
-      if (!isIncomeInvolved) {
-        if (oldType === newType && oldAmount !== newData.amount)
-          await updateUserSummaryOnEdit(
+      // CASE A: allocate-to-goal → allocate-to-goal
+      if (oldIsGoalAllocation && newIsGoalAllocation) {
+        const diff = newData.amount - oldAmount;
+        if (diff !== 0) {
+
+          const latestSummary = await getUserSummary(userId);
+          await updateUserSummaryDirect(
             userId,
-            oldType,
-            oldAmount,
-            newData.amount
+            latestSummary.total_income,
+            latestSummary.total_expense,
+            latestSummary.total_balance - diff
           );
-      } else {
-        if (oldType === newType)
-          await updateUserSummaryOnEdit(
-            userId,
-            oldType,
-            oldAmount,
-            newData.amount
-          );
-        else {
-          await updateUserSummaryOnDelete(userId, oldType, oldAmount);
-          await updateUserSummaryOnAdd(userId, newType, newData.amount);
         }
+      }
+      // CASE B: allocate-to-goal → normal transaction / expense
+      else if (oldIsGoalAllocation && !newIsGoalAllocation) {
+        // add back balance, then treat as expense
+        const latestSummary = await getUserSummary(userId);
+        const balance =
+          latestSummary.total_balance + oldAmount - newData.amount;
+
+        const expense =
+          latestSummary.total_expense + newData.amount;
+        await updateUserSummaryDirect(
+          userId,
+          latestSummary.total_income,
+          expense,
+          balance
+        );
+      }
+      // CASE C: normal transaction / expense → allocate-to-goal
+      else if (!oldIsGoalAllocation && newIsGoalAllocation) {
+        const latestSummary = await getUserSummary(userId);
+        const balance =
+          latestSummary.total_balance + oldAmount - newData.amount;
+
+        const expense =
+          latestSummary.total_expense - oldAmount;
+
+        await updateUserSummaryDirect(
+          userId,
+          latestSummary.total_income,
+          expense,
+          balance
+        );
+      }
+      // CASE D: normal expense / transaction edit
+      else {
+        await updateUserSummaryOnEdit(
+          userId,
+          oldType,
+          oldAmount,
+          newType,
+          newData.amount
+        );
+      }
+
+
+      if (newType === "income" || oldType === "income") {
+        await recalculateMonthlyIncomeSnapshot(userId, newData.date);
       }
 
       Alert.alert("Success", "Record updated successfully!", [
@@ -651,24 +616,54 @@ useEffect(() => {
         style: "destructive",
         onPress: async () => {
           try {
-            const oldType = String(expense.typeLabel || "").toLowerCase();
-            const oldAmount = parseFloat(expense.amount) || 0;
-
-            await deleteExpenseLocal(userId, expense.id);
-
-            if (oldType === "income") {
-              await updateUserSummaryOnDelete(userId, "income", oldAmount);
-            } else {
-              await updateUserSummaryOnDelete(userId, "expense", oldAmount);
-            }
-
-            // Update goal amount if this was allocated to a goal
+            // ----------------------------------------------
+            //  1. HANDLE ALLOCATION REMOVAL (if exists)
+            // ----------------------------------------------
             if (expense.goalId) {
-              await updateGoalAmount(userId, expense.goalId, -oldAmount);
+              const allocations = await getGoalFundAllocations(userId, expense.goalId);
+              const existingAllocation = allocations.find((a) => a.transaction_id === expense.id);
+
+              if (existingAllocation) {
+                console.log("🔴 [DELETE] Removing allocation on expense delete:", {
+                  allocationId: existingAllocation.id,
+                  goalId: existingAllocation.goalId,
+                  amount: existingAllocation.allocated_amount,
+                  accountId: existingAllocation.account_id
+                });
+
+                // Remove allocation record
+                await deleteGoalAllocation(userId, existingAllocation.id);
+
+                // Update goal amount (subtract)
+                await updateGoalAmount(userId, existingAllocation.goalId, -existingAllocation.allocated_amount);
+
+                // Update saving account balance (add back)
+                await updateSavingAccountBalance(userId, existingAllocation.account_id, existingAllocation.allocated_amount);
+              }
             }
 
-            const updatedSummary = await getUserSummary(userId);
-            console.log("✅ Updated summary after delete:", updatedSummary);
+            // ----------------------------------------------
+            //  2. DELETE EXPENSE WITH PROPER SUMMARY HANDLING
+            // ----------------------------------------------
+            if (expense.typeLabel === "transaction" && expense.goalId) {
+              // allocate-to-goal delete → balance only
+              const summary = await getUserSummary(userId);
+              await updateUserSummaryDirect(
+                userId,
+                summary.total_income,
+                summary.total_expense,
+                summary.total_balance + expense.amount
+              );
+
+              await deleteExpenseLocal(userId, expense.id);
+            } else {
+              // normal expense / transaction
+              const result = await deleteExpenseWithSummary(userId, expense.id);
+
+              if (result?.success) {
+                navigation.goBack();
+              }
+            }
 
             Alert.alert("🗑️ Deleted", "Record removed successfully!", [
               { text: "OK", onPress: () => navigation.goBack() }
@@ -698,107 +693,82 @@ useEffect(() => {
         keyboardShouldPersistTaps="handled"
       >
         <ScrollView style={styles.scrollContainer}>
-          <View style={styles.card}>
-            {/* Type Selection Bar */}
-            <View style={styles.selectionBarContainer}>
-              {options.map((option, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.typeButton,
-                    selectedOption.toLowerCase() === option.toLowerCase() &&
-                    styles.typeButtonActive,
-                  ]}
-                  onPress={() => handleTypeChange(option)}
-                >
-                  <Text
-                    style={[
-                      styles.typeButtonText,
-                      selectedOption.toLowerCase() === option.toLowerCase() &&
-                      styles.typeButtonTextActive,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Payee Input */}
-            <Animated.View
-              style={[
-                styles.inputRow,
-                payeeError && styles.inputError,
-                { transform: [{ translateX: payeeShake }] },
-              ]}
-            >
-              <Ionicons name="person-outline" size={20} color="#6c757d" />
-              <TextInput
-                style={styles.input}
-                value={payee}
-                onChangeText={(text) => {
-                  setPayee(text);
-                  if (text.trim()) setPayeeError(false);
-                }}
-                placeholder="Payee or purchased project"
-                placeholderTextColor={"#c5c5c5ff"}
-              />
-            </Animated.View>
-
-            {/* Amount Input / Total Balance */}
-            {selectedOption === "Transaction" && allocateToGoal ? (
-              <View
+          <View style={styles.selectionBarContainer}>
+            {options.map((option, index) => (
+              <TouchableOpacity
+                key={index}
                 style={[
-                  styles.inputRow,
-                  { justifyContent: "space-between", height: 45 },
+                  styles.typeButton,
+                  selectedOption.toLowerCase() === option.toLowerCase() &&
+                  styles.typeButtonActive,
                 ]}
+                onPress={() => handleTypeChange(option)}
               >
-                <Ionicons name="wallet-outline" size={20} color="#6c757d" />
                 <Text
-                  style={{
-                    flex: 1,
-                    marginLeft: 8,
-                    fontSize: 16,
-                    color: "#2E5E4E",
-                  }}
+                  style={[
+                    styles.typeButtonText,
+                    selectedOption.toLowerCase() === option.toLowerCase() &&
+                    styles.typeButtonTextActive,
+                  ]}
                 >
-                  Total Balance: RM{" "}
-                  {userSummary.total_balance?.toFixed(2) || "0.00"}
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <FDSCard>
+
+            {/* PAYEE */}
+            <FDSValidatedInput
+              ref={payeeRef}
+              label="Payee / Project"
+              value={payee}
+              onChangeText={setPayee}
+              validate={(v) => v && v.trim().length > 0}
+              errorMessage="Payee is required"
+              icon={<Ionicons name="person-outline" size={18} color={FDSColors.textGray} />}
+            />
+
+            {/* AMOUNT or TOTAL BALANCE */}
+            {selectedOption !== originalSelectedOption ? (
+              <View style={{ marginTop: 12 }}>
+                <FDSLabel>Amount (Fixed when changing type)</FDSLabel>
+                <Text style={{ fontSize: 16, color: "#2E5E4E", marginTop: 4, fontWeight: "600" }}>
+                  RM {amount}
+                </Text>
+                <Text style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                  Amount is fixed when changing transaction type
                 </Text>
               </View>
             ) : (
-              <Animated.View
-                style={[
-                  styles.inputRow,
-                  amountError && styles.inputError,
-                  { transform: [{ translateX: amountShake }] },
-                ]}
-              >
-                <Ionicons name="cash-outline" size={20} color="#6c757d" />
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={amount}
-                  onChangeText={(val) => {
-                    setAmount(val);
-                    setAmountError(false);
-                  }}
-                  placeholder="Amount"
-                  placeholderTextColor={"#c5c5c5ff"}
-                />
-              </Animated.View>
+              <FDSValidatedInput
+                ref={amountRef}
+                label="Amount"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="numeric"
+                validate={(v) => v && !isNaN(v) && parseFloat(v) > 0}
+                errorMessage="Amount must be greater than 0"
+                icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
+              />
             )}
 
-            {/* Date Picker */}
+            {/* DATE */}
+            <FDSLabel>Date</FDSLabel>
             <TouchableOpacity
-              style={[
-                styles.inputRow,
-                dateError && styles.inputError,
-              ]}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: FDSColors.bgLight,
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: FDSColors.border
+              }}
               onPress={() => setShowDatePicker(true)}
             >
-              <Ionicons name="calendar-outline" size={20} color="#6c757d" />
-              <Text style={[styles.input, { color: '#333' }]}>
+              <Ionicons name="calendar-outline" size={18} color={FDSColors.textGray} />
+              <Text style={{ marginLeft: 10 }}>
                 {date.toISOString().split("T")[0]}
               </Text>
             </TouchableOpacity>
@@ -819,29 +789,16 @@ useEffect(() => {
               />
             )}
 
-            {/* Tag Picker */}
-            {selectedOption !== "Income" && (
-              <Animated.View
-                style={[
-                  styles.pickerContainer,
-                  tagError && styles.inputError,
-                  { transform: [{ translateX: tagShake }] },
-                ]}
+            {/* TAG */}
+            {selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && (
+              <FDSValidatedPicker
+                ref={tagRef}
+                label="Tag"
+                value={tag}
+                validate={(v) => !!v}
+                errorMessage="Please select a tag"
+                icon={<Ionicons name="pricetag-outline" size={18} color={FDSColors.textGray} />}
               >
-                <Ionicons
-                  name="pricetag-outline"
-                  size={20}
-                  color="#6c757d"
-                  style={styles.icon}
-                />
-                <TextInput
-                  value={tag}
-                  style={styles.dropdownContent}
-                  placeholder="Select a tag"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  editable={false}
-                  pointerEvents="none"
-                />
                 <Picker
                   selectedValue={tag}
                   onValueChange={(itemValue) => {
@@ -849,379 +806,219 @@ useEffect(() => {
                       navigation.navigate("AddTag", {
                         onTagAdded: async (newTag) => {
                           setTag(newTag);
-                          setTagError(false);
                         },
                       });
                     } else {
                       setTag(itemValue);
-                      setTagError(false);
-                      const selectedTag =
-                        tags.find((d) => d.name === itemValue) ||
-                        DEFAULT_TAGS.find((d) => d.name === itemValue);
-                      setEssentialityLabel(
-                        selectedTag ? selectedTag.essentialityLabel : 0
-                      );
                     }
                   }}
-                  style={[
-                    styles.picker,
-                    {
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      opacity: 0,
-                    },
-                  ]}
-                  dropdownIconColor="#2E5E4E"
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
                 >
                   <Picker.Item label="Select a tag..." value="" />
-                  {tags.map((item) => (
-                    <Picker.Item
-                      key={`user-${item.id}`}
-                      label={item.name}
-                      value={item.name}
-                    />
-                  ))}
-                  {DEFAULT_TAGS.map((item) => (
-                    <Picker.Item
-                      key={`default-${item.name}`}
-                      label={item.name}
-                      value={item.name}
-                    />
+                  {tags.map((t) => (
+                    <Picker.Item key={t.id} label={t.name} value={t.name} />
                   ))}
                   <Picker.Item label="➕ Add new tag" value="__add_new_tag__" />
                 </Picker>
-              </Animated.View>
+              </FDSValidatedPicker>
             )}
 
-            {/* Essentiality Switch */}
-            {tag && selectedOption !== "Income" && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginLeft: 25,
-                  marginBottom: 10,
-                }}
+            {/* PAYMENT TYPE */}
+            {selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && (
+              <FDSValidatedPicker
+                ref={paymentTypeRef}
+                label="Payment Type"
+                value={paymentType}
+                validate={(v) => !!v}
+                errorMessage="Select payment method"
+                icon={<FontAwesome6 name="money-bill-transfer" size={16} color={FDSColors.textGray} />}
               >
-                <Text style={{ marginRight: 10, color: "#555" }}>
-                  Essentiality:
-                </Text>
-                <Switch
-                  value={!!essentialityLabel}
-                  onValueChange={(value) => setEssentialityLabel(value ? 1 : 0)}
-                  trackColor={{ false: "#ccc", true: "#4CAF50" }}
-                  thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"}
-                />
-                <Text style={{ marginLeft: 10, color: "#555" }}>
-                  {essentialityLabel ? "Essential" : "Non-Essential"}
-                </Text>
-              </View>
-            )}
-
-            {/* Payment Type Picker */}
-            {selectedOption !== "Income" && (
-              <Animated.View
-                style={[
-                  styles.pickerContainer,
-                  paymentTypeError && styles.inputError,
-                  { transform: [{ translateX: paymentTypeShake }] },
-                ]}
-              >
-                <FontAwesome6
-                  name="money-bill-transfer"
-                  size={14}
-                  color="#6c757d"
-                  style={styles.icon}
-                />
-                <TextInput
-                  value={paymentType}
-                  style={styles.pickerDisplay}
-                  placeholder="Select payment type"
-                  placeholderTextColor={"#c5c5c5ff"}
-                  editable={false}
-                  pointerEvents="none"
-                />
                 <Picker
                   selectedValue={paymentType}
-                  onValueChange={(val) => {
-                    setPaymentType(val);
-                    setPaymentTypeError(false);
-                  }}
-                  style={styles.hiddenPicker}
+                  onValueChange={(v) => setPaymentType(v)}
+                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
                 >
-                  <Picker.Item label="Select payment type..." value="" />
-                  {paymentTypeData.map((item) => (
-                    <Picker.Item
-                      key={item.id}
-                      label={item.name}
-                      value={item.name}
-                    />
+                  {paymentTypeData.map((p) => (
+                    <Picker.Item key={p.id} label={p.name} value={p.name} />
                   ))}
                 </Picker>
-              </Animated.View>
+              </FDSValidatedPicker>
             )}
 
-            {/* Event Tag Section */}
-            <View style={styles.eventTagContainer}>
-              <Text style={styles.eventTagTitle}>Active Event</Text>
-              {(() => {
-                const todayStr = new Date().toISOString().split("T")[0];
-                const filteredEvents = activeEventTags.filter(
-                  (tagItem) =>
-                    tagItem.startDate <= todayStr &&
-                    (!tagItem.endDate || tagItem.endDate >= todayStr)
-                );
+          </FDSCard>
 
-                if (filteredEvents.length === 0) {
-                  return (
-                    <Text style={styles.noEventText}>No active event</Text>
-                  );
-                }
+          <FDSCard>
 
-                if (filteredEvents.length === 1) {
-                  const tagItem = filteredEvents[0];
-                  return (
-                    <Text style={styles.activeEventText}>
-                      🎉 {tagItem.name} ({tagItem.startDate})
-                    </Text>
-                  );
-                }
-
-                return (
-                  <View style={styles.eventPickerWrapper}>
-                    <Picker
-                      selectedValue={eventTag}
-                      onValueChange={setEventTag}
-                      style={styles.picker}
-                    >
-                      <Picker.Item
-                        label="-- Choose Active Event --"
-                        value=""
-                      />
-                      {filteredEvents.map((tagItem) => (
-                        <Picker.Item
-                          key={tagItem.id}
-                          label={`${tagItem.name} (${tagItem.startDate})`}
-                          value={tagItem.name}
-                        />
-                      ))}
-                    </Picker>
-                  </View>
-                );
-              })()}
-            </View>
-
-            {/* Periodic Switch */}
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchLabel}>Is it periodic?</Text>
+            {/* PERIODIC SWITCH */}
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View>
+                <FDSLabel>Is it periodic?</FDSLabel>
+                <Text style={{ fontSize: 12, color: FDSColors.textGray }}>Recurring payment options</Text>
+              </View>
               <Switch
                 value={isPeriodic}
                 onValueChange={setIsPeriodic}
-                trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                thumbColor={isPeriodic ? "#4CAF50" : "#f4f3f4"}
+                trackColor={{ false: "#ccc", true: FDSColors.primary }}
+                thumbColor="#fff"
               />
             </View>
 
-            {/* Period Type Selection */}
+            {/* PERIODIC TYPE */}
             {isPeriodic && (
-              <View style={styles.periodicPicker}>
-                <View style={styles.selectionBarContainer}>
-                  {periodType.map((type, index) => (
+              <>
+                <FDSLabel>Repeat Type</FDSLabel>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  {periodType.map((p) => (
                     <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.typeButton,
-                        selectedPeriodType === type && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setSelectedPeriodType(type)}
-                    >
-                      <Text
-                        style={[
-                          styles.typeButtonText,
-                          selectedPeriodType === type &&
-                          styles.typeButtonTextActive,
-                        ]}
-                      >
-                        {type}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={styles.label}>Repeat every:</Text>
-                <Picker
-                  selectedValue={periodInterval}
-                  onValueChange={(val) => setPeriodInterval(val)}
-                  style={styles.picker}
-                >
-                  {[1, 2, 3, 6, 12].map((n) => (
-                    <Picker.Item key={n} label={`${n}`} value={n} />
-                  ))}
-                </Picker>
-              </View>
-            )}
-
-            {/* Allocate to Goal Switch */}
-            {selectedOption === "Transaction" && (
-              <View style={styles.switchContainer}>
-                <Text style={styles.switchLabel}>Allocate to Goal?</Text>
-                <Switch
-                  value={allocateToGoal}
-                  onValueChange={(value) => {
-                    setAllocateToGoal(value);
-                    if (!value) {
-                      setSelectedGoal(null);
-                      setSelectedSavingMethod(null);
-                      setSelectedSavingAccount(null);
-                    }
-                  }}
-                  trackColor={{ false: "#ccc", true: "#9cd8b3" }}
-                  thumbColor={allocateToGoal ? "#4CAF50" : "#f4f3f4"}
-                />
-              </View>
-            )}
-
-            {/* Goal Allocation Section */}
-            {selectedOption === "Transaction" && allocateToGoal && (
-              <Animated.View
-                style={[
-                  styles.goalCard,
-                  goalError && styles.inputError,
-                  { transform: [{ translateX: goalShake }] },
-                ]}
-              >
-                <Text style={styles.goalTitle}>Allocate Full Amount to Goal</Text>
-
-                {/* GOAL LIST */}
-                <View style={styles.goalList}>
-                  {goals.length > 0 ? (
-                    goals.map((goal) => (
-                      <TouchableOpacity
-                        key={goal.id}
-                        style={[
-                          styles.goalButton,
-                          selectedGoal === goal.id && styles.goalButtonActive,
-                        ]}
-                        onPress={() => {
-                          setSelectedGoal(goal.id);
-                          setGoalError(false);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.goalButtonText,
-                            selectedGoal === goal.id && styles.goalButtonTextActive,
-                          ]}
-                        >
-                          {goal.goalName}
-                        </Text>
-                        <Text style={{ marginTop: 4, color: "#666", fontSize: 12 }}>
-                          Target: RM {(goal.targetAmount || 0).toFixed(2)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <Text style={styles.noGoalsText}>No goals found.</Text>
-                  )}
-                </View>
-
-                {/* Saving Method */}
-                <Text style={styles.subLabel}>Select Saving Method:</Text>
-                <View style={styles.methodList}>
-                  {savingMethods.map((method) => (
-                    <TouchableOpacity
-                      key={method.id}
-                      style={[
-                        styles.methodButton,
-                        selectedSavingMethod?.id === method.id && styles.methodButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedSavingMethod(method);
-                        setSelectedSavingAccount(null);
-                        setSavingMethodError(false);
+                      key={p}
+                      style={{
+                        paddingVertical: 8,
+                        paddingHorizontal: 12,
+                        borderRadius: 8,
+                        backgroundColor: selectedPeriodType === p ? FDSColors.primary : FDSColors.bgLight
                       }}
+                      onPress={() => setSelectedPeriodType(p)}
                     >
-                      <Text style={styles.methodIcon}>{method.icon_name || "🏦"}</Text>
-                      <View style={styles.methodInfo}>
-                        <Text style={styles.methodName}>{method.method_name}</Text>
-                        <Text style={styles.methodDetails}>
-                          Return: {method.expected_return}% • Risk:
-                          {"★".repeat(method.risk_level || 1)}
-                        </Text>
-                      </View>
+                      <Text style={{ color: selectedPeriodType === p ? "#fff" : FDSColors.textDark }}>{p}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                {/* Saving Account */}
-                {selectedSavingMethod && (
-                  <>
-                    <Text style={styles.subLabel}>Select Account:</Text>
-                    <View style={styles.accountSection}>
-                      {savingAccounts
-                        .filter((acc) => acc.method_id === selectedSavingMethod.id)
-                        .map((acc) => (
+                {/* INTERVAL */}
+                <FDSValidatedPicker
+                  label="Repeat Every"
+                  value={periodInterval}
+                  validate={(v) => v > 0}
+                >
+                  <Picker
+                    selectedValue={periodInterval}
+                    onValueChange={(v) => setPeriodInterval(v)}
+                    style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                  >
+                    {[1, 2, 3, 6, 12].map((n) => (
+                      <Picker.Item key={n} label={`${n}`} value={n} />
+                    ))}
+                  </Picker>
+                </FDSValidatedPicker>
+              </>
+            )}
+
+            {/* ALLOCATE TO GOAL SWITCH */}
+            {selectedOption === "Transaction" && (
+              <View style={[styles.rowSpace, { marginTop: 12 }]}>
+                <View>
+                  <FDSLabel>Allocate to Goal?</FDSLabel>
+                  <Text style={styles.hintSmall}>Use this to allocate amounts into saving goals</Text>
+                </View>
+                <Switch value={allocateToGoal} onValueChange={setAllocateToGoal} trackColor={{ false: "#ccc", true: "#9cd8b3" }} thumbColor={allocateToGoal ? "#fff" : "#f4f3f4"} />
+              </View>
+            )}
+
+          </FDSCard>
+          {selectedOption === "Transaction" && allocateToGoal && (
+            <>
+              {/* Goal list card */}
+              <FDSCard>
+                <FDSValidatedBlock
+                  ref={goalRef}
+                  label="Select Goal"
+                  validate={() => {
+                    const goalObj = goals.find(g => g.id === selectedGoal);
+                    return !!goalObj && !isGoalOverdue(goalObj);
+                  }}
+                  errorMessage="Please select a valid (non-overdue) goal"
+                >
+                  <View style={styles.goalList}>
+                    {goals.length > 0 ? (
+                      goals.map((g) => {
+                        const overdue = isGoalOverdue(g);
+
+                        return (
                           <TouchableOpacity
-                            key={acc.id}
+                            key={g.id}
                             style={[
-                              styles.accountButton,
-                              selectedSavingAccount?.id === acc.id &&
-                              styles.accountButtonActive,
+                              styles.goalItem,
+                              selectedGoal === g.id && !overdue && styles.goalItemActive,
+                              overdue && { opacity: 0.4 }
                             ]}
                             onPress={() => {
-                              setSelectedSavingAccount(acc);
-                              setSavingAccountError(false);
+                              if (overdue) {
+                                // This is a business rule alert, not validation
+                                Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
+                                return;
+                              }
+                              setSelectedGoal(g.id);
                             }}
                           >
-                            <Text style={styles.accountName}>
-                              {acc.institution_name} - {acc.account_name}
-                            </Text>
-                            <Text style={styles.accountBalance}>
-                              Balance: RM {acc.current_balance?.toFixed(2) || "0.00"}
-                            </Text>
-                            <Text style={styles.accountRate}>
-                              Rate: {acc.interest_rate || 0}%
-                            </Text>
+                            <Text style={styles.goalName}>{g.goalName}</Text>
+                            <Text style={styles.goalSmall}>RM {(g.targetAmount || 0).toFixed(2)}</Text>
                           </TouchableOpacity>
-                        ))}
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.hint}>No goals found. Add one in Savings Planner.</Text>
+                    )}
 
-                      <TouchableOpacity
-                        style={styles.addAccountButton}
-                        onPress={() => setShowSavingAccountModal(true)}
-                      >
-                        <Ionicons
-                          name="add-circle-outline"
-                          size={20}
-                          color="#8AD0AB"
-                        />
-                        <Text style={styles.addAccountText}>Add New Account</Text>
+                  </View>
+                </FDSValidatedBlock>
+              </FDSCard>
+
+              {/* Saving method & account selection */}
+              <FDSCard>
+                <FDSValidatedBlock
+                  ref={savingMethodRef}
+                  label="Select Saving Method"
+                  validate={() => !!selectedSavingMethod}
+                  errorMessage="Please select a saving method"
+                >
+                  <View>
+                    {savingMethods.map((m) => (
+                      <TouchableOpacity key={m.id} style={[styles.methodRow, selectedSavingMethod?.id === m.id && styles.methodRowActive]} onPress={() => { setSelectedSavingMethod(m); setSelectedSavingAccount(null); }}>
+                        <Text style={styles.methodIcon}>{m.icon_name}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.methodTitle}>{m.method_name}</Text>
+                          <Text style={styles.methodSub}>Return: {m.expected_return}% • Risk: {"⭐".repeat(m.risk_level)}</Text>
+                        </View>
                       </TouchableOpacity>
-                    </View>
-                  </>
+                    ))}
+                  </View>
+                </FDSValidatedBlock>
+
+                {selectedSavingMethod && (
+                  <FDSValidatedBlock
+                    ref={savingAccountRef}
+                    label="Select Account"
+                    validate={() => !!selectedSavingAccount}
+                    errorMessage="Please select a saving account"
+                  >
+                    {savingAccounts.filter(a => a.method_id === selectedSavingMethod.id).map((acc) => (
+                      <TouchableOpacity key={acc.id} style={[styles.accountRow, selectedSavingAccount?.id === acc.id && styles.accountRowActive]} onPress={() => setSelectedSavingAccount(acc)}>
+                        <Text style={styles.accountName}>{acc.institution_name} - {acc.account_name}</Text>
+                        <Text style={styles.accountBal}>Balance: RM {acc.current_balance.toFixed(2)}</Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity style={styles.addAccountBtn} onPress={() => setShowAccountModal(true)}>
+                      <Ionicons name="add-circle-outline" size={18} color={FDSColors.primary} />
+                      <Text style={styles.addAccountText}>Add New Account</Text>
+                    </TouchableOpacity>
+                  </FDSValidatedBlock>
                 )}
-
-                <Text style={{ marginTop: 12, color: "#666", fontSize: 13 }}>
-                  This will allocate the full amount (RM {parseFloat(amount || 0).toFixed(2)})
-                  to the selected goal and saving account.
-                </Text>
-              </Animated.View>
-            )}
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
-                <Ionicons name="trash-outline" size={18} color="#fff" />
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.saveButton} onPress={onUpdate}>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.saveButtonText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
+              </FDSCard>
+            </>
+          )}
+          <View style={{ paddingHorizontal: 16 }}>
+            <FDSButton
+              title="Save Changes"
+              onPress={onUpdate}
+              icon="save-outline"
+            />
+            <FDSButton
+              title="Delete"
+              onPress={onDelete}
+              mode="danger"
+              icon="trash-outline"
+            />
           </View>
         </ScrollView>
       </KeyboardAwareScrollView>
@@ -1253,50 +1050,34 @@ const styles = StyleSheet.create({
   scrollContainer: {
     padding: 20,
   },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 20,
-  },
   selectionBarContainer: {
     flexDirection: "row",
     backgroundColor: "#8CCFB1",
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 20,
+    borderRadius: 10,
+    padding: 6,
   },
   typeButton: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
     alignItems: "center",
+    borderRadius: 8,
   },
   typeButtonActive: {
     backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   typeButtonText: {
     color: "#2E5E4E",
-    fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   typeButtonTextActive: {
     color: "#2E5E4E",
-    fontWeight: "bold",
+    fontWeight: "800",
   },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    height: 45,
-  },
+
   input: {
     flex: 1,
     marginHorizontal: 8,
@@ -1307,203 +1088,7 @@ const styles = StyleSheet.create({
     borderColor: "#ff6b6b",
     borderWidth: 2,
   },
-  pickerContainer: {
-    flexDirection: "row",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginBottom: 12,
-    height: 45,
-    alignItems: "center",
-  },
-  icon: {
-    marginRight: 8,
-  },
-  pickerDisplay: {
-    flex: 1,
-    color: "#6c757d",
-    fontSize: 16,
-  },
-  dropdownContent: {
-    flex: 1,
-    color: "#6c757d",
-    fontSize: 16,
-  },
-  hiddenPicker: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0,
-  },
-  picker: {
-    width: "100%",
-  },
-  switchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 15,
-    paddingHorizontal: 10,
-  },
-  switchLabel: {
-    marginRight: 10,
-    color: "#555",
-    fontSize: 16,
-  },
-  eventTagContainer: {
-    backgroundColor: "#F6FBF7",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#d6e8de",
-  },
-  eventTagTitle: {
-    fontWeight: "600",
-    color: "#2E5E4E",
-    fontSize: 15,
-    marginBottom: 8,
-  },
-  noEventText: {
-    color: "#555",
-    fontStyle: "italic",
-  },
-  activeEventText: {
-    color: "#2E5E4E",
-  },
-  eventPickerWrapper: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#8AD0AB",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  periodicPicker: {
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  goalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 15,
-    marginTop: 15,
-    marginBottom: 25,
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  goalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#2E5E4E",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  goalList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  goalButton: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    marginVertical: 6,
-    alignItems: "center",
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  goalButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  goalButtonText: {
-    color: "#2E5E4E",
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  goalButtonTextActive: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  noGoalsText: {
-    color: "#777",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  subLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2E5E4E",
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  methodList: {
-    marginTop: 5,
-    marginBottom: 10,
-  },
-  methodButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "#f5f5f5",
-    marginBottom: 8,
-  },
-  methodButtonActive: {
-    backgroundColor: "#9cd8b3",
-  },
-  methodIcon: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  methodInfo: {
-    flex: 1,
-  },
-  methodName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  methodDetails: {
-    fontSize: 12,
-    color: "#555",
-  },
-  accountSection: {
-    marginTop: 8,
-  },
-  accountButton: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  accountButtonActive: {
-    backgroundColor: "#8AD0AB",
-  },
-  accountName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#2E5E4E",
-  },
-  accountBalance: {
-    fontSize: 12,
-    color: "#555",
-  },
-  accountRate: {
-    fontSize: 12,
-    color: "#4CAF50",
-    marginTop: 2,
-  },
+
   addAccountButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1514,41 +1099,25 @@ const styles = StyleSheet.create({
     color: "#2E5E4E",
     fontWeight: "600",
   },
-  actionButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-  },
-  deleteButton: {
-    flexDirection: "row",
-    backgroundColor: "#E53935",
-    padding: 15,
-    borderRadius: 10,
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8,
-  },
-  saveButton: {
-    flexDirection: "row",
-    backgroundColor: "#2E5E4E",
-    padding: 15,
-    borderRadius: 10,
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  deleteButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 16,
-  },
-  saveButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 16,
-  },
+
+  /* goal / method styles */
+  rowSpace: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  hintSmall: { color: "#6b7280", fontSize: 12 },
+  goalList: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
+  goalItem: { backgroundColor: "#F5F9F7", padding: 10, borderRadius: 10, margin: 6, borderWidth: 1, borderColor: "#CDE9D6" },
+  goalItemActive: { backgroundColor: "#9CD8B3", borderColor: "#7BC49E" },
+  goalName: { color: "#2E5E4E", fontWeight: "600" },
+  goalSmall: { color: "#555", fontSize: 12 },
+  methodRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#f3f6fa", marginBottom: 8 },
+  methodRowActive: { backgroundColor: "#9cd8b3" },
+  methodIcon: { fontSize: 20, marginRight: 12 },
+  methodTitle: { fontSize: 15, fontWeight: "600", color: "#2E5E4E" },
+  methodSub: { fontSize: 12, color: "#555" },
+  accountRow: { backgroundColor: "#f3f6fa", padding: 12, borderRadius: 10, marginTop: 8 },
+  accountRowActive: { backgroundColor: "#8ad0ab" },
+  accountName: { fontWeight: "600", color: "#2E5E4E" },
+  accountBal: { color: "#555", fontSize: 12 },
+  addAccountBtn: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  hint: { color: "#6b7280", fontStyle: "italic", marginTop: 6 },
+
 });

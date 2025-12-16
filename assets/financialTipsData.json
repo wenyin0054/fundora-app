@@ -106,21 +106,104 @@
       "Beginner": "📊 The gap between green and red lines shows how inflation reduces your purchasing power over time.",
       "Experienced User": "📊 The divergence between nominal and real values illustrates inflation's erosive effect on wealth."
     },
+    "projectionChartExplanation": {
+      "Beginner": "📊 This chart compares projected income, expenses, and savings over time. A widening gap between income and expenses indicates improving financial health, while a narrowing gap suggests rising financial pressure.",
+      "Experienced User": "📊 This chart compares projected income, expenses, and savings over time. A widening gap between income and expenses indicates improving financial health, while a narrowing gap suggests rising financial pressure."
+    },
     "incomeGrowthRate": {
       "Beginner": "📈 Income Growth Rate shows how much your income increases each year. \nFor example, 1% is slow growth, 3% is normal, 5% is faster growth, and 8% is very fast growth. You can also enter your own rate if you prefer.",
       "Experienced User": "📈 Income Growth Rate represents your expected annual income increase. \n🌱Typical growth ranges from 1–3%, while 5–8% indicates higher career or business expansion. Adjust this value to reflect your earning trajectory."
     }
   },
 
+  "expenseAnalysis": {
+    "monthlySpending": {
+      "Beginner": "📊 Monthly spending overview shows your total expenses for each month. Look for patterns - are your expenses increasing over time? This helps you understand your spending habits and identify areas for improvement.",
+      "Experienced User": "📊 Monthly spending analysis tracks expense trends across time periods. Monitor for seasonal patterns, inflation impact, and correlation with income changes. Use this data to optimize budgeting and identify cost-saving opportunities."
+    },
+    "incomeVsExpenses": {
+      "Beginner": "⚖️ Income vs Expenses diagram compares what you earn against what you spend. Green Line show income, red Line show expenses. When income line are taller than expense line, you're saving money - that's good! When expense line are taller, you're spending more than you earn.",
+      "Experienced User": "⚖️ Income vs Expenses analysis evaluates financial health through surplus/deficit patterns. Positive surplus (income > expenses) indicates savings potential, while persistent deficits signal need for spending cuts or income increases. Track the gap ratio for financial stability assessment."
+    },
+    "spendingBreakdown": {
+      "Beginner": "🥧 Spending breakdown shows what percentage of your money goes to different categories like food, transport, or entertainment. The bigger the slice, the more you spend in that area. Use this to see where most of your money goes.",
+      "Experienced User": "🥧 Category breakdown analysis reveals spending allocation patterns. Essential vs non-essential ratios help optimize budget distribution. Look for categories exceeding 30-40% of total spending as potential optimization targets."
+    },
+    "trendAnalysis": {
+      "Beginner": "📈 Trend lines show how your spending changes over time. An upward trend means you're spending more, while a downward trend means you're spending less. Try to keep your spending trend stable or decreasing for better financial health.",
+      "Experienced User": "📈 Trend analysis identifies spending velocity and volatility. Calculate month-over-month growth rates and identify inflection points. Sustainable trends show 0-3% monthly increases aligned with income growth, while >5% signals potential financial stress."
+    },
+    "financialHealth": {
+      "Beginner": "❤️ Financial health score evaluates your overall money management. It considers your savings rate, spending consistency, and income vs expense balance. Scores above 70 are good, while scores below 50 might need attention.",
+      "Experienced User": "❤️ Comprehensive financial health assessment incorporating savings rate (15-20% optimal), expense volatility, and surplus consistency. Scores integrate multiple KPIs: emergency fund coverage, debt ratios, and long-term sustainability metrics."
+    },
+    "savingsRate": {
+      "Beginner": "💰 Savings rate shows what percentage of your income you save each month. Aim for at least 10-20% savings rate. For example, if you earn $3000 and save $300, your savings rate is 10%.",
+      "Experienced User": "💰 Savings rate = (Income - Expenses) ÷ Income × 100. Target 15-25% for optimal financial health. Track this metric monthly and correlate with life changes, income adjustments, and spending optimization efforts."
+    },
+    "categoryInsights": {
+      "Beginner": "🔍 Category insights highlight your biggest spending areas and suggest ways to save. For example, if transport costs 30% of your budget, you might consider cheaper alternatives like public transport or carpooling.",
+      "Experienced User": "🔍 Category analysis provides actionable insights based on spending patterns. Identify high-impact optimization opportunities by focusing on categories with largest budgets and highest price elasticity. Implement 80/20 rule for maximum savings impact."
+    },
+    "comparisonTools": {
+      "Beginner": "📊 Compare your spending across different months or years to see how your habits change. This helps you understand if you're improving or if certain months are always more expensive.",
+      "Experienced User": "📊 Comparative analysis tools enable year-over-year and period-over-period evaluations. Identify seasonal spending patterns, lifecycle changes, and effectiveness of budgeting interventions. Use statistical significance testing for meaningful trend identification."
+    },
+    "budgetRecommendations": {
+      "Beginner": "💡 Budget recommendations are personalized suggestions based on your spending patterns. They might suggest cutting back on dining out if that's taking too much of your budget, or increasing savings if you're not saving enough.",
+      "Experienced User": "💡 AI-driven budget optimization recommendations based on spending behavior analysis. Suggestions prioritize high-impact changes using behavioral economics principles, focusing on categories with proven savings potential and sustainable habit formation."
+    },
+    "default": {
+      "Beginner": "💡 Use this analysis to understand your spending patterns and make better financial decisions. Regular review helps you stay on track with your money goals!",
+      "Experienced User": "📊 Leverage comprehensive expense analytics for strategic financial planning. Combine trend analysis with predictive modeling to optimize resource allocation and maximize long-term wealth accumulation."
+    }
+  },
+
   "billTracker": {
     "reminders": {
-      "Beginner": "🔔 Set up payment reminders to avoid late fees and protect your credit score.",
-      "Experienced User": "🔔 Pro tip: Schedule bill payments 2-3 days before due dates to account for processing time."
+      "Beginner": "🔔 This section shows automatic bill reminders for upcoming or overdue payments. Delete reminders after settling bills to keep your list clean.",
+      "Experienced User": "🔔 Automatic notifications appear for bills due within 3 days or already overdue. Use this list to track urgent payments and remove completed ones."
+    },
+    "autoAssignCommitments": {
+      "Beginner": "🔄 Auto-fill your monthly debt commitments from bills marked as recurring payments (loans, credit cards, etc.).",
+      "Experienced User": "🔄 Automatically calculates total monthly commitments from bills flagged as debt obligations in your bill list."
+    },
+    "seeAllBills": {
+      "Beginner": "📋 View your complete bill list with all payment details and due dates.",
+      "Experienced User": "📋 Access full bill management with editing, deletion, and detailed payment tracking options."
+    },
+    "billStatuses": {
+      "Beginner": "🏷️ Green = Upcoming (due in >3 days), Yellow = Due Soon (due within 3 days), Red = Overdue (past due date).",
+      "Experienced User": "🏷️ Status indicators: Green (>3 days), Yellow (1-3 days), Red (overdue). Tap bills to view details and manage payments."
+    },
+    "emptyReminders": {
+      "Beginner": "✅ No urgent reminders! All your bills are up to date or you've already addressed them.",
+      "Experienced User": "✅ Clean reminder slate. All critical payments are settled or scheduled appropriately."
+    },
+    "emptyBills": {
+      "Beginner": "📝 No upcoming bills to show. Add your regular payments to get automatic reminders.",
+      "Experienced User": "📝 Bill list is empty. Add recurring payments to enable automatic tracking and notifications."
     },
     "dsrCalculator": {
-  "Beginner": "💡 Your DSR (Debt Service Ratio) shows whether you’re eligible to borrow. It compares your monthly commitments to your monthly gross income.\n 💡 Gross income = income before deductions;Commitments = loans, installments, credit card minimums. A lower DSR means better loan approval chances.",
-  "Experienced User": "💡 DSR determines loan eligibility by dividing total monthly commitments by gross monthly income. Gross income includes salary before EPF/SOCSO/tax; commitments include all recurring debts. Banks prefer DSR < 40% for general loans and < 30% for safer profiles."
-}
+      "Beginner": "💡 Your DSR (Debt Service Ratio) shows whether you're eligible to borrow. It compares your monthly commitments to your monthly gross income.",
+      "Experienced User": "💡 DSR determines loan eligibility by dividing total monthly commitments by gross monthly income. Gross income includes salary before EPF/SOCSO/tax; commitments include all recurring debts. Banks prefer DSR < 40% for general loans and < 30% for safer profiles.",
+      "grossIncome": {
+        "Beginner": "💰 Enter your monthly gross income before any deductions like EPF, SOCSO, or taxes. This is your total earnings before expenses.",
+        "Experienced User": "💰 Gross monthly income includes basic salary, allowances, commissions, and overtime before statutory deductions. Use your payslip as reference."
+      },
+      "monthlyCommitments": {
+        "Beginner": "📊 Include all your monthly debt payments: loans, credit card minimums, hire purchase installments, and other recurring financial obligations.",
+        "Experienced User": "📊 Sum of all monthly debt servicing: housing loans, car loans, personal loans, credit card minimum payments, and other installment commitments."
+      },
+      "dsrRatio": {
+        "Beginner": "📈 Your DSR percentage. Lower than 40% is generally good for loan approval. Below 30% gives you better borrowing power.",
+        "Experienced User": "📈 DSR = (Total Monthly Commitments ÷ Gross Monthly Income) × 100. Bank thresholds: <30% excellent, 30-40% good, 40-50% moderate, >50% high risk."
+      },
+      "eligibilityStatus": {
+        "Beginner": "✅ Green = Good for borrowing. 🟡 Yellow = Careful consideration needed. 🔴 Red = High risk, may face rejection.",
+        "Experienced User": "✅ Eligibility indicators: Green (<40% DSR), Yellow (40-50%), Red (>50%). Consider debt consolidation or income increase strategies for red status."
+      }
+    }
   },
   "goalProjection": {
     "progressBar": {

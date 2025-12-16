@@ -59,7 +59,7 @@ export default function ExpensesOrganizer({ navigation }) {
     setTypeFilter(filterType);
   };
 
-  // ------------ FINAL FILTER ENGINE (唯一入口) ------------
+  // ------------ FINAL FILTER ENGINE (single entry point) ------------
   const filteredExpenses = expenses.filter((item) => {
     // 1️⃣ Essential filter
     if (essentialFilter === "Essential" && item.essentialityLabel !== 1) return false;
@@ -206,7 +206,7 @@ export default function ExpensesOrganizer({ navigation }) {
 
           {/* TYPE FILTER */}
           <View style={styles.filterRow}>
-            {["All", "Income", "Expenses", "Transaction"].map((t) => (
+            {["All", "Income", "Expense", "Transaction"].map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.filterButton, typeFilter === t && styles.filterButtonActive]}
@@ -230,7 +230,7 @@ export default function ExpensesOrganizer({ navigation }) {
                 </Text>
               }
               renderItem={({ item }) => {
-                const isExpense = item.typeLabel.toLowerCase() === "expenses";
+                const isExpense = item.typeLabel.toLowerCase() === "expense";
                 const isIncome = item.typeLabel.toLowerCase() === "income";
                 const color = isExpense ? "#E53935" : isIncome ? "#4CAF50" : "#2196F3";
                 const sign = isExpense ? "-RM" : isIncome ? "+RM" : "RM";

@@ -1,16 +1,51 @@
 import { DeviceEventEmitter } from "react-native";
 import { Alert } from "react-native";
-import { openDatabaseSync } from "expo-sqlite";
+import * as SQLite from "expo-sqlite";
 
-const db = openDatabaseSync('fundora.db', { location: 'default' });
+let dbInstance = null;
+let isInitialized = false;
+
+// Initialize database connection once and reuse
+export const initDatabaseConnection = async () => {
+  console.log("🔄 initDatabaseConnection called, dbInstance exists:", !!dbInstance);
+  if (dbInstance) {
+    console.log("✅ Returning existing dbInstance");
+    return dbInstance;
+  }
+
+  try {
+    console.log("🔄 Initializing database connection...");
+    dbInstance = await SQLite.openDatabaseAsync('fundora.db');
+    console.log("✅ Database connection established, dbInstance:", !!dbInstance);
+    return dbInstance;
+  } catch (error) {
+    console.error("❌ Failed to initialize database:", error);
+    dbInstance = null;
+    throw error;
+  }
+};
+
+// Get database instance with error checking
+const getDatabase = async () => {
+  if (!dbInstance) {
+    throw new Error("Database not initialized - call initDatabaseConnection() first");
+  }
+  return dbInstance;
+};
 
 // ------------------- DATABASE INITIALIZATION -------------------
 export const initDB = async () => {
+  if (isInitialized) {
+    console.log("⚙️ Database already initialized, skipping...");
+    return;
+  }
+
   try {
     console.log("⚙️ Initializing Fundora database...");
+    const database = await initDatabaseConnection();
 
     // 👤 Users Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS users (
         userId TEXT PRIMARY KEY,
         username TEXT UNIQUE,
@@ -20,7 +55,7 @@ export const initDB = async () => {
     `);
 
     // 🧾 User Summary Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS user_summary (
         userId TEXT PRIMARY KEY,
         total_income REAL DEFAULT 0,
@@ -31,7 +66,7 @@ export const initDB = async () => {
     `);
 
     // 🧾 Expenses Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -52,7 +87,7 @@ export const initDB = async () => {
     `);
 
     // 🏦 Goals Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS goals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -66,7 +101,7 @@ export const initDB = async () => {
     `);
 
     // 🏷️ Tags Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -77,7 +112,7 @@ export const initDB = async () => {
     `);
 
     // 🏷️ Event Tags Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS eventTags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -87,7 +122,7 @@ export const initDB = async () => {
       );
     `);
 
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS activeEventTags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -100,7 +135,7 @@ export const initDB = async () => {
     `);
 
     // 🧾 Bills Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS bills (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -119,7 +154,7 @@ export const initDB = async () => {
     `);
 
     // Reminders Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         billId INTEGER,
@@ -134,7 +169,7 @@ export const initDB = async () => {
     `);
 
     // Predictor Cache
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS predictor_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
@@ -150,7 +185,7 @@ export const initDB = async () => {
     `);
 
     // Saving Methods
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS saving_methods (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -168,7 +203,7 @@ export const initDB = async () => {
     `);
 
     // Saving Accounts Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS saving_accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -186,7 +221,7 @@ export const initDB = async () => {
     `);
 
     // Goal Fund Allocations Table
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS goal_fund_allocations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -209,7 +244,7 @@ export const initDB = async () => {
     `);
 
     // Withdrawal Records
-    await db.execAsync(`
+    await database.execAsync(`
       CREATE TABLE IF NOT EXISTS withdrawal_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         userId TEXT,
@@ -229,16 +264,33 @@ export const initDB = async () => {
       );
     `);
 
+    // ------------------- Income Snapshots Table -------------------
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS income_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT,
+        month TEXT,
+        income_amount REAL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(userId, month),
+        FOREIGN KEY (userId) REFERENCES users(userId)
+      );
+    `);
+
+
     console.log("✅ All database tables are ready with user isolation");
+    isInitialized = true;
   } catch (error) {
     console.error("❌ initDB error:", error);
+    throw error;
   }
 };
 
 // ------------------- USER MANAGEMENT -------------------
 export const createUser = async (userId, username = null, email = null) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `INSERT OR IGNORE INTO users (userId, username, email) VALUES (?, ?, ?)`,
       [userId, username, email]
     );
@@ -250,7 +302,8 @@ export const createUser = async (userId, username = null, email = null) => {
 
 // ------------------- USER SUMMARY TABLE -------------------
 export const createUserSummary = async (userId) => {
-  await db.runAsync(
+  const database = await getDatabase();
+  await database.runAsync(
     `INSERT OR IGNORE INTO user_summary (userId, total_income, total_expense, total_balance)
      VALUES (?, 0, 0, 0)`,
     [userId]
@@ -258,7 +311,8 @@ export const createUserSummary = async (userId) => {
 };
 
 export const getUserSummary = async (userId) => {
-  const result = await db.getFirstAsync(
+  const database = await getDatabase();
+  const result = await database.getFirstAsync(
     `SELECT total_income, total_expense, total_balance FROM user_summary WHERE userId = ?`,
     [userId]
   );
@@ -266,35 +320,43 @@ export const getUserSummary = async (userId) => {
 };
 
 export const updateUserSummary = async (userId, type, amount) => {
-  await createUserSummary(userId);
-  console.log("Updating user summary:", { userId, type, amount });
+  // await createUserSummary(userId);
+  // console.log("Updating user summary:", { userId, type, amount });
 
-  if (type === "income") {
-    await db.runAsync(
-      `UPDATE user_summary 
-       SET total_income = total_income + ?, 
-           total_balance = total_balance + ? 
-       WHERE userId = ?`,
-      [amount, amount, userId]
-    );
-  } else if (type === "expense") {
-    await db.runAsync(
-      `UPDATE user_summary 
-       SET total_expense = total_expense + ?, 
-           total_balance = total_balance - ? 
-       WHERE userId = ?`,
-      [amount, amount, userId]
-    );
-  }
+  // const database = await getDatabase();
+  // if (type === "income") {
+  //   await database.runAsync(
+  //     `UPDATE user_summary
+  //      SET total_income = total_income + ?,
+  //          total_balance = total_balance + ?
+  //      WHERE userId = ?`,
+  //     [amount, amount, userId]
+  //   );
+  // } else if (type === "expense") {
+  //   await database.runAsync(
+  //     `UPDATE user_summary
+  //      SET total_expense = total_expense + ?,
+  //          total_balance = total_balance - ?
+  //      WHERE userId = ?`,
+  //     [amount, amount, userId]
+  //   );
+  // }
 
-  const summary = await getUserSummary(userId);
-  console.log("📊 Updated user summary:", summary);
+  // const summary = await getUserSummary(userId);
+  // console.log("📊 Updated user summary:", summary);
+
+  throw new Error(
+    "❌ updateUserSummary() is deprecated. Use updateUserSummaryOnAdd/Edit/Delete only."
+  );
+
+
 };
 
 export const resetUserSummary = async (userId) => {
-  await db.runAsync(
-    `UPDATE user_summary 
-     SET total_income = 0, total_expense = 0, total_balance = 0 
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE user_summary
+     SET total_income = 0, total_expense = 0, total_balance = 0
      WHERE userId = ?`,
     [userId]
   );
@@ -321,7 +383,8 @@ export const updateUserSummaryOnAdd = async (userId, type, amount) => {
       newBalance = currentBalance + amountNum;
     }
 
-    const results = await db.runAsync(
+    const database = await getDatabase();
+    const results = await database.runAsync(
       `UPDATE user_summary SET total_expense = ?, total_income = ?, total_balance = ? WHERE userId = ?`,
       [newExpense, newIncome, newBalance, userId]
     );
@@ -334,41 +397,39 @@ export const updateUserSummaryOnAdd = async (userId, type, amount) => {
   }
 };
 
-export const updateUserSummaryOnEdit = async (userId, type, oldAmount, newAmount) => {
+export const updateUserSummaryOnEdit = async (
+  userId,
+  oldType,
+  oldAmount,
+  newType,
+  newAmount
+) => {
   try {
-    const oldAmountNum = parseFloat(oldAmount);
-    const newAmountNum = parseFloat(newAmount);
-    const diff = newAmountNum - oldAmountNum;
+    const oldA = Number(oldAmount);
+    const newA = Number(newAmount);
 
-    const summary = await getUserSummary(userId);
-    const currentExpense = summary.total_expense || 0;
-    const currentIncome = summary.total_income || 0;
-    const currentBalance = summary.total_balance || 0;
-
-    let newExpense = currentExpense;
-    let newIncome = currentIncome;
-    let newBalance = currentBalance;
-
-    if (type === "expense") {
-      newExpense = currentExpense + diff;
-      newBalance = currentBalance - diff;
-    } else if (type === "income") {
-      newIncome = currentIncome + diff;
-      newBalance = currentBalance + diff;
+    if (!Number.isFinite(oldA) || !Number.isFinite(newA)) {
+      console.warn("⚠️ Invalid amount in updateUserSummaryOnEdit", {
+        oldAmount,
+        newAmount,
+      });
+      return;
     }
 
-    const results = await db.runAsync(
-      `UPDATE user_summary SET total_expense = ?, total_income = ?, total_balance = ? WHERE userId = ?`,
-      [newExpense, newIncome, newBalance, userId]
-    );
+    // 1️⃣ Reverse old transaction effect
+    await updateUserSummaryOnDelete(userId, oldType, oldA);
 
-    console.log(`✅ Summary edited - Expense: ${currentExpense}->${newExpense}, Income: ${currentIncome}->${newIncome}, Balance: ${currentBalance}->${newBalance}`);
-    return results;
-  } catch (error) {
-    console.error(`❌ Error editing summary:`, error);
-    throw error;
+    // 2️⃣ Apply new transaction effect
+    await updateUserSummaryOnAdd(userId, newType, newA);
+
+  } catch (err) {
+    console.error("❌ updateUserSummaryOnEdit failed:", err);
+    throw err;
   }
 };
+
+
+
 
 export const updateUserSummaryOnDelete = async (userId, type, amount) => {
   try {
@@ -391,7 +452,8 @@ export const updateUserSummaryOnDelete = async (userId, type, amount) => {
       newBalance = currentBalance - amountNum;
     }
 
-    const results = await db.runAsync(
+    const database = await getDatabase();
+    const results = await database.runAsync(
       `UPDATE user_summary SET total_expense = ?, total_income = ?, total_balance = ? WHERE userId = ?`,
       [newExpense, newIncome, newBalance, userId]
     );
@@ -421,7 +483,8 @@ export const addExpenseLocal = async (
   periodInterval = 0
 ) => {
   try {
-    const result = await db.runAsync(
+    const database = await getDatabase();
+    const result = await database.runAsync(
       `INSERT INTO expenses (
         userId, payee, amount, date, tag, eventTag,
         paymentType, isPeriodic, type, typeLabel,
@@ -461,7 +524,8 @@ export const addExpenseLocal = async (
 // Get all expenses for a specific user
 export const getExpensesLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT * FROM expenses WHERE userId = ? ORDER BY date DESC;`,
       [userId]
     );
@@ -480,7 +544,8 @@ export const getExpensesLocal = async (userId) => {
 };
 export const getTotalExpensesLocal = async (userId) => {
   try {
-    const result = await db.getFirstAsync(
+    const database = await getDatabase();
+    const result = await database.getFirstAsync(
       `SELECT total_expense FROM user_summary WHERE userId = ?`,
       [userId]
     );
@@ -493,15 +558,55 @@ export const getTotalExpensesLocal = async (userId) => {
 };
 
 
-// Delete expense by ID (保持原有功能，但確保只能刪除該用戶的資料)
+// Delete expense by ID (keep original functionality, but ensure only delete the user's data)
 export const deleteExpenseLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM expenses WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM expenses WHERE id = ? AND userId = ?;`, [id, userId]);
     console.log(`🗑️ Expense with ID ${id} deleted for user ${userId}`);
   } catch (error) {
     console.error("❌ deleteExpenseLocal error:", error);
   }
 };
+
+// Delete expense with proper UserSummary handling (single source of truth)
+export const deleteExpenseWithSummary = async (userId, expenseId) => {
+  const database = await getDatabase();
+
+  const expense = await database.getFirstAsync(
+    `SELECT * FROM expenses WHERE id = ? AND userId = ?`,
+    [expenseId, userId]
+  );
+
+  if (!expense) throw new Error("Expense not found");
+
+  // ❗ Allocation / transaction expense summary is handled elsewhere
+  if (expense.goalId) {
+    await database.runAsync(
+      `DELETE FROM expenses WHERE id = ? AND userId = ?`,
+      [expenseId, userId]
+    );
+    return { success: true, summaryUpdated: false };
+  }
+
+
+  // ✅ STEP 1: UPDATE USER SUMMARY (DELETE RULE)
+  await updateUserSummaryOnDelete(
+    userId,
+    expense.typeLabel,
+    expense.amount
+  );
+
+  // ✅ STEP 2: DELETE EXPENSE RECORD
+  await database.runAsync(
+    `DELETE FROM expenses WHERE id = ? AND userId = ?`,
+    [expenseId, userId]
+  );
+
+  return { success: true };
+};
+
+
 
 // Update expense
 export const updateExpenseLocal = async (
@@ -521,7 +626,8 @@ export const updateExpenseLocal = async (
   periodInterval
 ) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `UPDATE expenses
        SET 
          payee = ?, 
@@ -562,33 +668,31 @@ export const updateExpenseLocal = async (
 };
 
 
-export const getExpensesByTypeLabelLocal = async (userId, typeLabel) => {
+export const getPeriodicExpensesLocal = async (userId) => {
   try {
-    if (!db || !db.getAllAsync) {
-      throw new Error("❌ DB is not initialized or missing getAllAsync method");
-    }
-
-    const allowedTypes = ["income", "expenses", "transaction"];
-    if (!allowedTypes.includes(typeLabel)) {
-      throw new Error(`❌ Invalid typeLabel: ${typeLabel}`);
-    }
-
-    const results = await db.getAllAsync(
-      `SELECT * FROM expenses WHERE userId = ? AND typeLabel = ? ORDER BY date DESC`,
-      [userId, typeLabel]
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
+      `SELECT * FROM expenses WHERE userId = ? AND isPeriodic = 1 ORDER BY date DESC;`,
+      [userId]
     );
 
-    console.log(`✅ Fetched ${results.length} rows for typeLabel: ${typeLabel} for user ${userId}`);
-    return results;
-  } catch (error) {
-    console.error("❌ getExpensesByTypeLabelLocal error:", error);
+    return results.map(r => ({
+      ...r,
+      amount: parseFloat(r.amount) || 0,
+      essentialityLabel: Number(r.essentialityLabel),
+      isPeriodic: Number(r.isPeriodic),
+      periodInterval: Number(r.periodInterval) || 1,
+    }));
+  } catch (err) {
+    console.error("❌ getPeriodicExpensesLocal error:", err);
     return [];
   }
 };
 
 export const clearAllExpensesLocal = async (userId) => {
   try {
-    await db.runAsync(`DELETE FROM expenses WHERE userId = ?;`, [userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM expenses WHERE userId = ?;`, [userId]);
     console.log(`🗑️ All expenses cleared for user ${userId}`);
   } catch (error) {
     console.error("❌ clearAllExpensesLocal error:", error);
@@ -599,7 +703,8 @@ export const clearAllExpensesLocal = async (userId) => {
 // 🧮 Get total and essential total expenses for last month for specific user
 export const getLastMonthTotalExpense = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT
         SUM(amount) AS total,
         SUM(CASE WHEN essentialityLabel = 1 THEN amount ELSE 0 END) AS essentialTotal
@@ -620,12 +725,93 @@ export const getLastMonthTotalExpense = async (userId) => {
   }
 };
 
+export const getCurrentMonthlyIncome = async (userId) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync(
+      `SELECT SUM(amount) AS totalIncome
+       FROM expenses
+       WHERE userId = ?
+       AND typeLabel = 'income'
+       AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now');`,
+      [userId]
+    );
+
+    return result?.totalIncome ? parseFloat(result.totalIncome) : 0;
+  } catch (error) {
+    console.error("❌ getCurrentMonthlyIncome error:", error);
+    return 0;
+  }
+};
+
+export const getCurrentMonthlyExpenses = async (userId) => {
+  try {
+    const database = await getDatabase();
+
+    const result = await database.getFirstAsync(
+      `
+      SELECT SUM(amount) AS totalExpenses
+      FROM expenses
+      WHERE userId = ?
+        AND (
+          typeLabel = 'expense'
+          OR (typeLabel = 'transaction' AND goalId IS NULL)
+        )
+        AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now');
+      `,
+      [userId]
+    );
+
+    console.log(
+      "✅ Current monthly expenses for user",
+      userId,
+      ":",
+      result?.totalExpenses
+    );
+
+    return result?.totalExpenses
+      ? parseFloat(result.totalExpenses)
+      : 0;
+  } catch (error) {
+    console.error("❌ getCurrentMonthlyExpenses error:", error);
+    return 0;
+  }
+};
+
+
+export const getExpensesByTypeLabelLocal = async (userId, typeLabel) => {
+  try {
+    const database = await getDatabase();
+    if (!database || !database.getAllAsync) {
+      throw new Error("❌ DB is not initialized or missing getAllAsync method");
+    }
+
+    const allowedTypes = ["income", "expense", "transaction"];
+    if (!allowedTypes.includes(typeLabel)) {
+      throw new Error(`❌ Invalid typeLabel: ${typeLabel}`);
+    }
+
+    const results = await database.getAllAsync(
+      `SELECT * FROM expenses WHERE userId = ? AND typeLabel = ? ORDER BY date DESC`,
+      [userId, typeLabel]
+    );
+
+    console.log(`✅ Fetched ${results.length} rows for typeLabel: ${typeLabel} for user ${userId}`);
+    return results;
+  } catch (error) {
+    console.error("❌ getExpensesByTypeLabelLocal error:", error);
+    return [];
+  }
+};
+
+
 // ------------------- GOALS CRUD -------------------
 export const createGoalTable = async (userId) => {
-  await db.execAsync(`
+  const database = await getDatabase();
+  await database.execAsync(`
     DROP TABLE IF EXISTS goals;
   `);
-  await db.execAsync(`
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS goals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId TEXT,
@@ -640,7 +826,8 @@ export const createGoalTable = async (userId) => {
 };
 
 export const addGoalLocal = async (userId, goalName, description, targetAmount, currentAmount, deadline) => {
-  await db.runAsync(
+  const database = await getDatabase();
+  await database.runAsync(
     `INSERT INTO goals (userId, goalName, description, targetAmount, currentAmount, deadline)
      VALUES (?, ?, ?, ?, ?, ?);`,
     [userId, goalName, description, targetAmount, currentAmount, deadline]
@@ -648,15 +835,27 @@ export const addGoalLocal = async (userId, goalName, description, targetAmount, 
 };
 
 export const getGoalsLocal = async (userId) => {
-  return await db.getAllAsync(
+  const database = await getDatabase();
+  return await database.getAllAsync(
     `SELECT * FROM goals WHERE userId = ? ORDER BY deadline ASC;`,
     [userId]
   );
 };
 
+export const getGoalById = async (userId, goalId) => {
+  const database = await getDatabase();
+  const res = await database.getFirstAsync(
+    `SELECT * FROM goals WHERE userId = ? AND id = ?`,
+    [userId, goalId]
+  );
+  return res;
+};
+
+
 export const updateGoalLocal = async (userId, id, goalName, description, targetAmount, currentAmount, deadline) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `UPDATE goals
        SET goalName = ?, description = ?, targetAmount = ?, currentAmount = ?, deadline = ?
        WHERE id = ? AND userId = ?;`,
@@ -670,7 +869,8 @@ export const updateGoalLocal = async (userId, id, goalName, description, targetA
 
 export const deleteGoalLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM goals WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM goals WHERE id = ? AND userId = ?;`, [id, userId]);
     console.log(`🗑️ Goal ID ${id} deleted for user ${userId}`);
   } catch (error) {
     console.error("❌ deleteGoalLocal error:", error);
@@ -679,7 +879,8 @@ export const deleteGoalLocal = async (userId, id) => {
 
 export const deleteAllGoals = async () => {
   try {
-    await db.runAsync(`DELETE FROM goals;`);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM goals;`);
     console.log("🗑️ All goals deleted successfully");
   } catch (error) {
     console.error("❌ deleteAllGoals error:", error);
@@ -690,9 +891,10 @@ export const deleteAllGoals = async () => {
 // Update currentAmount of a goal by adding amount
 export const updateGoalAmount = async (userId, goalId, amount) => {
   try {
-    await db.runAsync(
-      `UPDATE goals 
-       SET currentAmount = currentAmount + ? 
+    const database = await getDatabase();
+    await database.runAsync(
+      `UPDATE goals
+       SET currentAmount = currentAmount + ?
        WHERE id = ? AND userId = ?`,
       [amount, goalId, userId]
     );
@@ -703,7 +905,8 @@ export const updateGoalAmount = async (userId, goalId, amount) => {
 };
 export const isGoalNameDuplicate = async (userId, goalName) => {
   try {
-    const result = await db.getFirstAsync(
+    const database = await getDatabase();
+    const result = await database.getFirstAsync(
       `SELECT id FROM goals WHERE userId = ? AND LOWER(goalName) = LOWER(?) LIMIT 1`,
       [userId, goalName.trim()]
     );
@@ -717,7 +920,8 @@ export const isGoalNameDuplicate = async (userId, goalName) => {
 
 // ------------------- TAGS CRUD -------------------
 export const createTagTable = async () => {
-  await db.execAsync(`
+  const database = await getDatabase();
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS tags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId TEXT,
@@ -729,7 +933,8 @@ export const createTagTable = async () => {
 };
 
 export const addTagLocal = async (userId, name, essentialityLabel) => {
-  await db.runAsync(
+  const database = await getDatabase();
+  await database.runAsync(
     `INSERT INTO tags (userId, name, essentialityLabel)
      VALUES (?, ?, ?);`,
     [userId, name, essentialityLabel]
@@ -737,7 +942,8 @@ export const addTagLocal = async (userId, name, essentialityLabel) => {
 };
 
 export const getTagsLocal = async (userId) => {
-  return await db.getAllAsync(
+  const database = await getDatabase();
+  return await database.getAllAsync(
     `SELECT * FROM tags WHERE userId = ? ORDER BY name ASC;`,
     [userId]
   );
@@ -745,16 +951,32 @@ export const getTagsLocal = async (userId) => {
 
 export const deleteTagLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM tags WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM tags WHERE id = ? AND userId = ?;`, [id, userId]);
     console.log(`🗑️ Tag ID ${id} deleted for user ${userId}`);
   } catch (error) {
     console.error("❌ deleteTagLocal error:", error);
   }
 };
 
+export const getUserVisibleTags = async (userId) => {
+  const database = await getDatabase();
+  return await database.getAllAsync(
+    `
+    SELECT *
+    FROM tags
+    WHERE userId = ?
+    ORDER BY name ASC
+    `,
+    [userId]
+  );
+};
+
+
 // ------------------- EVENT TAGS CRUD -------------------
 export const createEventTagTable = async () => {
-  await db.execAsync(`
+  const database = await getDatabase();
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS eventTags (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId TEXT,
@@ -768,27 +990,29 @@ export const createEventTagTable = async () => {
 
 export const addEventTagLocal = async (userId, name, description = null) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `INSERT INTO eventTags (userId, name, description)
        VALUES (?, ?, ?);`,
       [userId, name, description]
     );
     console.log(`✅ Event tag '${name}' added for user ${userId}`);
     DeviceEventEmitter.emit("eventTagsUpdated");
-    return true; // ✅ 添加這行
+    return true; // ✅ Add this line
   } catch (error) {
     if (error.message.includes("UNIQUE constraint failed")) {
       console.warn(`⚠️ Event tag '${name}' already exists for user ${userId}`);
-      return false; // ✅ 添加這行
+      return false; // ✅ Add this line
     } else {
       console.error("❌ addEventTagLocal error:", error);
-      return false; // ✅ 添加這行
+      return false; // ✅ Add this line
     }
   }
 };
 export const getEventTagsLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT * FROM eventTags WHERE userId = ? ORDER BY name ASC;`,
       [userId]
     );
@@ -802,7 +1026,8 @@ export const getEventTagsLocal = async (userId) => {
 
 export const updateEventTagLocal = async (userId, id, newName, newDescription) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `UPDATE eventTags
        SET name = ?, description = ?
        WHERE id = ? AND userId = ?;`,
@@ -817,7 +1042,8 @@ export const updateEventTagLocal = async (userId, id, newName, newDescription) =
 
 export const deleteEventTagLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM eventTags WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM eventTags WHERE id = ? AND userId = ?;`, [id, userId]);
     console.log(`🗑️ Event tag ID ${id} deleted for user ${userId}`);
     DeviceEventEmitter.emit("eventTagsUpdated");
   } catch (error) {
@@ -828,7 +1054,8 @@ export const deleteEventTagLocal = async (userId, id) => {
 // ------------------- ACTIVE EVENT TAGS CRUD -------------------
 export const addActiveEventTagLocal = async (userId, eventTagId, startDate, endDate) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `INSERT INTO activeEventTags (userId, eventTagId, startDate, endDate) VALUES (?, ?, ?, ?);`,
       [userId, eventTagId, startDate, endDate]
     );
@@ -840,8 +1067,9 @@ export const addActiveEventTagLocal = async (userId, eventTagId, startDate, endD
 
 export const getActiveEventTagsLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
-      `SELECT aet.id, aet.startDate, aet.endDate, et.name 
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
+      `SELECT aet.id, aet.startDate, aet.endDate, et.name
        FROM activeEventTags aet
        JOIN eventTags et ON aet.eventTagId = et.id
        WHERE aet.userId = ?
@@ -857,7 +1085,8 @@ export const getActiveEventTagsLocal = async (userId) => {
 
 export const deleteActiveEventTagLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM activeEventTags WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM activeEventTags WHERE id = ? AND userId = ?;`, [id, userId]);
     console.log(`🗑️ Active event tag ID ${id} deleted for user ${userId}`);
   } catch (error) {
     console.error("❌ deleteActiveEventTagLocal error:", error);
@@ -866,7 +1095,8 @@ export const deleteActiveEventTagLocal = async (userId, id) => {
 
 export const clearAllActiveEventTagsLocal = async (userId) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `DELETE FROM activeEventTags WHERE userId = ?;`,
       [userId]
     );
@@ -889,8 +1119,9 @@ export const addBillLocal = async ({
   periodInterval = 0,
 }) => {
   try {
-    await db.runAsync(
-      `INSERT INTO bills 
+    const database = await getDatabase();
+    await database.runAsync(
+      `INSERT INTO bills
         (userId, billName, category, amount, dueDate, isAutoGenerated, isCommitment, periodType, periodInterval)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
@@ -914,7 +1145,8 @@ export const addBillLocal = async ({
 
 export const getBillsLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT * FROM bills WHERE userId = ? ORDER BY dueDate ASC;`,
       [userId]
     );
@@ -935,7 +1167,8 @@ export const getBillsLocal = async (userId) => {
 
 export const getPeriodicBillsLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT * FROM bills WHERE userId = ? AND isAutoGenerated = 1 ORDER BY dueDate ASC;`,
       [userId]
     );
@@ -957,7 +1190,8 @@ export const getPeriodicBillsLocal = async (userId) => {
 
 export const getAutoGeneratedBillsLocal = async (userId) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT * FROM bills WHERE userId = ? AND isAutoGenerated = 1 ORDER BY dueDate ASC;`,
       [userId]
     );
@@ -978,6 +1212,7 @@ export const getAutoGeneratedBillsLocal = async (userId) => {
 
 export const updateBillLocal = async (userId, id, fields = {}) => {
   try {
+    const database = await getDatabase();
     const setters = [];
     const values = [];
 
@@ -992,7 +1227,7 @@ export const updateBillLocal = async (userId, id, fields = {}) => {
     values.push(userId);
 
     const sql = `UPDATE bills SET ${setters.join(", ")} WHERE id = ? AND userId = ?;`;
-    await db.runAsync(sql, values);
+    await database.runAsync(sql, values);
 
     return true;
   } catch (err) {
@@ -1003,8 +1238,9 @@ export const updateBillLocal = async (userId, id, fields = {}) => {
 
 export const deleteBillLocal = async (userId, id) => {
   try {
-    await db.runAsync(`DELETE FROM reminders WHERE billId = ?;`, [id]);
-    await db.runAsync(`DELETE FROM bills WHERE id = ? AND userId = ?;`, [id, userId]);
+    const database = await getDatabase();
+    await database.runAsync(`DELETE FROM reminders WHERE billId = ?;`, [id]);
+    await database.runAsync(`DELETE FROM bills WHERE id = ? AND userId = ?;`, [id, userId]);
     return true;
   } catch (err) {
     console.error("❌ deleteBillLocal error:", err);
@@ -1013,7 +1249,8 @@ export const deleteBillLocal = async (userId, id) => {
 };
 export const isBillNameDuplicate = async (userId, billName) => {
   try {
-    const result = await db.getFirstAsync(
+    const database = await getDatabase();
+    const result = await database.getFirstAsync(
       `SELECT id FROM bills WHERE userId = ? AND LOWER(billName) = LOWER(?) LIMIT 1`,
       [userId, billName.trim()]
     );
@@ -1028,7 +1265,8 @@ export const isBillNameDuplicate = async (userId, billName) => {
 // ------------------- reminder CRUD -------------------
 export const getRemindersLocal = async (userId, limit = 5) => {
   try {
-    const results = await db.getAllAsync(
+    const database = await getDatabase();
+    const results = await database.getAllAsync(
       `SELECT r.*, b.billName, b.dueDate
        FROM reminders r
        LEFT JOIN bills b ON r.billId = b.id
@@ -1046,7 +1284,8 @@ export const getRemindersLocal = async (userId, limit = 5) => {
 
 export const deleteReminderLocal = async (userId, id) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `DELETE FROM reminders WHERE id = ? AND userId = ?;`,
       [id, userId]
     );
@@ -1056,8 +1295,9 @@ export const deleteReminderLocal = async (userId, id) => {
   }
 };
 
-export const checkDueBillsAndGenerateReminders = async (userId) => {
+export const checkDueBillsAndGenerateReminders = async (userId, showAlerts = true) => {
   try {
+    const database = await getDatabase();
     const bills = await getBillsLocal(userId);
     if (!bills || bills.length === 0) return;
 
@@ -1089,8 +1329,8 @@ export const checkDueBillsAndGenerateReminders = async (userId) => {
         if (newStatus === "Overdue") reminderDate = todayStr;
         else if (newStatus === "DueSoon") reminderDate = dueDateStr;
 
-        if ((newStatus === "Overdue" || newStatus === "DueSoon") && reminderDate) {
-          const existing = await db.getFirstAsync(
+        if ((newStatus === "Overdue" || newStatus === "DueSoon") && reminderDate && showAlerts) {
+          const existing = await database.getFirstAsync(
             `SELECT id FROM reminders WHERE billId = ? AND reminderDate = ? AND status = 'Active' LIMIT 1;`,
             [b.id, reminderDate]
           );
@@ -1103,7 +1343,7 @@ export const checkDueBillsAndGenerateReminders = async (userId) => {
 
             const createdAtDate = todayStr;
 
-            await db.runAsync(
+            await database.runAsync(
               `INSERT INTO reminders (billId, userId, message, reminderDate, status, createdAt)
                VALUES (?, ?, ?, ?, 'Active', ?);`,
               [b.id, userId, message, reminderDate, createdAtDate]
@@ -1117,7 +1357,7 @@ export const checkDueBillsAndGenerateReminders = async (userId) => {
       }
     }
 
-    if (reminderMessages.length > 0) {
+    if (reminderMessages.length > 0 && showAlerts) {
       const alertText = reminderMessages.join("\n");
 
       Alert.alert(
@@ -1134,7 +1374,8 @@ export const checkDueBillsAndGenerateReminders = async (userId) => {
 
 export const getMonthlyDebtSum = async (userId) => {
   try {
-    const rows = await db.getAllAsync(
+    const database = await getDatabase();
+    const rows = await database.getAllAsync(
       `SELECT amount, category FROM bills WHERE userId = ? AND status != 'Paid';`,
       [userId]
     );
@@ -1154,6 +1395,7 @@ export const getMonthlyDebtSum = async (userId) => {
 
 // ------------------- AUTO TAG PREDICTOR FUNCTIONS -------------------
 export async function getUserTag(userId, payee) {
+  const database = await getDatabase();
   const norm = normalize(payee);
   console.log("🔍 getUserTag DEBUG:", {
     userId,
@@ -1163,7 +1405,7 @@ export async function getUserTag(userId, payee) {
   });
 
   try {
-    const row = await db.getFirstAsync(
+    const row = await database.getFirstAsync(
       `SELECT tag, confidence, count 
        FROM predictor_cache 
        WHERE payee_normalized = ? AND user_id = ?
@@ -1180,17 +1422,18 @@ export async function getUserTag(userId, payee) {
 }
 
 export async function saveUserTag(userId, payee, tag, is_custom = 0) {
+  const database = await getDatabase();
   const norm = normalize(payee);
   const ts = Math.floor(Date.now() / 1000);
 
   try {
-    const existing = await db.getFirstAsync(
+    const existing = await database.getFirstAsync(
       `SELECT * FROM predictor_cache WHERE payee_normalized = ? AND user_id = ?;`,
       [norm, userId]
     );
 
     if (existing) {
-      await db.runAsync(
+      await database.runAsync(
         `UPDATE predictor_cache 
          SET tag = ?, 
              count = count + 1,
@@ -1202,7 +1445,7 @@ export async function saveUserTag(userId, payee, tag, is_custom = 0) {
       );
       console.log(`✅ Updated tag for "${payee}" -> "${tag}"`);
     } else {
-      await db.runAsync(
+      await database.runAsync(
         `INSERT INTO predictor_cache 
          (user_id, payee_normalized, tag, count, confidence, last_used, is_custom)
          VALUES (?, ?, ?, 1, 1.0, ?, ?);`,
@@ -1220,7 +1463,8 @@ export async function saveUserTag(userId, payee, tag, is_custom = 0) {
 
 export async function getUserPredictions(userId) {
   try {
-    const rows = await db.getAllAsync(
+    const database = await getDatabase();
+    const rows = await database.getAllAsync(
       `SELECT * FROM predictor_cache WHERE user_id = ? ORDER BY last_used DESC;`,
       [userId]
     );
@@ -1233,7 +1477,8 @@ export async function getUserPredictions(userId) {
 
 export async function clearUserPredictions(userId) {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `DELETE FROM predictor_cache WHERE user_id = ?;`,
       [userId]
     );
@@ -1257,8 +1502,9 @@ function normalize(payee) {
 
 // ------------------- SAVING METHODS & ACCOUNTS -------------------
 
-// 初始化預設儲蓄方式
+// Initialize default saving methods
 export const initDefaultSavingMethods = async (userId) => {
+  const database = await getDatabase();
   const defaultMethods = [
     { method_name: "Fixed Deposit", method_type: "bank", risk_level: 1, liquidity_level: 3, expected_return: 3.2, color_code: "#4CAF50", icon_name: "🏦", is_default: 1 },
     { method_name: "Gold Bar", method_type: "physical", risk_level: 2, liquidity_level: 2, expected_return: 5.0, color_code: "#FFD700", icon_name: "🥇", is_default: 1 },
@@ -1269,7 +1515,7 @@ export const initDefaultSavingMethods = async (userId) => {
   ];
 
   for (const method of defaultMethods) {
-    await db.runAsync(
+    await database.runAsync(
       `INSERT OR IGNORE INTO saving_methods 
        (userId, method_name, method_type, risk_level, liquidity_level, expected_return, color_code, icon_name)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1280,9 +1526,10 @@ export const initDefaultSavingMethods = async (userId) => {
   console.log("✅ Default saving methods initialized");
 };
 
-// 創建儲蓄賬戶
+// Create saving account
 export const addSavingAccount = async (userId, method_id, account_name, institution_name, account_number, interest_rate, maturity_date, notes = "") => {
-  await db.runAsync(
+  const database = await getDatabase();
+  await database.runAsync(
     `INSERT INTO saving_accounts 
      (userId, method_id, account_name, institution_name, account_number, interest_rate, maturity_date, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1291,17 +1538,19 @@ export const addSavingAccount = async (userId, method_id, account_name, institut
   console.log(`✅ Saving account '${account_name}' added for user ${userId}`);
 };
 
-// 獲取儲蓄方式
+// Get saving methods
 export const getSavingMethods = async (userId) => {
-  return await db.getAllAsync(
+  const database = await getDatabase();
+  return await database.getAllAsync(
     `SELECT * FROM saving_methods WHERE userId = ? ORDER BY method_name ASC;`,
     [userId]
   );
 };
 
-// 獲取儲蓄賬戶
+// Get saving accounts
 export const getSavingAccounts = async (userId) => {
-  return await db.getAllAsync(
+  const database = await getDatabase();
+  return await database.getAllAsync(
     `SELECT sa.*, sm.method_name, sm.icon_name, sm.color_code
      FROM saving_accounts sa
      JOIN saving_methods sm ON sa.method_id = sm.id
@@ -1310,7 +1559,8 @@ export const getSavingAccounts = async (userId) => {
   );
 };
 export const getAllocationByTransaction = async (userId, transactionId) => {
-  return await db.getFirstAsync(
+  const database = await getDatabase();
+  return await database.getFirstAsync(
     `SELECT * FROM goal_fund_allocations 
      WHERE userId = ? AND transaction_id = ? 
      LIMIT 1`,
@@ -1319,10 +1569,22 @@ export const getAllocationByTransaction = async (userId, transactionId) => {
 };
 
 
+export const updateSavingAccountBalance = async (userId, accountId, delta) => {
+  const database = await getDatabase();
+  await database.runAsync(
+    `UPDATE saving_accounts
+     SET current_balance = current_balance + ?
+     WHERE id = ? AND userId = ?`,
+    [delta, accountId, userId]
+  );
+};
+
+
 // ------------------- GOAL FUND ALLOCATION -------------------
 export const addSavingMethod = async (userId, methodData) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `INSERT INTO saving_methods 
        (userId, method_name, method_type, risk_level, liquidity_level, 
         expected_return, color_code, icon_name, is_default)
@@ -1349,7 +1611,8 @@ export const addSavingMethod = async (userId, methodData) => {
 
 export const updateSavingMethod = async (userId, methodId, methodData) => {
   try {
-    await db.runAsync(
+    const database = await getDatabase();
+    await database.runAsync(
       `UPDATE saving_methods 
        SET method_name = ?, method_type = ?, risk_level = ?, liquidity_level = ?,
            expected_return = ?, color_code = ?, icon_name = ?
@@ -1376,7 +1639,8 @@ export const updateSavingMethod = async (userId, methodId, methodData) => {
 
 export const deleteSavingMethod = async (userId, methodId) => {
   try {
-    const accounts = await db.getAllAsync(
+    const database = await getDatabase();
+    const accounts = await database.getAllAsync(
       `SELECT id FROM saving_accounts WHERE method_id = ? AND userId = ?`,
       [methodId, userId]
     );
@@ -1385,7 +1649,7 @@ export const deleteSavingMethod = async (userId, methodId) => {
       throw new Error("Cannot delete method with existing accounts");
     }
 
-    await db.runAsync(
+    await database.runAsync(
       `DELETE FROM saving_methods WHERE id = ? AND userId = ? AND is_default = 0`,
       [methodId, userId]
     );
@@ -1399,7 +1663,8 @@ export const deleteSavingMethod = async (userId, methodId) => {
 
 export const allocateFundToGoal = async (userId, goalId, account_id, allocated_amount, allocation_date, transaction_id, maturity_date, notes = "", method_id) => {
   try {
-    const account = await db.getFirstAsync(
+    const database = await getDatabase();
+    const account = await database.getFirstAsync(
       `SELECT interest_rate FROM saving_accounts WHERE id = ? AND userId = ?`,
       [account_id, userId]
     );
@@ -1407,7 +1672,7 @@ export const allocateFundToGoal = async (userId, goalId, account_id, allocated_a
     const interest_rate = account?.interest_rate || 0;
     const expected_value = allocated_amount * (1 + interest_rate / 100);
 
-    await db.runAsync(
+    await database.runAsync(
       `INSERT INTO goal_fund_allocations 
        (userId, goalId, account_id, method_id, allocated_amount, allocation_date, transaction_id, maturity_date, current_value, expected_value, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1415,10 +1680,12 @@ export const allocateFundToGoal = async (userId, goalId, account_id, allocated_a
         maturity_date, allocated_amount, expected_value, notes]
     );
 
-    await db.runAsync(
+    await database.runAsync(
       `UPDATE saving_accounts SET current_balance = current_balance + ? WHERE id = ? AND userId = ?`,
       [allocated_amount, account_id, userId]
     );
+
+    await recalculateGoalCurrentAmount(userId, goalId);
 
     console.log(`✅ Fund allocated to goal: ${allocated_amount} to account ${account_id}`);
   } catch (error) {
@@ -1428,28 +1695,45 @@ export const allocateFundToGoal = async (userId, goalId, account_id, allocated_a
 };
 
 export const getGoalFundAllocations = async (userId, goalId) => {
-  return await db.getAllAsync(
-    `SELECT gfa.*, 
+  const database = await getDatabase();
+  return await database.getAllAsync(
+    `SELECT gfa.*,
        sa.account_name, sa.institution_name, sa.interest_rate,
        sm.method_name, sm.icon_name, sm.color_code
       FROM goal_fund_allocations gfa
       JOIN saving_accounts sa ON gfa.account_id = sa.id
       JOIN saving_methods sm ON gfa.method_id = sm.id
-      WHERE gfa.userId = ? AND gfa.goalId = ?
+      WHERE gfa.userId = ? AND gfa.goalId = ? AND gfa.status IN ('active', 'withdrawal_requested')
       ORDER BY gfa.allocation_date DESC;`,
     [userId, goalId]
-  ); 
+  );
 };
+
+export const deleteGoalAllocation = async (userId, allocationId) => {
+  const database = await getDatabase();
+  await database.runAsync(
+    `DELETE FROM goal_fund_allocations WHERE id = ? AND userId = ?`,
+    [allocationId, userId]
+  );
+};
+
 
 // ------------------- WITHDRAWAL MANAGEMENT -------------------
 
 export const createWithdrawalRecord = async (userId, goalId, allocation_id, withdrawal_amount, principal_amount, interest_amount, notes = "") => {
   try {
-    const result = await db.runAsync(
+    const database = await getDatabase();
+    const result = await database.runAsync(
       `INSERT INTO withdrawal_records 
        (userId, goalId, allocation_id, withdrawal_amount, principal_amount, interest_amount, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [userId, goalId, allocation_id, withdrawal_amount, principal_amount, interest_amount, notes]
+    );
+
+    // Update allocation status to withdrawal_requested
+    await database.runAsync(
+      `UPDATE goal_fund_allocations SET status = 'withdrawal_requested' WHERE id = ? AND userId = ?`,
+      [allocation_id, userId]
     );
 
     console.log(`✅ Withdrawal record created for allocation ${allocation_id}`);
@@ -1460,8 +1744,19 @@ export const createWithdrawalRecord = async (userId, goalId, allocation_id, with
   }
 };
 
+ export const deleteWithdrawalHistory = async (userId, withdrawalId) => {
+    const database = await getDatabase();
+    await database.runAsync(
+      `DELETE FROM withdrawal_records
+     WHERE id = ? AND userId = ?`,
+      [withdrawalId, userId]
+    );
+  };
+
+
 export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount) => {
   try {
+    const database = await getDatabase();
     console.log("🔄 Starting withdrawal confirmation...", { userId, withdrawal_id, confirmed_amount });
 
 
@@ -1469,7 +1764,7 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
       throw new Error("Invalid withdrawal confirmation parameters");
     }
 
-    const withdrawal = await db.getFirstAsync(
+    const withdrawal = await database.getFirstAsync(
       `SELECT * FROM withdrawal_records WHERE id = ? AND userId = ? AND status = 'pending'`,
       [withdrawal_id, userId]
     );
@@ -1486,12 +1781,12 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
     });
 
 
-    await db.execAsync('BEGIN TRANSACTION');
+    await database.execAsync('BEGIN TRANSACTION');
 
     try {
-      // 1. 更新提取記錄狀態
+      // 1. Update withdrawal record status
       console.log("1. Updating withdrawal record status...");
-      const updateResult = await db.runAsync(
+      const updateResult = await database.runAsync(
         `UPDATE withdrawal_records 
          SET status = 'completed', confirmed_amount = ?, confirmed_date = datetime('now')
          WHERE id = ? AND userId = ?`,
@@ -1502,9 +1797,9 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         throw new Error("Failed to update withdrawal record");
       }
 
-      // 2. 更新分配狀態
+      // 2. Update allocation status
       console.log("2. Updating fund allocation status...");
-      const allocationResult = await db.runAsync(
+      const allocationResult = await database.runAsync(
         `UPDATE goal_fund_allocations SET status = 'withdrawn' WHERE id = ? AND userId = ?`,
         [withdrawal.allocation_id, userId]
       );
@@ -1513,43 +1808,41 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         throw new Error("Failed to update fund allocation status");
       }
 
-      // 3. 更新賬戶餘額
+      // 3. Update account balance
       console.log("3. Updating account balance...");
       const accountId = await getAllocationAccountId(withdrawal.allocation_id);
       if (!accountId) {
         throw new Error("Could not find account for allocation");
       }
 
-      const accountResult = await db.runAsync(
-        `UPDATE saving_accounts SET current_balance = current_balance - ? WHERE id = ? AND userId = ?`,
-        [withdrawal.principal_amount, accountId, userId]
+      const accountResult = await database.runAsync(
+        `UPDATE saving_accounts SET current_balance = current_balance + ? WHERE id = ? AND userId = ?`,
+        [confirmed_amount, accountId, userId]
       );
 
       if (accountResult.rowsAffected === 0) {
         throw new Error("Failed to update account balance");
       }
 
-      // 4. 更新目標當前金額
-      console.log("4. Updating goal current amount...");
-      const goalResult = await db.runAsync(
-        `UPDATE goals SET currentAmount = currentAmount - ? WHERE id = ? AND userId = ?`,
-        [withdrawal.principal_amount, withdrawal.goalId, userId]
+      // 4. Mark original expense as settled (NOTE: Requires schema change to add status field to expenses table)
+      // TODO: Add status field to expenses table and update: UPDATE expenses SET status = 'settled' WHERE id = ? AND userId = ?
+
+      // 5. Update user summary - use settlement formula
+      console.log("5. Updating user summary with settlement formula...");
+      const A = withdrawal.principal_amount; // original allocated amount
+      const W = confirmed_amount; // confirmed withdrawal amount
+      const D = W - A; // difference
+
+      console.log(`   Settlement: A=${A}, W=${W}, D=${D}`);
+
+      // ✅ Correct: settlement only
+      await applyWithdrawalSettlementToUserSummary(
+        userId,
+        withdrawal.principal_amount,
+        confirmed_amount
       );
-
-      if (goalResult.rowsAffected === 0) {
-        throw new Error("Failed to update goal current amount");
-      }
-
-      // 5. 更新用戶摘要
-      console.log("5. Updating user summary...");
-      console.log("   - Releasing expense:", -withdrawal.principal_amount);
-      console.log("   - Adding interest income:", withdrawal.interest_amount);
-
-      await updateUserSummary(userId, "expense", -withdrawal.principal_amount);
-      await updateUserSummary(userId, "income", withdrawal.interest_amount);
-
-      // 提交事務
-      await db.execAsync('COMMIT');
+      // Commit transaction
+      await database.execAsync('COMMIT');
 
       console.log(`✅ Withdrawal confirmed successfully: ${withdrawal_id}, amount: ${confirmed_amount}`);
 
@@ -1558,12 +1851,12 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
         withdrawal_id: withdrawal_id,
         confirmed_amount: confirmed_amount,
         principal: withdrawal.principal_amount,
-        interest: withdrawal.interest_amount
+        difference: D
       };
 
     } catch (error) {
-      // 回滾事務
-      await db.execAsync('ROLLBACK');
+      // Rollback transaction
+      await database.execAsync('ROLLBACK');
       console.error("❌ Transaction failed, rolling back...", error);
       throw error;
     }
@@ -1576,19 +1869,37 @@ export const confirmWithdrawal = async (userId, withdrawal_id, confirmed_amount)
 
 
 
-// 取消提取記錄
+// Cancel withdrawal record
 export const cancelWithdrawal = async (userId, withdrawal_id) => {
-  await db.runAsync(
-    `UPDATE withdrawal_records SET status = 'cancelled' WHERE id = ? AND userId = ?`,
+  const database = await getDatabase();
+  // Get the allocation_id first
+  const withdrawal = await database.getFirstAsync(
+    `SELECT allocation_id FROM withdrawal_records WHERE id = ? AND userId = ?`,
     [withdrawal_id, userId]
   );
-  console.log(`✅ Withdrawal cancelled: ${withdrawal_id}`);
+
+  if (withdrawal) {
+    // Update withdrawal status
+    await database.runAsync(
+      `UPDATE withdrawal_records SET status = 'cancelled' WHERE id = ? AND userId = ?`,
+      [withdrawal_id, userId]
+    );
+
+    // Reset allocation status back to active
+    await database.runAsync(
+      `UPDATE goal_fund_allocations SET status = 'active' WHERE id = ? AND userId = ?`,
+      [withdrawal.allocation_id, userId]
+    );
+
+    console.log(`✅ Withdrawal cancelled: ${withdrawal_id}`);
+  }
 };
 
-// 獲取待處理的提取記錄
+// Get pending withdrawal records
 export const getPendingWithdrawals = async (userId) => {
-  return await db.getAllAsync(
-    `SELECT wr.*, g.goalName, sa.account_name, sa.institution_name, sm.method_name
+  const database = await getDatabase();
+  return await database.getAllAsync(
+    `SELECT wr.*, g.goalName, sa.account_name, sa.institution_name, sm.method_name, gfa.current_value
      FROM withdrawal_records wr
      JOIN goals g ON wr.goalId = g.id
      JOIN goal_fund_allocations gfa ON wr.allocation_id = gfa.id
@@ -1600,10 +1911,11 @@ export const getPendingWithdrawals = async (userId) => {
   );
 };
 
-// 獲取所有提取記錄
+// Get all withdrawal records
 export const getAllWithdrawals = async (userId) => {
-  return await db.getAllAsync(
-    `SELECT wr.*, g.goalName, sa.account_name, sa.institution_name, sm.method_name
+  const database = await getDatabase();
+  return await database.getAllAsync(
+    `SELECT wr.*, g.goalName, sa.account_name, sa.institution_name, sm.method_name, gfa.current_value
      FROM withdrawal_records wr
      JOIN goals g ON wr.goalId = g.id
      JOIN goal_fund_allocations gfa ON wr.allocation_id = gfa.id
@@ -1617,7 +1929,8 @@ export const getAllWithdrawals = async (userId) => {
 
 export const hasPendingWithdrawal = async (userId, allocationId) => {
   try {
-    const result = await db.getFirstAsync(
+    const database = await getDatabase();
+    const result = await database.getFirstAsync(
       `SELECT COUNT(*) as count FROM withdrawal_records 
        WHERE userId = ? AND allocation_id = ? AND status = 'pending'`,
       [userId, allocationId]
@@ -1629,9 +1942,58 @@ export const hasPendingWithdrawal = async (userId, allocationId) => {
   }
 };
 
-// 輔助函數：獲取分配的賬戶ID
+export const applyWithdrawalSettlementToUserSummary = async (
+  userId,
+  principal,
+  confirmedAmount
+) => {
+  const A = Number(principal);
+  const W = Number(confirmedAmount);
+  const D = W - A;
+
+  const database = await getDatabase();
+
+  // Step 1: reverse original allocation expense
+  await database.runAsync(
+    `
+    UPDATE user_summary
+    SET total_expense = total_expense - ?,
+        total_balance = total_balance + ?
+    WHERE userId = ?
+    `,
+    [A, A, userId]
+  );
+
+  // Step 2: apply difference
+  if (D > 0) {
+    await database.runAsync(
+      `
+      UPDATE user_summary
+      SET total_income = total_income + ?,
+          total_balance = total_balance + ?
+      WHERE userId = ?
+      `,
+      [D, D, userId]
+    );
+  } else if (D < 0) {
+    const loss = Math.abs(D);
+    await database.runAsync(
+      `
+      UPDATE user_summary
+      SET total_expense = total_expense + ?,
+          total_balance = total_balance - ?
+      WHERE userId = ?
+      `,
+      [loss, loss, userId]
+    );
+  }
+};
+
+
+// Helper function: Get allocated account ID
 const getAllocationAccountId = async (allocation_id) => {
-  const result = await db.getFirstAsync(
+  const database = await getDatabase();
+  const result = await database.getFirstAsync(
     `SELECT account_id FROM goal_fund_allocations WHERE id = ?`,
     [allocation_id]
   );
@@ -1644,8 +2006,9 @@ export const updateAllocationAfterWithdraw = async (
   withdrawAmount
 ) => {
   try {
+    const database = await getDatabase();
     // 1. Get original allocation data
-    const alloc = await db.getFirstAsync(
+    const alloc = await database.getFirstAsync(
       `SELECT allocated_amount, expected_value, account_id, goalId
        FROM goal_fund_allocations
        WHERE id = ? AND userId = ?`,
@@ -1655,7 +2018,7 @@ export const updateAllocationAfterWithdraw = async (
     if (!alloc) throw new Error("Allocation not found");
 
     // 2. Get interest rate of this account
-    const account = await db.getFirstAsync(
+    const account = await database.getFirstAsync(
       `SELECT interest_rate FROM saving_accounts WHERE id = ? AND userId = ?`,
       [alloc.account_id, userId]
     );
@@ -1672,7 +2035,7 @@ export const updateAllocationAfterWithdraw = async (
     const allocated_new = expected_new / (1 + r);
 
     // 4. Update new allocated & expected values
-    await db.runAsync(
+    await database.runAsync(
       `UPDATE goal_fund_allocations
        SET allocated_amount = ?, expected_value = ?, current_value = ?
        WHERE id = ? AND userId = ?`,
@@ -1680,7 +2043,7 @@ export const updateAllocationAfterWithdraw = async (
     );
 
     // 5. Increase available saving account balance
-    await db.runAsync(
+    await database.runAsync(
       `UPDATE saving_accounts
        SET current_balance = current_balance + ?
        WHERE id = ? AND userId = ?`,
@@ -1701,11 +2064,12 @@ export const updateAllocationAfterWithdraw = async (
 
 // ------------------- MATURITY MANAGEMENT -------------------
 
-// 檢查到期的分配
+// Check expired allocations
 export const checkMaturedAllocations = async (userId) => {
+  const database = await getDatabase();
   const today = new Date().toISOString().split('T')[0];
 
-  const maturedAllocations = await db.getAllAsync(
+  const maturedAllocations = await database.getAllAsync(
     `SELECT gfa.*, g.goalName, sa.account_name, sa.institution_name
      FROM goal_fund_allocations gfa
      JOIN goals g ON gfa.goalId = g.id
@@ -1717,16 +2081,17 @@ export const checkMaturedAllocations = async (userId) => {
   return maturedAllocations;
 };
 
-// 自動處理到期分配
+// Automatically process expired allocations
 export const processMaturedAllocations = async (userId) => {
   try {
+    const database = await getDatabase();
     const maturedAllocations = await checkMaturedAllocations(userId);
 
     for (const allocation of maturedAllocations) {
-      // 計算利息
+      // Calculate interest
       const interest_amount = allocation.current_value - allocation.allocated_amount;
 
-      // 創建提取記錄（自動確認）
+      // Create withdrawal record (auto confirm)
       await createWithdrawalRecord(
         userId,
         allocation.goalId,
@@ -1737,8 +2102,8 @@ export const processMaturedAllocations = async (userId) => {
         "Auto-processed upon maturity"
       );
 
-      // 自動確認提取
-      const withdrawal = await db.getFirstAsync(
+      // Auto confirm withdrawal
+      const withdrawal = await database.getFirstAsync(
         `SELECT id FROM withdrawal_records 
          WHERE allocation_id = ? AND status = 'pending' 
          ORDER BY id DESC LIMIT 1`,
@@ -1761,22 +2126,24 @@ export const processMaturedAllocations = async (userId) => {
 
 // ------------------- VALUE UPDATES -------------------
 
-// 手動更新分配當前價值
+// Manually update allocation current value
 export const updateAllocationCurrentValue = async (userId, allocation_id, new_current_value) => {
-  await db.runAsync(
+  const database = await getDatabase();
+  await database.runAsync(
     `UPDATE goal_fund_allocations SET current_value = ? WHERE id = ? AND userId = ?`,
     [new_current_value, allocation_id, userId]
   );
 
-  // 重新計算目標總金額
-  await recalculateGoalCurrentAmount(userId, await db.getFirstAsync(
+  // Recalculate goal total amount
+  await recalculateGoalCurrentAmount(userId, await database.getFirstAsync(
     `SELECT goalId FROM goal_fund_allocations WHERE id = ?`, [allocation_id]
   ).goalId);
 };
 
-// 重新計算目標當前金額
+// Recalculate goal current amount
 const recalculateGoalCurrentAmount = async (userId, goalId) => {
-  const allocations = await db.getAllAsync(
+  const database = await getDatabase();
+  const allocations = await database.getAllAsync(
     `SELECT current_value FROM goal_fund_allocations 
      WHERE userId = ? AND goalId = ? AND status = 'active'`,
     [userId, goalId]
@@ -1784,8 +2151,185 @@ const recalculateGoalCurrentAmount = async (userId, goalId) => {
 
   const totalCurrentValue = allocations.reduce((sum, alloc) => sum + (alloc.current_value || 0), 0);
 
-  await db.runAsync(
+  await database.runAsync(
     `UPDATE goals SET currentAmount = ? WHERE id = ? AND userId = ?`,
     [totalCurrentValue, goalId, userId]
   );
 };
+
+export const hasSnapshotForMonth = async (userId, month) => {
+  const database = await getDatabase();
+  const row = await database.getFirstAsync(
+    `SELECT id FROM income_snapshots WHERE userId = ? AND month = ? LIMIT 1`,
+    [userId, month]
+  );
+  return !!row;
+};
+
+
+export const saveMonthlyIncomeSnapshot = async (userId, date) => {
+  try {
+    const database = await getDatabase();
+    const month = date.slice(0, 7); // YYYY-MM
+
+    // Calculate current month total income (not cumulative)
+    const result = await database.getFirstAsync(
+      `SELECT SUM(amount) AS monthlyIncome
+       FROM expenses
+       WHERE userId = ?
+       AND typeLabel = 'income'
+       AND strftime('%Y-%m', date) = ?`,
+      [userId, month]
+    );
+
+    const monthlyIncome = result?.monthlyIncome ? parseFloat(result.monthlyIncome) : 0;
+
+    // Save to snapshots
+    await database.runAsync(
+      `INSERT OR REPLACE INTO income_snapshots (userId, month, income_amount)
+       VALUES (?, ?, ?)`,
+      [userId, month, monthlyIncome]
+    );
+
+    console.log(`📌 Snapshot saved for ${month}: RM${monthlyIncome}`);
+  } catch (err) {
+    console.error("❌ saveMonthlyIncomeSnapshot error:", err);
+  }
+};
+
+
+export const getIncomeGrowthRate = async (userId) => {
+  const database = await getDatabase();
+  const rows = await database.getAllAsync(
+    `SELECT month, income_amount 
+     FROM income_snapshots 
+     WHERE userId = ?
+     ORDER BY month DESC 
+     LIMIT 2`,
+    [userId]
+  );
+
+  if (rows.length < 2) {
+    return { rate: 0, current: rows[0]?.income_amount || 0, previous: 0 };
+  }
+
+  const current = rows[0].income_amount;
+  const previous = rows[1].income_amount;
+
+  if (previous === 0) {
+    return { rate: 1, current, previous }; // 100% growth if previous was 0
+  }
+
+  const rate = (current - previous) / previous;
+
+  return { rate, current, previous };
+};
+
+export const recalculateMonthlyIncomeSnapshot = async (userId, date) => {
+  const database = await getDatabase();
+  const month = date.slice(0, 7);
+
+  const result = await database.getFirstAsync(
+    `SELECT SUM(amount) AS total
+     FROM expenses
+     WHERE userId = ?
+     AND typeLabel = 'income'
+     AND strftime('%Y-%m', date) = ?`,
+    [userId, month]
+  );
+
+  const income = result?.total ? parseFloat(result.total) : 0;
+
+  await database.runAsync(
+    `INSERT OR REPLACE INTO income_snapshots (userId, month, income_amount)
+     VALUES (?, ?, ?)`,
+    [userId, month, income]
+  );
+
+  console.log("📌 Snapshot recalculated for", month, ": RM", income);
+};
+
+export const getCurrentMonthSnapshotIncome = async (userId) => {
+  const database = await getDatabase();
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+
+  const row = await database.getFirstAsync(
+    `SELECT income_amount 
+     FROM income_snapshots
+     WHERE userId = ? AND month = ?
+     LIMIT 1`,
+    [userId, month]
+  );
+
+  return row?.income_amount || 0;
+};
+
+export const resetIncomeSnapshots = async (userId) => {
+  try {
+    const database = await getDatabase();
+    await database.runAsync(
+      `DELETE FROM income_snapshots WHERE userId = ?`,
+      [userId]
+    );
+    console.log("🗑️ Income snapshots reset");
+  } catch (err) {
+    console.error("❌ resetIncomeSnapshots error:", err);
+  }
+};
+
+// -------------------- DIRECT USER SUMMARY UPDATE --------------------
+export const updateUserSummaryDirect = async (userId, totalIncome, totalExpense, totalBalance) => {
+  try {
+    const database = await getDatabase();
+    const results = await database.runAsync(
+      `UPDATE user_summary SET total_income = ?, total_expense = ?, total_balance = ? WHERE userId = ?`,
+      [totalIncome, totalExpense, totalBalance, userId]
+    );
+    console.log(`✅ Direct summary update: Income ${totalIncome}, Expense ${totalExpense}, Balance ${totalBalance}`);
+    return results;
+  } catch (error) {
+    console.error(`❌ Error updating summary directly:`, error);
+    throw error;
+  }
+};
+
+// ------------------- DANGER ZONE -------------------
+export const resetAllDatabaseData = async () => {
+  try {
+    const database = await getDatabase();
+
+    await database.execAsync("BEGIN TRANSACTION");
+
+    const tables = [
+      "expenses",
+      "bills",
+      "reminders",
+      "goals",
+      "goal_fund_allocations",
+      "withdrawal_records",
+      "tags",
+      "eventTags",
+      "activeEventTags",
+      "saving_accounts",
+      "saving_methods",
+      "user_summary",
+      "income_snapshots",
+      "predictor_cache"
+    ];
+
+    for (const table of tables) {
+      await database.runAsync(`DELETE FROM ${table};`);
+    }
+
+    await database.execAsync("COMMIT");
+
+    console.log("🧨 All database data has been reset");
+    return true;
+  } catch (error) {
+    await database.execAsync("ROLLBACK");
+    console.error("❌ resetAllDatabaseData error:", error);
+    throw error;
+  }
+};
+

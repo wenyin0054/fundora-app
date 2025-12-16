@@ -1,21 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, Text, Switch, TouchableOpacity, StyleSheet, Modal, 
+import {
+  View, Text, Switch, TouchableOpacity, StyleSheet, Modal,
   Alert, ActivityIndicator, Animated, Easing, Linking, ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { 
-  storeFaceData, 
-  hasRegisteredFace, 
-  deleteUserFaceData, 
-  getUserFaceData 
+import {
+  storeFaceData,
+  hasRegisteredFace,
+  deleteUserFaceData,
+  getUserFaceData,
+  getUserById
 } from '../../../database/userAuth';
 import { getApiBase } from './apiConfig';
 
 const API_URL = getApiBase();
+console.log("🔗 Using API URL:", API_URL);
 
 export default function FaceRegistrations({ navigation, route }) {
   const [isEnabled, setIsEnabled] = useState(true);
@@ -30,13 +32,13 @@ export default function FaceRegistrations({ navigation, route }) {
   const [loggedInUserId, setLoggedInUserId] = useState(null);
   const cameraRef = useRef(null);
   const faceDetectionTimeoutRef = useRef(null);
-  
+
   // Animation values
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(50))[0];
   const pulseAnim = useState(new Animated.Value(1))[0];
 
-  const { showSkipOption = false, fromLogin = false } = route.params || {};
+  const { showSkipOption = false, fromLogin = false, fromProfile = false } = route.params || {};
 
   const instructions = [
     'Look straight ahead',
@@ -94,9 +96,9 @@ export default function FaceRegistrations({ navigation, route }) {
           setLoggedInUserId(parsed.userId);
           const hasFace = await hasRegisteredFace(parsed.userId);
           setUserHasRegisteredFace(hasFace);
-          
+
           if (hasFace && fromLogin) {
-            navigation.replace("MainApp");
+            navigation.replace("QuizIntroductionScreen", { userId: parsed.userId, forceShow: true });
           }
         }
       } catch (error) {
@@ -115,26 +117,35 @@ export default function FaceRegistrations({ navigation, route }) {
     };
   }, []);
 
-  const toggleSwitch = () => {
-    Animated.spring(slideAnim, {
-      toValue: isEnabled ? -50 : 50,
-      useNativeDriver: true,
-    }).start();
-    setIsEnabled(previousState => !previousState);
+
+  // Helper function for post-registration navigation
+  const handlePostRegistrationNavigation = async () => {
+    if (fromProfile) {
+      navigation.goBack();
+    } else {
+      navigation.replace("QuizIntroductionScreen", { userId: loggedInUserId, forceShow: true });
+    }
   };
+
 
   // Convert image to base64
   const convertImageToBase64 = async (photo) => {
     try {
+      // Directly use base64 provided by camera
+      if (photo.base64) return photo.base64;
+
+      // If no base64, fallback to FileSystem
       const base64 = await FileSystem.readAsStringAsync(photo.uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      return `data:image/jpg;base64,${base64}`;
+      return base64;
+
     } catch (error) {
-      console.error('Error converting image to base64:', error);
+      console.error("Base64 conversion error:", error);
       return null;
     }
   };
+
 
   // Register face with MTCNN server
   const registerFaceWithMTCNN = async (base64Image, poseType) => {
@@ -152,6 +163,9 @@ export default function FaceRegistrations({ navigation, route }) {
       });
 
       const result = await response.json();
+      console.log("POST URL:", `${API_URL}/register-face`);
+      console.log("Image length:", base64Image?.length);
+
       return result;
     } catch (error) {
       console.error('Error registering face:', error);
@@ -180,10 +194,11 @@ export default function FaceRegistrations({ navigation, route }) {
 
     try {
       setIsProcessing(true);
-      
+
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
-        base64: false,
+        base64: true,
+        skipProcessing: false,
       });
 
       if (photo) {
@@ -212,7 +227,7 @@ export default function FaceRegistrations({ navigation, route }) {
       if (result.success) {
         // Store in local database
         await storeFaceData(loggedInUserId, result.embedding, base64Image, currentPose);
-        
+
         // Update progress
         const newFaceCount = faceCount + 1;
         setFaceCount(newFaceCount);
@@ -223,7 +238,7 @@ export default function FaceRegistrations({ navigation, route }) {
           const nextStep = step + 1;
           setStep(nextStep);
           setInstruction(instructions[nextStep]);
-          
+
           // Reset processing for next capture
           setIsProcessing(false);
         } else {
@@ -242,6 +257,8 @@ export default function FaceRegistrations({ navigation, route }) {
 
   // Enhanced handleRegisterFace with better UX
   const handleRegisterFace = async () => {
+    console.log("API_URL:", API_URL);
+
     if (!loggedInUserId) {
       Alert.alert(
         'Login Required',
@@ -276,9 +293,10 @@ export default function FaceRegistrations({ navigation, route }) {
 
   // Enhanced registration success
   const handleRegistrationSuccess = async () => {
+    setIsProcessing(false);
     setInstruction(instructions[3]);
     setUserHasRegisteredFace(true);
-    
+
     // Success animation
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -288,20 +306,7 @@ export default function FaceRegistrations({ navigation, route }) {
 
     setTimeout(() => {
       setShowCamera(false);
-      Alert.alert(
-        '🎉 Face Registered Successfully!',
-        'Your face has been successfully registered with our advanced AI technology for secure authentication.',
-        [
-          { 
-            text: 'Continue', 
-            onPress: () => {
-              if (fromLogin) {
-                navigation.replace("MainApp");
-              }
-            } 
-          },
-        ]
-      );
+      handlePostRegistrationNavigation();
     }, 2000);
   };
 
@@ -311,16 +316,16 @@ export default function FaceRegistrations({ navigation, route }) {
       'Skip Face Registration',
       'For maximum security, we recommend registering your face. You can always do this later in Settings.',
       [
-        { 
-          text: 'Register Now', 
+        {
+          text: 'Register Now',
           style: 'cancel',
           onPress: () => handleRegisterFace()
         },
-        { 
-          text: 'Skip', 
+        {
+          text: 'Skip',
           style: 'destructive',
           onPress: () => {
-            navigation.replace("MainApp");
+            handlePostRegistrationNavigation();
           }
         },
       ]
@@ -330,7 +335,7 @@ export default function FaceRegistrations({ navigation, route }) {
   // View stored faces
   const handleViewStoredFaces = async () => {
     if (!loggedInUserId) return;
-    
+
     try {
       const faces = await getUserFaceData(loggedInUserId);
       Alert.alert(
@@ -351,8 +356,8 @@ export default function FaceRegistrations({ navigation, route }) {
       'Are you sure you want to delete all your registered face data? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
+        {
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -371,12 +376,12 @@ export default function FaceRegistrations({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
-        style={{ flex: 1 }} 
+      <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View 
+        <Animated.View
           style={[
             styles.content,
             {
@@ -432,7 +437,7 @@ export default function FaceRegistrations({ navigation, route }) {
             </View>
           )}
 
- 
+
 
           {/* Action Buttons */}
           <View style={styles.actionsContainer}>
@@ -500,12 +505,10 @@ export default function FaceRegistrations({ navigation, route }) {
       </ScrollView>
 
       {/* Enhanced Camera Modal */}
-      <Modal 
-        visible={showCamera} 
-        animationType="slide" 
-        statusBarTranslucent={true}
-      >
+      <Modal visible={showCamera} animationType="slide" statusBarTranslucent={true}>
         <View style={styles.cameraContainer}>
+
+          {/* CameraView does not have any children */}
           <CameraView
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
@@ -517,110 +520,70 @@ export default function FaceRegistrations({ navigation, route }) {
               runClassifications: "none",
               minDetectionInterval: 1000,
             }}
-          >
-            <View style={styles.cameraOverlay}>
-              {/* Header */}
-              <View style={styles.cameraHeader}>
-                <TouchableOpacity 
-                  style={styles.closeButton}
-                  onPress={() => {
-                    if (faceDetectionTimeoutRef.current) {
-                      clearTimeout(faceDetectionTimeoutRef.current);
-                    }
-                    setShowCamera(false);
-                  }}
-                >
-                  <Ionicons name="chevron-down" size={28} color="#fff" />
-                </TouchableOpacity>
-                
-                <View style={styles.progressSection}>
-                  <View style={styles.progressLabels}>
-                    <Text style={styles.progressText}>Registration Progress</Text>
-                    <Text style={styles.progressCount}>{faceCount}/3</Text>
-                  </View>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${captureProgress}%` }
-                      ]} 
-                    />
-                  </View>
-                </View>
-              </View>
+          />
 
-              {/* Face Guidance */}
-              <View style={styles.faceGuidance}>
-                <View style={styles.faceOutline}>
-                  <View style={styles.faceGuide} />
-                </View>
-                
-                <Animated.View 
-                  style={[
-                    styles.poseIndicator,
-                    { transform: [{ scale: pulseAnim }] }
-                  ]}
-                >
-                  <Ionicons 
-                    name={
-                      step === 0 ? "recording" : 
-                      step === 1 ? "arrow-back" : 
-                      "arrow-forward"
-                    } 
-                    size={24} 
-                    color="#57C0A1" 
-                  />
-                </Animated.View>
-              </View>
+          {/* Overlay UI placed outside */}
+          <View style={styles.cameraOverlay}>
 
-              {/* Instructions */}
-              <View style={styles.instructionPanel}>
-                <Text style={styles.instructionTitle}>Current Pose</Text>
-                <Text style={styles.instructionText}>{instruction}</Text>
-                
-                <View style={styles.stepIndicator}>
-                  {[0, 1, 2].map((index) => (
-                    <View 
-                      key={index}
-                      style={[
-                        styles.stepDot,
-                        index === step && styles.stepDotActive,
-                        index < step && styles.stepDotCompleted
-                      ]}
-                    />
-                  ))}
-                </View>
+            {/* Header */}
+            <View style={styles.cameraHeader}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  if (faceDetectionTimeoutRef.current) clearTimeout(faceDetectionTimeoutRef.current);
+                  setShowCamera(false);
+                }}
+              >
+                <Ionicons name="chevron-down" size={28} color="#fff" />
+              </TouchableOpacity>
 
-                {/* Capture Controls */}
-                <View style={styles.captureSection}>
-                  {!isProcessing ? (
-                    <TouchableOpacity 
-                      style={styles.captureButton}
-                      onPress={takePicture}
-                    >
-                      <View style={styles.captureButtonOuter}>
-                        <View style={styles.captureButtonInner} />
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.processingState}>
-                      <ActivityIndicator size="large" color="#57C0A1" />
-                      <Text style={styles.processingText}>Analyzing with AI...</Text>
-                    </View>
-                  )}
+              <View style={styles.progressSection}>
+                <View style={styles.progressLabels}>
+                  <Text style={styles.progressText}>Registration Progress</Text>
+                  <Text style={styles.progressCount}>{faceCount}/3</Text>
                 </View>
-
-                <Text style={styles.helperText}>
-                  {!isProcessing 
-                    ? "Position your face in the frame - auto capture in progress" 
-                    : "Please wait while we process your face data..."
-                  }
-                </Text>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${captureProgress}%` }]} />
+                </View>
               </View>
             </View>
-          </CameraView>
+
+            {/* Face Guidance */}
+            <View style={styles.faceGuidance}>
+              <View style={styles.faceOutline}>
+                <View style={styles.faceGuide} />
+              </View>
+            </View>
+
+            {/* Instructions + Capture Button */}
+            <View style={styles.instructionPanel}>
+              <Text style={styles.instructionTitle}>Current Pose</Text>
+              <Text style={styles.instructionText}>{instruction}</Text>
+
+              <View style={styles.captureSection}>
+                {!isProcessing ? (
+                  <TouchableOpacity
+                    style={styles.captureButton}
+                    onPress={takePicture}
+                  >
+                    <View style={styles.captureButtonOuter}>
+                      <View style={styles.captureButtonInner} />
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.processingState}>
+                    <ActivityIndicator size="large" color="#57C0A1" />
+                    <Text style={styles.processingText}>Analyzing with AI...</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+          </View>
+
         </View>
       </Modal>
+
     </View>
   );
 }
