@@ -11,7 +11,8 @@ import {
   storeFaceData,
   hasRegisteredFace,
   deleteUserFaceData,
-  getUserFaceData
+  getUserFaceData,
+  getUserById
 } from '../../../database/userAuth';
 import { getApiBase } from './apiConfig';
 
@@ -37,7 +38,7 @@ export default function FaceRegistrations({ navigation, route }) {
   const slideAnim = useState(new Animated.Value(50))[0];
   const pulseAnim = useState(new Animated.Value(1))[0];
 
-  const { showSkipOption = false, fromLogin = false } = route.params || {};
+  const { showSkipOption = false, fromLogin = false, fromProfile = false } = route.params || {};
 
   const instructions = [
     'Look straight ahead',
@@ -97,7 +98,7 @@ export default function FaceRegistrations({ navigation, route }) {
           setUserHasRegisteredFace(hasFace);
 
           if (hasFace && fromLogin) {
-            navigation.replace("MainApp");
+            navigation.replace("QuizIntroductionScreen", { userId: parsed.userId, forceShow: true });
           }
         }
       } catch (error) {
@@ -117,13 +118,23 @@ export default function FaceRegistrations({ navigation, route }) {
   }, []);
 
 
+  // Helper function for post-registration navigation
+  const handlePostRegistrationNavigation = async () => {
+    if (fromProfile) {
+      navigation.goBack();
+    } else {
+      navigation.replace("QuizIntroductionScreen", { userId: loggedInUserId, forceShow: true });
+    }
+  };
+
+
   // Convert image to base64
   const convertImageToBase64 = async (photo) => {
     try {
-      // 直接使用 camera 提供的 base64
+      // Directly use base64 provided by camera
       if (photo.base64) return photo.base64;
 
-      // 如果没有 base64 才 fallback 用 FileSystem
+      // If no base64, fallback to FileSystem
       const base64 = await FileSystem.readAsStringAsync(photo.uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
@@ -295,20 +306,7 @@ export default function FaceRegistrations({ navigation, route }) {
 
     setTimeout(() => {
       setShowCamera(false);
-      Alert.alert(
-        '🎉 Face Registered Successfully!',
-        'Your face has been successfully registered with our advanced AI technology for secure authentication.',
-        [
-          {
-            text: 'Continue',
-            onPress: () => {
-              if (fromLogin) {
-                navigation.replace("MainApp");
-              }
-            }
-          },
-        ]
-      );
+      handlePostRegistrationNavigation();
     }, 2000);
   };
 
@@ -327,7 +325,7 @@ export default function FaceRegistrations({ navigation, route }) {
           text: 'Skip',
           style: 'destructive',
           onPress: () => {
-            navigation.replace("MainApp");
+            handlePostRegistrationNavigation();
           }
         },
       ]
@@ -510,7 +508,7 @@ export default function FaceRegistrations({ navigation, route }) {
       <Modal visible={showCamera} animationType="slide" statusBarTranslucent={true}>
         <View style={styles.cameraContainer}>
 
-          {/* CameraView 不放任何 children */}
+          {/* CameraView does not have any children */}
           <CameraView
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
@@ -524,7 +522,7 @@ export default function FaceRegistrations({ navigation, route }) {
             }}
           />
 
-          {/* Overlay UI 放外面 */}
+          {/* Overlay UI placed outside */}
           <View style={styles.cameraOverlay}>
 
             {/* Header */}

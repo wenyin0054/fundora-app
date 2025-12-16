@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../reuseComponet/header";
-import { addTagLocal, getTagsLocal } from "../../../database/SQLite";
+import { addTagLocal, getUserVisibleTags } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
 import {
   FDSCard,
@@ -37,7 +37,7 @@ export default function AddTag({ navigation, route }) {
   const loadExistingTags = async () => {
     try {
       setIsLoading(true);
-      const tags = await getTagsLocal(userId);
+      const tags = await getUserVisibleTags(userId);
 
       // Lowercase existing tags for quick duplicate detection
       setExistingTags(tags.map((t) => t.name.trim().toLowerCase()));

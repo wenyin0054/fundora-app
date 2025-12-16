@@ -24,6 +24,7 @@ import {
   createWithdrawalRecord,
   getSavingAccounts,
   hasPendingWithdrawal,
+  getGoalById
 } from "../../../database/SQLite";
 import ValidatedInput from "../../reuseComponet/ValidatedInput";
 import { Animated } from "react-native";
@@ -107,83 +108,81 @@ export default function GoalDetailScreen({ route, navigation }) {
 
   const nameRef = useRef();
   const amountRef = useRef();
+  const withdrawRef = useRef();
 
 
   const { userId } = useUser();
 
-  const loadGoalData = useCallback(async () => {
-    if (!goal) return;
-    const deadlineValue = goal.deadline || goal.due;
-    console.log("date", deadlineValue)
+const loadGoalData = useCallback(async () => {
+  if (!goal?.id || !userId) return;
 
-    setGoalName(goal.goalName || goal.title || "");
-    setDescription(goal.description || goal.desc || "");
-    setTargetAmount(goal.targetAmount?.toString() || goal.target?.toString() || "");
-    setCurrentAmount(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
+  try {
+    // 🔁 1️⃣ Fetch fresh goal from DB
+    const freshGoal = await getGoalById(userId, goal.id);
+    if (!freshGoal) return;
+
+    const deadlineValue = freshGoal.deadline || freshGoal.due;
+
+    // 🔁 2️⃣ Update UI from DB, NOT route params
+    setGoalName(freshGoal.goalName || freshGoal.title || "");
+    setDescription(freshGoal.description || freshGoal.desc || "");
+    setTargetAmount(freshGoal.targetAmount?.toString() || "0");
+    setCurrentAmount(freshGoal.currentAmount?.toString() || "0");
     setDeadline(deadlineValue ? new Date(deadlineValue + "T00:00:00") : new Date());
 
-
-
-
-    const current = parseFloat(goal.currentAmount?.toString() || goal.saved?.toString() || "0");
-    const target = parseFloat(goal.targetAmount?.toString() || goal.target?.toString() || "0");
+    // 🔁 3️⃣ Recalculate progress from DB values
+    const current = parseFloat(freshGoal.currentAmount || 0);
+    const target = parseFloat(freshGoal.targetAmount || 0);
     setProgress(target > 0 ? Math.min(current / target, 1) : 0);
 
+    // 🔁 4️⃣ Reload allocations (may change after withdrawal)
+    const allocations = await getGoalFundAllocations(userId, goal.id);
+
+    const allocationsWithCurrentValue = await Promise.all(
+      allocations.map(async (allocation) => {
+        const principal = allocation.allocated_amount || 0;
+        const interestRate = allocation.interest_rate || 0;
+        const startDate = allocation.allocation_date
+          ? new Date(allocation.allocation_date)
+          : new Date();
+
+        const timeInYears =
+          (new Date() - startDate) / (1000 * 60 * 60 * 24 * 365);
+
+        let currentValue = principal;
+        let interestEarned = 0;
+
+        if (interestRate > 0 && timeInYears > 0) {
+          currentValue = principal * Math.pow(1 + interestRate / 100, timeInYears);
+          interestEarned = currentValue - principal;
+        }
+
+        const hasPending = await hasPendingWithdrawal(userId, allocation.id);
+
+        return {
+          ...allocation,
+          current_value: parseFloat(currentValue.toFixed(2)),
+          interest_earned: parseFloat(interestEarned.toFixed(2)),
+          has_pending_withdrawal: hasPending,
+        };
+      })
+    );
+
+    setFundAllocations(allocationsWithCurrentValue);
+
+    // 🔁 5️⃣ Overdue logic (same as planner)
     try {
-      const [allocations, accounts] = await Promise.all([
-        getGoalFundAllocations(userId, goal.id),
-        getSavingAccounts(userId),
-      ]);
-
-      // 修正：基於實際利率計算利息收益，並檢查待處理提取
-      const allocationsWithCurrentValue = await Promise.all(
-        allocations.map(async (allocation) => {
-          const principal = allocation.allocated_amount || 0;
-          const interestRate = allocation.interest_rate || 0;
-          const startDate = allocation.allocation_date ? new Date(allocation.allocation_date) : new Date();
-          const currentDate = new Date();
-
-          // 計算經過的時間（年）
-          const timeInYears = (currentDate - startDate) / (1000 * 60 * 60 * 24 * 365);
-
-          // 計算當前價值：本金 * (1 + 利率)^時間
-          let currentValue = principal;
-          let interestEarned = 0;
-
-          if (interestRate > 0 && timeInYears > 0) {
-            currentValue = principal * Math.pow(1 + interestRate / 100, timeInYears);
-            interestEarned = currentValue - principal;
-          }
-
-          // 檢查是否有待處理的提取請求
-          const hasPending = await hasPendingWithdrawal(userId, allocation.id);
-
-          return {
-            ...allocation,
-            current_value: parseFloat(currentValue.toFixed(2)),
-            interest_earned: parseFloat(interestEarned.toFixed(2)),
-            interest_rate: interestRate,
-            has_pending_withdrawal: hasPending  // 添加這個標記
-          };
-        })
-      );
-
-      console.log("📊 Allocations with current value:", allocationsWithCurrentValue);
-      setFundAllocations(allocationsWithCurrentValue);
-      // --- Accurate Overdue Logic (same as SavingsPlanner.js) ---
-      try {
-        const { isOverdue } = getDeadlineStatus(deadlineValue);
-        setIsOverdue(isOverdue);
-        console.log(isOverdue)
-      } catch {
-        setIsOverdue(false);
-      }
-
-
-    } catch (error) {
-      console.error("❌ loadGoalData error:", error);
+      const { isOverdue } = getDeadlineStatus(deadlineValue);
+      setIsOverdue(isOverdue);
+    } catch {
+      setIsOverdue(false);
     }
-  }, [goal]);
+
+  } catch (err) {
+    console.error("❌ loadGoalData error:", err);
+  }
+}, [goal?.id, userId]);
+
 
   useFocusEffect(
     useCallback(() => {
@@ -333,50 +332,48 @@ export default function GoalDetailScreen({ route, navigation }) {
     );
   };
 
-  // 智能返回顯示文本的函數
+  // Smart function to return display text
   const calculateReturnDisplay = (principal, finalAmount, startDateStr) => {
     const startDate = new Date(startDateStr);
     const currentDate = new Date();
-    const timeInDays = Math.max((currentDate - startDate) / (1000 * 60 * 60 * 24), 0.1); // 最少0.1天避免除以0
+    const timeInDays = Math.max((currentDate - startDate) / (1000 * 60 * 60 * 24), 0.1); // Minimum 0.1 day to avoid division by 0
     const timeInYears = timeInDays / 365;
 
     const absoluteReturn = ((finalAmount - principal) / principal) * 100;
 
-    // 根據時間長度決定顯示方式
+    // Determine display method based on time length
     if (timeInDays < 7) {
-      // 少於7天：顯示絕對收益率
+      // Less than 7 days: show absolute yield
       return `${absoluteReturn.toFixed(2)}%`;
     } else if (timeInDays < 30) {
-      // 7-30天：顯示絕對收益率 + 天數
+      // 7-30 days: show absolute yield + days
       return `${absoluteReturn.toFixed(2)}% (${timeInDays.toFixed(0)} days)`;
     } else {
-      // 超過30天：顯示年化收益率
+      // Over 30 days: show annualized yield
       const annualReturn = (Math.pow(finalAmount / principal, 1 / timeInYears) - 1) * 100;
       return `${annualReturn.toFixed(2)}% annually`;
     }
   };
 
   const confirmWithdrawal = async () => {
-    if (!withdrawAmount || isNaN(withdrawAmount) || parseFloat(withdrawAmount) <= 0) {
-      Alert.alert("Error", "Please enter a valid withdrawal amount");
-      return;
-    }
+    const validAmount = withdrawRef.current?.validate();
+    if (!validAmount) return;
 
     const amount = parseFloat(withdrawAmount);
     const principal = selectedAllocation.allocated_amount;
 
-    // 計算實際收益（可能為負數）
+    // Calculate actual profit (may be negative)
     const actualProfit = amount - principal;
     const profitPercentage = ((actualProfit / principal) * 100).toFixed(2);
 
-    // 計算持有時間
+    // Calculate holding time
     const startDate = new Date(selectedAllocation.allocation_date);
     const currentDate = new Date();
     const timeInDays = Math.max((currentDate - startDate) / (1000 * 60 * 60 * 24), 0.1);
     const timeInYears = timeInDays / 365;
 
     try {
-      // 只創建提取記錄，不更新其他表
+      // Only create withdrawal record, do not update other tables
       const result = await createWithdrawalRecord(
         userId,
         goal.id,
@@ -390,7 +387,7 @@ export default function GoalDetailScreen({ route, navigation }) {
       if (result && result.success) {
         setWithdrawModalVisible(false);
 
-        // 顯示計算結果
+        // Display calculation results
         const profitText = actualProfit >= 0 ?
           `Profit: +RM ${actualProfit.toFixed(2)} (+${profitPercentage}%)` :
           `Loss: -RM ${Math.abs(actualProfit).toFixed(2)} (-${Math.abs(parseFloat(profitPercentage))}%)`;
@@ -418,7 +415,7 @@ export default function GoalDetailScreen({ route, navigation }) {
     }
   };
 
-  // 計算預覽組件
+  // Calculation preview component
   const renderCalculationPreview = () => {
     if (!withdrawAmount || isNaN(withdrawAmount) || !selectedAllocation) return null;
 
@@ -460,7 +457,7 @@ export default function GoalDetailScreen({ route, navigation }) {
           </Text>
         </View>
 
-        {/* 顯示計算的收益率 */}
+        {/* Display calculated yield */}
         {(amount !== principal) && (
           <View style={styles.calculationRow}>
             <Text style={styles.calculationLabel}>
@@ -593,12 +590,12 @@ export default function GoalDetailScreen({ route, navigation }) {
             />
 
 
-            <FDSLabel>Description</FDSLabel>
-            <TextInput
-              style={[styles.textArea, { backgroundColor: "#F0F4F3" }]}
-              multiline
+            <FDSValidatedInput
+              label="Description"
               value={description}
               onChangeText={setDescription}
+              multiline
+              validate={() => true} // No validation needed for description
             />
           </FDSCard>
           {/* ----- SECTION 2: FINANCIAL INFO ----- */}
@@ -647,7 +644,6 @@ export default function GoalDetailScreen({ route, navigation }) {
           {/* ----- SECTION 3: FUND ALLOCATIONS ----- */}
           {fundAllocations.length > 0 && (
             <FDSCard style={{ marginBottom: 16 }}>
-              <FDSLabel>Fund Allocations</FDSLabel>
 
 
               <Text style={styles.sectionTitle}>Fund Allocations</Text>
@@ -692,7 +688,7 @@ export default function GoalDetailScreen({ route, navigation }) {
         </ScrollView>
       </KeyboardAwareScrollView>
 
-      {/* 提取模態框 */}
+      {/* Withdrawal modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -726,17 +722,21 @@ export default function GoalDetailScreen({ route, navigation }) {
                   </Text>
                 </View>
 
-                <Text style={styles.modalLabel}>Withdrawal Amount:</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  keyboardType="numeric"
+                <FDSValidatedInput
+                  ref={withdrawRef}
+                  label="Withdrawal Amount"
                   value={withdrawAmount}
                   onChangeText={setWithdrawAmount}
+                  keyboardType="numeric"
                   placeholder={`Enter actual amount (max: RM ${selectedAllocation.current_value.toFixed(2)})`}
-                  placeholderTextColor={"#c5c5c5ff"}
+                  validate={(v) => {
+                    const num = parseFloat(v);
+                    return v && !isNaN(num) && num > 0 && num <= selectedAllocation.current_value;
+                  }}
+                  errorMessage={`Amount must be between 0 and RM ${selectedAllocation.current_value.toFixed(2)}`}
                 />
 
-                {/* 實時計算顯示 */}
+                {/* Real-time calculation display */}
                 {renderCalculationPreview()}
 
                 <View style={styles.modalButtons}>
@@ -843,7 +843,7 @@ const styles = StyleSheet.create({
   },
   deleteText: { color: "#fff", fontWeight: "600", fontSize: 16 },
 
-  // 資金分配樣式
+  // Fund allocation styles
   allocationItem: {
     backgroundColor: "#f8fafc",
     borderRadius: 8,
@@ -913,7 +913,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  // 模態框樣式
+  // Modal styles
   modalContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1036,7 +1036,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
 
-  // 計算預覽樣式
+  // Calculation preview styles
   calculationPreview: {
     backgroundColor: '#E8F5E8',
     borderRadius: 8,

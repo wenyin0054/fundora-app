@@ -59,7 +59,7 @@ export default function ExpensesOrganizer({ navigation }) {
     setTypeFilter(filterType);
   };
 
-  // ------------ FINAL FILTER ENGINE (唯一入口) ------------
+  // ------------ FINAL FILTER ENGINE (single entry point) ------------
   const filteredExpenses = expenses.filter((item) => {
     // 1️⃣ Essential filter
     if (essentialFilter === "Essential" && item.essentialityLabel !== 1) return false;

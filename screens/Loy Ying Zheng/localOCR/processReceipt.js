@@ -6,7 +6,7 @@ import { EnhancedReceiptParser } from "./enhancedReceiptParser";
 
 export async function processReceipt(originalImageUri) {
   try {
-    console.log("📸 Starting receipt processing.");
+    console.log("📸 Starting receipt processing.", originalImageUri);
 
     const preprocessed = await ReceiptImagePreprocessor.preprocessForReceipt(
       originalImageUri,
@@ -41,6 +41,14 @@ export async function processReceipt(originalImageUri) {
         confidence_level: parsed.confidence_level || null,
         is_receipt_like: parsed.is_receipt_like,
         validation_message: parsed.validation_message,
+
+        // Enhanced quality metrics
+        hasMerchant: !!parsed.merchant,
+        hasTotal: !!parsed.total,
+        hasDate: !!parsed.date,
+        merchantConfidence: parsed.merchant ? 1 : 0,
+        totalConfidence: parsed.total ? parsed.confidence_score : 0,
+        dateConfidence: parsed.date ? 1 : 0
       };
     }
 
@@ -62,7 +70,7 @@ export async function processReceipt(originalImageUri) {
       };
     }
 
-    const parsed = enhancedReceiptParser(mindeeResult.text);
+    const parsed = EnhancedReceiptParser.parseReceiptText(mindeeResult.text);
 
     return {
       success: true,
@@ -77,6 +85,14 @@ export async function processReceipt(originalImageUri) {
       confidence_level: parsed.confidence_level || null,
       is_receipt_like: parsed.is_receipt_like,
       validation_message: parsed.validation_message,
+
+      // Enhanced quality metrics
+      hasMerchant: !!parsed.merchant,
+      hasTotal: !!parsed.total,
+      hasDate: !!parsed.date,
+      merchantConfidence: parsed.merchant ? 1 : 0,
+      totalConfidence: parsed.total ? parsed.confidence_score : 0,
+      dateConfidence: parsed.date ? 1 : 0
     };
 
   } catch (err) {

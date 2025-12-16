@@ -171,7 +171,7 @@ useEffect(() => {
         onSuccess: async (userData) => {
           console.log("🎉 Face login success");
           setFaceLoginLoading(false);
-          navigation.replace("MainApp");
+          await handleLoginSuccess(userData);
         },
         onCancel: () => {
           console.log("🛑 Face login cancelled");
@@ -336,41 +336,52 @@ useEffect(() => {
   };
 
   const determineNextScreen = async (userId) => {
-    try {
-      const onboardingDone = await checkOnboardingStatus(userId);
-      const userData = await getUserById(userId);
-      const hasFace = await hasRegisteredFace(userId);
-      const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
+  try {
+    const onboardingDone = await checkOnboardingStatus(userId);
+    const userData = await getUserById(userId);
+    const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
 
-      // not done onboarding
-      if (!onboardingDone) {
-        return { screen: 'OnboardingScreen' };
-      }
-
-      // no face registered
-      if (!hasFace) {
-        return {
-          screen: 'FaceRegistration',
-          params: { showSkipOption: true, fromLogin: true }
-        };
-      }
-
-      if (dailyQuizEnabled) {
-        const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
-        const todayDone = await getTodayQuizStatus(userId);
-        if (!hasSeenQuizIntro) {
-          return { screen: 'QuizIntroductionScreen', params: { userId } };
-        } else if (!todayDone) {
-          return { screen: 'DailyQuiz', params: { userId } };
-        }
-      }
-
-      return { screen: 'MainApp' };
-    } catch (err) {
-      console.error('determineNextScreen error:', err);
-      return { screen: 'MainApp' };
+    // 1. Not done onboarding
+    if (!onboardingDone) {
+      return { screen: 'OnboardingScreen' };
     }
-  };
+
+    // 2. Daily quiz system ON
+    if (dailyQuizEnabled) {
+
+      const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
+      const skippedToday = await AsyncStorage.getItem(`quizSkippedToday_${userId}`);
+      const todayDone = await AsyncStorage.getItem(`hasCompletedQuiz_${userId}`);
+
+      const today = new Date().toDateString();
+      const lastQuizDate = await AsyncStorage.getItem(`lastQuizDate_${userId}`);
+
+      // 3. Reset skip/completed when day changes
+      if (lastQuizDate !== today) {
+        await AsyncStorage.removeItem(`quizSkippedToday_${userId}`);
+        await AsyncStorage.removeItem(`hasCompletedQuiz_${userId}`);
+        await AsyncStorage.setItem(`lastQuizDate_${userId}`, today);
+      }
+
+      // 4. Show quiz introduction (first time only)
+      if (!hasSeenQuizIntro) {
+        return { screen: 'QuizIntroductionScreen', params: { userId } };
+      }
+
+      // 5. Show daily quiz if NOT done and NOT skipped
+      if (!todayDone && !skippedToday) {
+        return { screen: 'DailyQuiz', params: { userId } };
+      }
+    }
+
+    // 6. Default
+    return { screen: 'MainApp' };
+
+  } catch (err) {
+    console.error('determineNextScreen error:', err);
+    return { screen: 'MainApp' };
+  }
+};
 
   // --------------- Render ---------------
   return (

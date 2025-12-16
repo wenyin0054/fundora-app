@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { FDSValidatedInput } from "../../reuseComponet/DesignSystem";
 import {
   deleteEventTagLocal,
   getEventTagsLocal,
   addEventTagLocal,
   createEventTagTable,
   updateEventTagLocal,
+  initDB
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
 import { useUser } from "../../reuseComponet/UserContext"; // Import useUser
@@ -30,12 +32,15 @@ export default function EventTagManager({ route, navigation }) {
   const { userId, isLoading: userLoading } = useUser(); // Use useUser to get userId
   const { tag } = route.params || {};
 
+  const tagRef = useRef(null);
+
   // 🧠 Load Tags
   const loadTags = async () => {
     if (!userId) return;
     
     try {
       setIsLoading(true);
+      await initDB();
       await createEventTagTable();
       const data = await getEventTagsLocal(userId);
       setTags(data);
@@ -64,12 +69,13 @@ export default function EventTagManager({ route, navigation }) {
 
   // ➕ Add or Update Tag
   const handleSaveTag = async () => {
-    const trimmedName = newTag.trim();
+    const tagValid = tagRef.current?.validate();
 
-    if (!trimmedName) {
-      Alert.alert("⚠️ Empty Name", "Please enter a tag name.");
+    if (!tagValid) {
       return;
     }
+
+    const trimmedName = newTag.trim();
 
     if (!userId) {
       Alert.alert("Error", "User not logged in");
@@ -107,7 +113,7 @@ export default function EventTagManager({ route, navigation }) {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteEventTagLocal(id);
+            await deleteEventTagLocal(userId,id);
             await loadTags();
           } catch (error) {
             Alert.alert("Error", "Failed to delete tag");
@@ -173,13 +179,14 @@ export default function EventTagManager({ route, navigation }) {
 
       {/* Add/Edit Section */}
       <View style={styles.inputSection}>
-        <TextInput
-          placeholder="Enter tag name"
-          placeholderTextColor={"#c5c5c5ff"}
+        <FDSValidatedInput
+          ref={tagRef}
+          label="Tag Name"
           value={newTag}
           onChangeText={setNewTag}
-          style={styles.input}
-          maxLength={50}
+          placeholder="Enter tag name"
+          validate={(v) => v && v.trim().length > 0}
+          errorMessage="Tag name cannot be empty"
         />
 
         <TextInput

@@ -9,7 +9,7 @@ import React, { useImperativeHandle, forwardRef, useRef, useState } from "react"
 // 1. COLOR SYSTEM
 // -----------------------------
 export const FDSColors = {
-  primary: "#8AD0AB",       // Fundora 主色调 (柔和绿色)
+  primary: "#8AD0AB",       // Fundora primary color (soft green)
   primaryDark: "#6FB896",
   textDark: "#1F2937",
   textGray: "#6B7280",
@@ -141,6 +141,7 @@ export const FDSButton = ({
 export const FDSValidatedInput = forwardRef(({
   label,
   icon,
+  rightIcon,
   placeholder,
   value,
   onChangeText,
@@ -214,7 +215,7 @@ export const FDSValidatedInput = forwardRef(({
           value={value}
           onChangeText={(t) => {
             if (error) {
-              // typing clears error visual (可选)
+              // typing clears error visual (optional)
               setError(false);
             }
             setTouched(true);
@@ -226,6 +227,7 @@ export const FDSValidatedInput = forwardRef(({
           keyboardType={keyboardType}
           multiline={multiline}
         />
+        {rightIcon ? <View style={styles.inputRightIcon}>{rightIcon}</View> : null}
       </Animated.View>
 
       {error && touched ? <Text style={styles.errorText}>{msg}</Text> : null}
@@ -297,9 +299,9 @@ export const FDSValidatedPicker = forwardRef(
 
         <Animated.View
           style={[
-            styles.inputContainer, // 使用正常 input container 样式
+            styles.inputContainer, // Use normal input container style
             { transform: [{ translateX: shakeAnim }] },
-            error ? styles.inputErrorBorder : null, // 使用现有 error 样式
+            error ? styles.inputErrorBorder : null, // Use existing error style
           ]}
         >
           {icon ? <View style={styles.inputIcon}>{icon}</View> : null}
@@ -326,6 +328,44 @@ export const FDSValidatedPicker = forwardRef(
     );
   }
 );
+
+export const FDSValidatedBlock = React.forwardRef(
+  ({ label, validate, errorMessage, children }, ref) => {
+    const [error, setError] = React.useState(false);
+
+    React.useImperativeHandle(ref, () => ({
+      validate: () => {
+        const ok = validate ? validate() : true;
+        setError(!ok);
+        return ok;
+      },
+    }));
+
+    return (
+      <View style={{ marginBottom: 12 }}>
+        {label && <FDSLabel>{label}</FDSLabel>}
+        <View
+          style={[
+            error && {
+              borderWidth: 1,
+              borderColor: "#D32F2F",
+              borderRadius: 10,
+              padding: 6,
+            },
+          ]}
+        >
+          {children}
+        </View>
+        {error && (
+          <Text style={{ color: "#D32F2F", marginTop: 4, fontSize: 12 }}>
+            {errorMessage}
+          </Text>
+        )}
+      </View>
+    );
+  }
+);
+
 
 
 // =====================================
@@ -403,6 +443,9 @@ const styles = StyleSheet.create({
   },
   inputIcon: {
     marginRight: 8,
+  },
+  inputRightIcon: {
+    marginLeft: 8,
   },
   input: {
     flex: 1,

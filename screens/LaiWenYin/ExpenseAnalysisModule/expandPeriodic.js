@@ -13,6 +13,9 @@ export const expandPeriodicExpenses = (expenses) => {
 
             if (exp.type === "Monthly") spreadMonths = exp.periodInterval || 1;
             else if (exp.type === "Yearly") spreadMonths = (exp.periodInterval || 1) * 12;
+            else if (exp.type === "Quarterly") spreadMonths = (exp.periodInterval || 1) * 3;
+            else if (exp.type === "6 months") spreadMonths = 6;
+            else spreadMonths = exp.periodInterval || 1; // default to monthly periods
 
             const monthlyAmount = exp.amount / spreadMonths;
 

@@ -57,10 +57,10 @@ export default function AddSavingMethodScreen({ navigation, route }) {
     "#00BCD4", "#8BC34A", "#FFC107", "#795548", "#607D8B"
   ];
 
-  // 使用 useFocusEffect 來重置表單
+  // Use useFocusEffect to reset form
   useFocusEffect(
     useCallback(() => {
-      // 當頁面獲得焦點時，重置表單狀態
+      // When page gains focus, reset form state
       setMethodName("");
       setMethodType("investment");
       setRiskLevel(3);
@@ -70,7 +70,7 @@ export default function AddSavingMethodScreen({ navigation, route }) {
       setIconName("📊");
 
       return () => {
-        // 可選的清理函數
+        // Optional cleanup function
       };
     }, [])
   );

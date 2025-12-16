@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from "@react-native-picker/picker";
-import { updateUserOnboardingInfo,completeOnboarding } from "../../../database/userAuth";
+import { updateUserOnboardingInfo,completeOnboarding, hasRegisteredFace } from "../../../database/userAuth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get("window");
@@ -81,8 +81,15 @@ const handleFinish = async () => {
     // Mark onboarding as completed
     await completeOnboarding(currentUser.userId);
 
+    // Check if face is registered
+    const hasFace = await hasRegisteredFace(currentUser.userId);
+
     Alert.alert("✅ Success", "Your information has been saved!");
-    navigation.replace("MainApp");
+    if (!hasFace) {
+      navigation.replace("FaceRegistration", { showSkipOption: true, fromLogin: false });
+    } else {
+      navigation.replace("MainApp");
+    }
   } catch (error) {
     console.error("Error saving onboarding info:", error);
     Alert.alert("Error", "Failed to save your details. Please try again.");

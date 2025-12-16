@@ -1,74 +1,60 @@
 import React, { useState } from "react";
-import { 
-  View, Text, TextInput, TouchableOpacity, 
-  StyleSheet, Alert, ActivityIndicator, ScrollView 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  ScrollView
 } from "react-native";
-import axios from "axios";
-import { getApiBase } from "../FaceAuthModule/apiConfig";
-
-const API = getApiBase();
-
-const handleReset = async () => {
-  const pwdError = validatePassword(newPassword);
-  if (pwdError) {
-    Alert.alert("Invalid Password", pwdError);
-    return;
-  }
-
-  if (newPassword !== confirmPassword) {
-    Alert.alert("Error", "Passwords do not match");
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    const API = getApiBase();
-
-    await axios.post(`${API}/reset-password`, {
-      email,
-      newPassword,
-    });
-
-    setLoading(false);
-
-    Alert.alert(
-      "Success",
-      "Your password has been reset!",
-      [{ text: "Go to Login", onPress: () => navigation.navigate("Login") }]
-    );
-
-  } catch (error) {
-    setLoading(false);
-    Alert.alert("Error", "Failed to reset password.");
-  }
-};
+import { Ionicons } from "@expo/vector-icons";
+import { resetPassword } from "../../../database/userAuth";
 
 export default function ResetPassword({ route, navigation }) {
-  const { email, token, resetLink } = route.params || {};
+  const { email } = route.params || {};
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // 👁 same logic as LoginScreen
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const validatePassword = (password) => {
-  if (!password) return "Password is required";
-  if (password.length < 6) return "Password must be at least 6 characters";
-  if (password.length > 20) return "Password must be less than 20 characters";
-  if (!/(?=.*[A-Za-z])(?=.*\d)/.test(password))
-    return "Password must contain letters and numbers";
-  return null; // success
-};
+    if (!password) return "Password is required";
+    if (password.length < 6) return "Password must be at least 6 characters";
+    if (password.length > 20) return "Password must be less than 20 characters";
+    if (!/(?=.*[A-Za-z])(?=.*\d)/.test(password))
+      return "Password must contain letters and numbers";
+    return null;
+  };
 
-  const handleShowResetLink = () => {
-    if (resetLink) {
-      Alert.alert(
-        "Reset Link Information",
-        `Email: ${email}\n\nReset Link: ${resetLink}`,
-        [{ text: "OK" }]
-      );
+  const handleReset = async () => {
+    const pwdError = validatePassword(newPassword);
+    if (pwdError) {
+      Alert.alert("Invalid Password", pwdError);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await resetPassword(email, newPassword); // 🔐 handled securely in backend
+      setLoading(false);
+
+      Alert.alert("Success", "Your password has been reset!", [
+        { text: "Go to Login", onPress: () => navigation.navigate("Login") }
+      ]);
+    } catch (error) {
+      setLoading(false);
+      Alert.alert("Error", error.message || "Failed to reset password.");
     }
   };
 
@@ -77,34 +63,39 @@ export default function ResetPassword({ route, navigation }) {
       <Text style={styles.title}>Reset Password</Text>
       <Text style={styles.subtitle}>{email}</Text>
 
-      {resetLink && (
-        <TouchableOpacity style={styles.infoButton} onPress={handleShowResetLink}>
-          <Text style={styles.infoButtonText}>View Reset Info</Text>
-        </TouchableOpacity>
-      )}
-
       {/* NEW PASSWORD */}
       <View style={styles.inputGroup}>
         <Text style={styles.label}>New Password</Text>
 
         <View style={styles.passwordContainer}>
           <TextInput
-            style={styles.input}
+            style={styles.passwordInput}
             placeholder="Enter new password"
-            placeholderTextColor={"#c5c5c5ff"}
+            placeholderTextColor="#6B7280"
+
+            // 🔐 encrypted (masked) when eye is closed
             secureTextEntry={!showPassword}
+
             value={newPassword}
             onChangeText={setNewPassword}
             editable={!loading}
+            maxLength={20}
+
+            // Android dot color fix
+            selectionColor="#000000"
+            keyboardAppearance="light"
+            underlineColorAndroid="transparent"
           />
 
-          <TouchableOpacity 
-            style={styles.eyeButton}
+          <TouchableOpacity
             onPress={() => setShowPassword(!showPassword)}
+            disabled={loading}
           >
-            <Text style={styles.eyeButtonText}>
-              {showPassword ? "👁️" : "👁️‍🗨️"}
-            </Text>
+            <Ionicons
+              name={showPassword ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="#6B7280"
+            />
           </TouchableOpacity>
         </View>
 
@@ -119,22 +110,28 @@ export default function ResetPassword({ route, navigation }) {
 
         <View style={styles.passwordContainer}>
           <TextInput
-            style={styles.input}
+            style={styles.passwordInput}
             placeholder="Confirm new password"
-            placeholderTextColor={"#c5c5c5ff"}
+            placeholderTextColor="#6B7280"
             secureTextEntry={!showConfirmPassword}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             editable={!loading}
+            maxLength={20}
+            selectionColor="#000000"
+            keyboardAppearance="light"
+            underlineColorAndroid="transparent"
           />
 
-          <TouchableOpacity 
-            style={styles.eyeButton}
+          <TouchableOpacity
             onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            disabled={loading}
           >
-            <Text style={styles.eyeButtonText}>
-              {showConfirmPassword ? "👁️" : "👁️‍🗨️"}
-            </Text>
+            <Ionicons
+              name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="#6B7280"
+            />
           </TouchableOpacity>
         </View>
 
@@ -144,8 +141,8 @@ export default function ResetPassword({ route, navigation }) {
       </View>
 
       {/* RESET BUTTON */}
-      <TouchableOpacity 
-        style={[styles.button, loading && styles.buttonDisabled]} 
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleReset}
         disabled={loading}
       >
@@ -159,7 +156,7 @@ export default function ResetPassword({ route, navigation }) {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.backButton}
         onPress={() => navigation.goBack()}
         disabled={loading}
@@ -178,17 +175,21 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 20 },
   label: { fontWeight: "500", marginBottom: 8 },
 
-  passwordContainer: { position: "relative" },
-  input: {
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#F3F4F6",
     borderRadius: 10,
-    padding: 12,
-    paddingRight: 50,
-    fontSize: 16,
+    paddingHorizontal: 12,
   },
 
-  eyeButton: { position: "absolute", right: 12, top: 12 },
-  eyeButtonText: { fontSize: 16 },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingRight: 8,
+    fontSize: 16,
+    color: "#000",
+  },
 
   button: {
     backgroundColor: "#57C0A1",
@@ -198,8 +199,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   buttonDisabled: { opacity: 0.7 },
-
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  buttonText: { color: "#000", fontSize: 16, fontWeight: "600" },
 
   loadingContainer: { flexDirection: "row", gap: 8 },
 
@@ -207,13 +207,4 @@ const styles = StyleSheet.create({
   backButtonText: { color: "#6B7280" },
 
   errorText: { color: "#EF4444", fontSize: 12, marginTop: 5 },
-
-  infoButton: {
-    backgroundColor: "#E5E7EB",
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  infoButtonText: { fontSize: 12 },
 });

@@ -8,7 +8,7 @@ import Fuse from "fuse.js";
 import {
   getUserTag,
   getUserPredictions
-} from "../../../../database/SQLite"; // 保持你原来的路径
+} from "../../../../database/SQLite"; // Keep your original path
 import { normalize } from "./normalize";
 
 // ---------------------------
@@ -311,22 +311,22 @@ async function getSmartUserMemory(userId, payeeNorm) {
     const key = m.key;
     if (!key || key.length === 0) continue;
 
-    // ---- 1) 字符串相似度 (0–1) ----
+    // ---- 1) String similarity (0–1) ----
     const distance = levenshtein(payeeNorm, key)
     const maxLen = Math.max(payeeNorm.length, key.length);
     const charSim = 1 - (distance / maxLen);
 
-    // ---- 2) Jaro-Winkler 相似度 ----
+    // ---- 2) Jaro-Winkler similarity ----
     const jwSim = jaroWinkler(payeeNorm, key);
 
-    // ---- 3) 子串比例相似度 ----
+    // ---- 3) Substring ratio similarity ----
     const commonLength = longestCommonSubstring(payeeNorm, key).length;
     const subSim = commonLength / maxLen;
 
-    // ---- 4) 用户使用频率权重 ----
+    // ---- 4) User usage frequency weight ----
     const freqWeight = Math.min(1, (m.count || 1) / 5);
 
-    // ---- 5) 最终智能评分 ----
+    // ---- 5) Final intelligent scoring ----
     const finalScore =
       (charSim * 0.4) +
       (jwSim * 0.3) +
@@ -339,7 +339,7 @@ async function getSmartUserMemory(userId, payeeNorm) {
     }
   }
 
-  // ---- 动态阈值：根据输入长度自动调整 ----
+  // ---- Dynamic threshold: automatically adjust based on input length ----
   const dynamicThreshold =
     payeeNorm.length <= 3 ? 0.92 :
     payeeNorm.length <= 5 ? 0.85 : 0.75;

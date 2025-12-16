@@ -18,8 +18,10 @@ import {
   getGoalsLocal,
   initDefaultSavingMethods,
   getCurrentMonthSnapshotIncome,
-  getIncomeGrowthRate
+  getCurrentMonthlyExpenses
 } from "../../database/SQLite.js";
+import { getUserById, getTodayQuizStatus, resetUserDB } from "../../database/userAuth.js";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Feather';
 import { useTipManager } from "../LaiWenYin/TutorialModule/TipManager.js";
 import FinancialTipBanner from "../LaiWenYin/TutorialModule/FinancialTipBanner.js";
@@ -40,7 +42,7 @@ export default function DashboardScreen({ navigation }) {
     total_balance: 0,
   });
   const [monthlyIncome, setMonthlyIncome] = useState(0);
-  const [incomeGrowth, setIncomeGrowth] = useState(null);
+  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
 
   const { userId, userLevel, isLoading: userLoading } = useUser();
   const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
@@ -48,22 +50,47 @@ export default function DashboardScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       const refreshDashboard = async () => {
+        // resetUserDB();
         try {
-          if (!userId) return;
+          if (!userId) {
+            console.log("📌 refreshDashboard: no userId, skipping");
+            return;
+          }
 
-          console.log("🔄 Dashboard Focused — refreshing all data");
+          console.log("🔄 Dashboard Focused — refreshing all data for userId:", userId);
+
+          // Initialize database first
+          await initDB();
+
           await processPeriodicExpenses(userId);
-          await checkDueBillsAndGenerateReminders(userId);
+          await checkDueBillsAndGenerateReminders(userId, false);
           await processPeriodicBills(userId);
           await loadAllData();
           await loadGoals();
           const monthlyIncome = await getCurrentMonthSnapshotIncome(userId);
           setMonthlyIncome(monthlyIncome);
+          const expenses = await getCurrentMonthlyExpenses(userId);
+          setMonthlyExpenses(expenses);
 
-          const growth = await getIncomeGrowthRate(userId);
-          setIncomeGrowth(growth);
           const summary = await getUserSummary(userId);
           if (summary) setUserSummary(summary);
+
+          // Check daily quiz
+          const userData = await getUserById(userId);
+          const dailyQuizEnabled = !!(userData && userData.dailyQuiz === 1);
+          console.log("Daily quiz check:", { dailyQuizEnabled, userData: userData ? userData.dailyQuiz : null });
+          if (dailyQuizEnabled) {
+            const hasSeenQuizIntro = await AsyncStorage.getItem(`hasSeenQuizIntro_${userId}`);
+            const todayDone = await getTodayQuizStatus(userId);
+            console.log("Quiz status:", { hasSeenQuizIntro: !!hasSeenQuizIntro, todayDone });
+            if (!hasSeenQuizIntro) {
+              console.log("Navigating to QuizIntroductionScreen");
+              navigation.navigate('QuizIntroductionScreen', { userId });
+            } else if (!todayDone) {
+              console.log("Navigating to DailyQuiz");
+              navigation.navigate('DailyQuiz', { userId });
+            }
+          }
 
         } catch (err) {
           console.error("❌ Dashboard refresh error:", err);
@@ -84,7 +111,6 @@ export default function DashboardScreen({ navigation }) {
   const loadAllData = async () => {
     try {
       if (!userId) return;
-      await initDB();
       await initDefaultSavingMethods(userId);
       const bills = await getBillsLocal(userId);
       setBills(bills);
@@ -98,7 +124,6 @@ export default function DashboardScreen({ navigation }) {
     try {
       if (!userId) return;
       setLoadingGoals(true);
-      await initDB();
       const data = await getGoalsLocal(userId);
 
       const formatted = data.map(goal => ({
@@ -134,7 +159,13 @@ export default function DashboardScreen({ navigation }) {
     showTip('dashboard', 'quickActions');
   };
 
-  //loading state
+  const showSavingsTip = () => {
+    showTip('dashboard', 'savings');
+  };
+
+  const showBillsTip = () => {
+    showTip('dashboard', 'bills');
+  };
   if (userLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -213,13 +244,12 @@ export default function DashboardScreen({ navigation }) {
                 </Text>
 
                 <Text style={styles.expenseText}>
-                  🔴 Expenses: RM {userSummary.total_expense.toFixed(2)}
+                  🔴 Monthly Expenses: RM {monthlyExpenses.toFixed(2)}
                 </Text>
               </>
             ) : (
               <>
                 <Text style={styles.incomeText}>🟢 Monthly Income: RM ****.**</Text>
-                <Text style={{ color: "#d4ffdd" }}>📈 Growth: **%</Text>
                 <Text style={styles.expenseText}>🔴 Expenses: RM ****.**</Text>
               </>
             )}
@@ -229,7 +259,12 @@ export default function DashboardScreen({ navigation }) {
 
         {/* Monthly Savings Section */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>This Month's Savings Goals</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>This Month's Savings Goals</Text>
+            <TouchableOpacity onPress={showSavingsTip} style={styles.infoIconTouchable}>
+              <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
 
           {loadingGoals ? (
             <ActivityIndicator size="large" color="#8AD0AB" />
@@ -251,9 +286,14 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.sectionCard}>
           <View style={styles.billsHeader}>
             <Text style={styles.sectionTitle}>Upcoming Bills</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAll}>View All</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={showBillsTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate('SeeAllBill')}>
+                <Text style={styles.viewAll}>View All</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {bills.slice(0, 3).map((bill, index) => (
@@ -453,6 +493,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   billItem: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -553,7 +598,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  // 新增的加载和错误样式
+  // New loading and error styles
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

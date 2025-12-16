@@ -105,7 +105,7 @@ export default function BillDetail({ route, navigation }) {
       if (!periodTypeOptions.includes(selectedType)) {
         validPeriodType = false;
         setPeriodTypeError(true);
-        periodTypeRef.current?.shake?.(); // 如果你添加 shake ref
+        periodTypeRef.current?.shake?.(); // If you add shake ref
       }
     }
     if (!validPeriodType) return;

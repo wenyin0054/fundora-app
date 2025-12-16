@@ -12,15 +12,15 @@ export async function runMindeeOCR(imageInput) {
 
     let base64img = "";
 
-    // 1) 若传入 manipulateAsync 产物（含 base64）
+    // 1) If manipulateAsync product is passed (containing base64)
     if (typeof imageInput === "object" && imageInput?.base64) {
       base64img = imageInput.base64;
     } 
-    // 2) 若是 data URI
+    // 2) If it's data URI
     else if (typeof imageInput === "string" && imageInput.startsWith("data:")) {
       base64img = imageInput.split("base64,")[1];
     } 
-    // 3) 若是 file://
+    // 3) If it's file://
     else if (typeof imageInput === "string" && imageInput.startsWith("file://")) {
       base64img = await FileSystem.readAsStringAsync(imageInput, {
         encoding: FileSystem.EncodingType.Base64,
@@ -32,7 +32,7 @@ export async function runMindeeOCR(imageInput) {
       return { success: false, text: "", error: "base64_missing" };
     }
 
-    // 4) 组装 multipart/form-data
+    // 4) Assemble multipart/form-data
     const formData = new FormData();
     formData.append("document", {
       uri: "data:image/jpeg;base64," + base64img,
@@ -40,7 +40,7 @@ export async function runMindeeOCR(imageInput) {
       type: "image/jpeg",
     });
 
-    // 5) 正确 Mindee API 调用（不要设置 Content-Type，交给 fetch 自动生成）
+    // 5) Correct Mindee API call (do not set Content-Type, let fetch generate automatically)
     const response = await fetch(
       "https://api.mindee.net/v1/products/mindee/receipt/v1/predict",
       {

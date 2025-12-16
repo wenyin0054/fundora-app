@@ -1,4 +1,4 @@
-// ExpenseAnalysis.js - 修复月份显示问题
+// ExpenseAnalysis.js - Fix month display issue
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
@@ -10,11 +10,14 @@ import {
   Dimensions,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { PieChart, BarChart } from "react-native-chart-kit";
+import { PieChart, BarChart, LineChart } from "react-native-chart-kit";
 import AppHeader from "../../reuseComponet/header.js";
 import { getExpensesLocal } from "../../../database/SQLite.js";
 import { useUser } from "../../reuseComponet/UserContext.js";
-import {expandPeriodicExpenses} from "./expandPeriodic.js"
+import { expandPeriodicExpenses } from "./expandPeriodic.js"
+import { useTipManager } from "../TutorialModule/TipManager";
+import FinancialTipBanner from "../TutorialModule/FinancialTipBanner";
+import { Ionicons } from '@expo/vector-icons';
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -98,18 +101,32 @@ const getAvailableYears = (expenses) => {
   return Array.from(years).sort();
 };
 
+// Display helpers for UI
+const getDisplayMonth = (month) => {
+  if (month === "THIS_MONTH") return "This Month";
+  if (month === "LAST_MONTH") return "Last Month";
+  if (month === "LAST_3") return "Last 3 Months";
+  if (month === null || month === undefined || month === "All") return "All Months";
+  return month; // for actual month names like "May 2025"
+};
+
+const getDisplayCategory = (category) => {
+  if (category === "All") return "All Categories";
+  return category;
+};
+
 
 const computeNiceYAxis = (maxValue) => {
   if (!maxValue || maxValue <= 0) {
     return { yMax: 100, ticks: [0, 20, 40, 60, 80, 100] };
   }
 
-  // 常见金融图表间隔
+  // Common financial chart intervals
   const steps = [20, 50, 100, 200, 250, 500, 1000];
 
   let step = 20;
 
-  // 找一个能让我们把 maxValue 分成 <=5 段的刻度间隔
+  // Find a scale interval that allows us to divide maxValue into <=5 segments
   for (let s of steps) {
     if (maxValue / s <= 5) {
       step = s;
@@ -117,10 +134,10 @@ const computeNiceYAxis = (maxValue) => {
     }
   }
 
-  // **永远向上进位，不下降**
+  // **Always round up, never down**
   const yMax = Math.ceil(maxValue / step) * step;
 
-  // 6 个 yTicks（0 到 yMax）
+  // 6 yTicks (0 to yMax)
   const ticks = [];
   for (let i = 0; i <= 5; i++) {
     ticks.push(Math.round((yMax / 5) * i));
@@ -175,7 +192,7 @@ const groupExpensesByMonth = (expenses, selectedMonth = null) => {
     return { [monthKey]: empty };
   }
 
-  // 返回所有有数据的月份，按日期排序
+  // Return all months with data, sorted by date
   const keys = Object.keys(grouped).sort((a, b) => new Date(grouped[a].dateObj) - new Date(grouped[b].dateObj));
   const result = {};
   keys.forEach(k => { result[k] = grouped[k]; });
@@ -261,6 +278,92 @@ const getCategoryFinancialData = (filteredExpenses, selectedCategory) => {
       legendFontSize: 12,
     }
   ];
+};
+
+const getFinancialHealthInsight = (trendData) => {
+  if (!trendData || !trendData.datasets || trendData.datasets.length < 2) {
+    return null;
+  }
+
+  const incomeArr = trendData.datasets[0].data.map(v => v || 0);
+  const expenseArr = trendData.datasets[1].data.map(v => v || 0);
+
+  const totalIncome = incomeArr.reduce((s, v) => s + v, 0);
+  const totalExpense = expenseArr.reduce((s, v) => s + v, 0);
+
+  // No activity
+  if (totalIncome === 0 && totalExpense === 0) {
+    return {
+      label: "No Activity",
+      message: "No income or expense records were found for the selected period.",
+      color: "#6B7280",
+    };
+  }
+
+  const netBalance = totalIncome - totalExpense;
+  const savingsRate =
+    totalIncome > 0 ? (netBalance / totalIncome) * 100 : 0;
+
+  // Recent trend (last 3 months)
+  const recentIncome = incomeArr.slice(-3).reduce((s, v) => s + v, 0);
+  const recentExpense = expenseArr.slice(-3).reduce((s, v) => s + v, 0);
+  const recentNet = recentIncome - recentExpense;
+
+  // ---------- Insight logic ----------
+
+  // Strong & stable
+  if (netBalance > 0 && savingsRate >= 20 && recentNet >= 0) {
+    return {
+      label: "Healthy",
+      message: `Your yearly income exceeded expenses by RM${netBalance.toFixed(0)}, with a savings rate of ${savingsRate.toFixed(
+        1
+      )}%. Recent spending remains stable.`,
+      color: "#10B981",
+    };
+  }
+
+  // Positive but thin margin
+  if (netBalance > 0 && savingsRate >= 5) {
+    return {
+      label: "Moderate",
+      message: `You maintained a positive yearly balance of RM${netBalance.toFixed(
+        0
+      )}, but the savings rate (${savingsRate.toFixed(
+        1
+      )}%) is relatively small.`,
+      color: "#F59E0B",
+    };
+  }
+
+  // Break-even
+  if (Math.abs(netBalance) < totalIncome * 0.05) {
+    return {
+      label: "Break-even",
+      message: `Income and expenses are nearly balanced for the year (difference ≈ RM${netBalance.toFixed(
+        0
+      )}), leaving limited room for savings.`,
+      color: "#F59E0B",
+    };
+  }
+
+  // Overspending
+  if (netBalance < 0) {
+    return {
+      label: "Overspending",
+      message: `Expenses exceeded income by RM${Math.abs(
+        netBalance
+      ).toFixed(0)} over the year, which may affect long-term financial stability.`,
+      color: "#EF4444",
+    };
+  }
+
+  // Fallback
+  return {
+    label: "Uncertain",
+    message:
+      "The financial pattern shows fluctuations that require closer monitoring.",
+    color: "#6B7280",
+  };
 };
 
 
@@ -413,8 +516,19 @@ export default function AnalysisDashboard({ navigation }) {
   const [categoryInsights, setCategoryInsights] = useState(null);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState([]);
+  const [lineTrendData, setLineTrendData] = useState(null);
 
-  const { userId } = useUser();
+  // Collapsible sections
+  const [yearExpanded, setYearExpanded] = useState(true);
+  const [monthExpanded, setMonthExpanded] = useState(true);
+  const [categoryExpanded, setCategoryExpanded] = useState(false);
+
+  // Category show more/less
+  const [showAllCategories, setShowAllCategories] = useState(false);
+
+
+  const { userId, userLevel } = useUser();
+  const { currentTip, isTipVisible, showTip, hideTip } = useTipManager(userLevel);
 
   // refs for synchronized scrolling
   const monthScrollRef = useRef(null);
@@ -509,7 +623,10 @@ export default function AnalysisDashboard({ navigation }) {
 
   // processData: builds barData, pie, legend, insights
   const processData = (expenses, category, month) => {
-    // 先按 selectedYear 以及给定 category/month 过滤数据
+    // Filter for bar chart (all months in selected year, by category)
+    const filteredForBar = getFilteredExpenses(expenses, category, "All", selectedYear);
+
+    // Filter for pie chart and insights (selected period)
     const filtered = getFilteredExpenses(expenses, category, month, selectedYear);
 
     // ---------------------------
@@ -559,6 +676,28 @@ export default function AnalysisDashboard({ navigation }) {
       colors: ["#000"],
     };
 
+    const trend = getMonthlyIncomeExpenseTrend(expenses);
+
+    const lineData = {
+      labels: trend.map(t => t.label),
+      datasets: [
+        {
+          data: trend.map(t => t.income),
+          color: () => "#10B981", // green → income
+          strokeWidth: 3,
+        },
+        {
+          data: trend.map(t => t.expense),
+          color: () => "#EF4444", // red → expense
+          strokeWidth: 3,
+        },
+      ],
+      legend: ["Income", "Expenses"],
+    };
+
+    setLineTrendData(lineData);
+
+
     // ---------------------------
     // 6. Pie Chart — must use BOTH selected month AND selected year
     //    (Pie should show exactly the filtered records for the chosen Year/Month/Category)
@@ -591,6 +730,36 @@ export default function AnalysisDashboard({ navigation }) {
     const top = items.sort((a, b) => b.amount - a.amount).slice(0, 3);
     return { totalSpent: roundToTwo(total), transactionCount: count, averageTransaction: roundToTwo(avg), topTransactions: top.map(t => ({ ...t, amount: roundToTwo(t.amount) })) };
   };
+
+  const getMonthlyIncomeExpenseTrend = (expenses) => {
+    const months = generateLast12Months();
+
+    return months.map(m => {
+      let income = 0;
+      let expense = 0;
+
+      expenses.forEach(exp => {
+        const d = new Date(exp.date);
+        if (
+          d.getMonth() === m.dateObj.getMonth() &&
+          d.getFullYear() === m.dateObj.getFullYear()
+        ) {
+          if (exp.typeLabel === "income" || isIncomeCategory(exp.tag)) {
+            income += exp.amount;
+          } else {
+            expense += exp.amount;
+          }
+        }
+      });
+
+      return {
+        label: m.key,
+        income: roundToTwo(income),
+        expense: roundToTwo(expense),
+      };
+    });
+  };
+
 
 
   // Filter expenses by category, month (incl. shortcuts) and year (safe and stable)
@@ -680,161 +849,206 @@ export default function AnalysisDashboard({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <FinancialTipBanner
+        message={currentTip}
+        isVisible={isTipVisible}
+        onClose={hideTip}
+        userLevel={userLevel}
+      />
+
       <AppHeader title="Financial Analysis" showLeftButton={true} onLeftPress={() => navigation.goBack()} showBell={false} showProfile={false} />
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Filter Section */}
         <View style={styles.filterSection}>
+          {/* Active Filter Summary */}
+          <View style={styles.filterSummary}>
+            <Text style={styles.filterSummaryText}>
+              Filters: {(() => {
+                const filters = [];
+                if (selectedYear !== new Date().getFullYear()) filters.push(selectedYear.toString());
+                if (selectedMonth !== null && selectedMonth !== "All") filters.push(getDisplayMonth(selectedMonth));
+                if (selectedCategory !== "All") filters.push(getDisplayCategory(selectedCategory));
+                return filters.length > 0 ? filters.join(" • ") : "All Data";
+              })()}
+            </Text>
+          </View>
+
           <Text style={styles.sectionTitle}>Filters</Text>
 
           {/* SECTION: Year */}
           <View style={styles.filterBlock}>
-            <Text style={styles.blockLabel}>Year</Text>
-            <View style={styles.dropdownContainer}>
-              <Picker
-                selectedValue={selectedYear}
-                onValueChange={setSelectedYear}
-                style={styles.dropdown}
-              >
-                {availableYears.map((y, i) => (
-                  <Picker.Item key={i} label={y.toString()} value={y} />
-                ))}
-              </Picker>
-            </View>
+            <TouchableOpacity
+              style={styles.filterHeader}
+              onPress={() => setYearExpanded(!yearExpanded)}
+            >
+              <Text style={styles.blockLabel}>Year</Text>
+              <Text style={styles.expandIcon}>{yearExpanded ? "▼" : "▶"}</Text>
+            </TouchableOpacity>
+            {yearExpanded && (
+              <View style={styles.dropdownContainer}>
+                <Picker
+                  selectedValue={selectedYear}
+                  onValueChange={setSelectedYear}
+                  style={styles.dropdown}
+                >
+                  {availableYears.map((y, i) => (
+                    <Picker.Item key={i} label={y.toString()} value={y} />
+                  ))}
+                </Picker>
+              </View>
+            )}
           </View>
 
           {/* SECTION: Month */}
-          {/* MONTH FILTER */}
           <View style={styles.filterBlock}>
-            <Text style={styles.blockLabel}>Month</Text>
-
-            {/* CHIP ROW */}
-            <View style={styles.chipRow}>
-
-              {/* SHORTCUT CHIPS */}
-              <Chip
-                label="This Month"
-                active={selectedMonth === "THIS_MONTH"}
-                onPress={() =>
-                  setSelectedMonth(selectedMonth === "THIS_MONTH" ? null : "THIS_MONTH")
-                }
-
-              />
-
-              <Chip
-                label="Last Month"
-                active={selectedMonth === "LAST_MONTH"}
-                onPress={() =>
-                  setSelectedMonth(selectedMonth === "LAST_MONTH" ? null : "LAST_MONTH")
-                }
-              />
-
-
-              <Chip
-                label="Last 3 Months"
-                active={selectedMonth === "LAST_3"}
-                onPress={() =>
-                  setSelectedMonth(selectedMonth === "LAST_3" ? null : "LAST_3")
-                }
-              />
-
-
-              {/* REAL MONTH CHIPS */}
-              {availableMonths.map((m, i) => (
-                <Chip
-                  key={i}
-                  label={m}
-                  active={selectedMonth === m}
-                  onPress={() =>
-                    setSelectedMonth(selectedMonth === m ? null : m)
-                  }
-                />
-
-              ))}
-            </View>
-          </View>
-
-
-          {/* CATEGORY FILTER */}
-          <View style={styles.filterBlock}>
-            <Text style={styles.blockLabel}>Category</Text>
-
-            {/* Essential */}
-            {allCategories.essential.length > 0 && (
-              <Text style={styles.chipGroupLabel}>Essential</Text>
-            )}
-            <View style={styles.chipRow}>
-              {allCategories.essential.map((cat, i) => (
-                <Chip
-                  key={`e-${i}`}
-                  label={cat}
-                  active={selectedCategory === cat}
-                  onPress={() =>
-                    setSelectedCategory(selectedCategory === cat ? "All" : cat)
-                  }
-
-                />
-              ))}
-            </View>
-
-            {/* Non-essential */}
-            {allCategories.nonessential.length > 0 && (
-              <Text style={styles.chipGroupLabel}>Non-essential</Text>
-            )}
-            <View style={styles.chipRow}>
-              {allCategories.nonessential.map((cat, i) => (
-                <Chip
-                  key={`n-${i}`}
-                  label={cat}
-                  active={selectedCategory === cat}
-                  onPress={() =>
-                    setSelectedCategory(selectedCategory === cat ? "All" : cat)
-                  }
-
-                />
-              ))}
-            </View>
-
-            {/* Others */}
-            {allCategories.others.length > 0 && (
-              <Text style={styles.chipGroupLabel}>Others</Text>
-            )}
-            <View style={styles.chipRow}>
-              {allCategories.others.map((cat, i) => (
-                <Chip
-                  key={`o-${i}`}
-                  label={cat}
-                  active={selectedCategory === cat}
-                  onPress={() =>
-                    setSelectedCategory(selectedCategory === cat ? "All" : cat)
-                  }
-
-                />
-              ))}
-            </View>
-          </View>
-
-
-          {(selectedCategory !== "All" || selectedMonth !== "All" || selectedYear !== "All") && (
             <TouchableOpacity
-              style={styles.clearFilterButton}
+              style={styles.filterHeader}
+              onPress={() => setMonthExpanded(!monthExpanded)}
+            >
+              <Text style={styles.blockLabel}>Month</Text>
+              <Text style={styles.expandIcon}>{monthExpanded ? "▼" : "▶"}</Text>
+            </TouchableOpacity>
+            {monthExpanded && (
+              <>
+                {/* CHIP ROW */}
+                <View style={styles.chipRow}>
+                  {/* SHORTCUT CHIPS */}
+                  <Chip
+                    label="This Month"
+                    active={selectedMonth === "THIS_MONTH"}
+                    onPress={() =>
+                      setSelectedMonth(selectedMonth === "THIS_MONTH" ? null : "THIS_MONTH")
+                    }
+                  />
+
+                  <Chip
+                    label="Last Month"
+                    active={selectedMonth === "LAST_MONTH"}
+                    onPress={() =>
+                      setSelectedMonth(selectedMonth === "LAST_MONTH" ? null : "LAST_MONTH")
+                    }
+                  />
+
+                  <Chip
+                    label="Last 3 Months"
+                    active={selectedMonth === "LAST_3"}
+                    onPress={() =>
+                      setSelectedMonth(selectedMonth === "LAST_3" ? null : "LAST_3")
+                    }
+                  />
+
+                  {/* MONTH DROPDOWN - only show if no shortcut active */}
+                  {selectedMonth !== "THIS_MONTH" && selectedMonth !== "LAST_MONTH" && selectedMonth !== "LAST_3" && (
+                    <View style={[styles.dropdownContainer, { marginTop: 8, width: '100%' }]}>
+                      <Picker
+                        selectedValue={selectedMonth}
+                        onValueChange={(value) => setSelectedMonth(value)}
+                        style={styles.dropdown}
+                      >
+                        <Picker.Item label="All Months" value={null} />
+                        {availableMonths.map((m, i) => (
+                          <Picker.Item key={i} label={m} value={m} />
+                        ))}
+                      </Picker>
+                    </View>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+
+
+          {/* SECTION: Category */}
+          <View style={styles.filterBlock}>
+            <TouchableOpacity
+              style={styles.filterHeader}
+              onPress={() => setCategoryExpanded(!categoryExpanded)}
+            >
+              <Text style={styles.blockLabel}>Category</Text>
+              <Text style={styles.expandIcon}>{categoryExpanded ? "▼" : "▶"}</Text>
+            </TouchableOpacity>
+            {categoryExpanded && (
+              <>
+                {/* Essential */}
+                {allCategories.essential.length > 0 && (
+                  <Text style={styles.chipGroupLabel}>Essential</Text>
+                )}
+                <View style={styles.chipRow}>
+                  {allCategories.essential.slice(0, showAllCategories ? allCategories.essential.length : 5).map((cat, i) => (
+                    <Chip
+                      key={`e-${i}`}
+                      label={cat}
+                      active={selectedCategory === cat}
+                      onPress={() =>
+                        setSelectedCategory(selectedCategory === cat ? "All" : cat)
+                      }
+                    />
+                  ))}
+                </View>
+
+                {/* Non-essential */}
+                {allCategories.nonessential.length > 0 && (
+                  <Text style={styles.chipGroupLabel}>Non-essential</Text>
+                )}
+                <View style={styles.chipRow}>
+                  {allCategories.nonessential.slice(0, showAllCategories ? allCategories.nonessential.length : 5).map((cat, i) => (
+                    <Chip
+                      key={`n-${i}`}
+                      label={cat}
+                      active={selectedCategory === cat}
+                      onPress={() =>
+                        setSelectedCategory(selectedCategory === cat ? "All" : cat)
+                      }
+                    />
+                  ))}
+                </View>
+
+                {/* Others */}
+                {allCategories.others.length > 0 && (
+                  <Text style={styles.chipGroupLabel}>Others</Text>
+                )}
+                <View style={styles.chipRow}>
+                  {allCategories.others.slice(0, showAllCategories ? allCategories.others.length : 5).map((cat, i) => (
+                    <Chip
+                      key={`o-${i}`}
+                      label={cat}
+                      active={selectedCategory === cat}
+                      onPress={() =>
+                        setSelectedCategory(selectedCategory === cat ? "All" : cat)
+                      }
+                    />
+                  ))}
+                </View>
+
+                {/* Show More/Less Toggle */}
+                {(allCategories.essential.length > 5 || allCategories.nonessential.length > 5 || allCategories.others.length > 5) && (
+                  <TouchableOpacity
+                    style={styles.showMoreButton}
+                    onPress={() => setShowAllCategories(!showAllCategories)}
+                  >
+                    <Text style={styles.showMoreText}>
+                      {showAllCategories ? "Show Less" : "Show More"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
+
+
+          {/* Reset Filters - only show when filters differ from defaults */}
+          {(selectedCategory !== "All" || selectedYear !== new Date().getFullYear() || selectedMonth !== null) && (
+            <TouchableOpacity
+              style={styles.resetFiltersButton}
               onPress={() => {
                 const currentYear = new Date().getFullYear();
-
                 setSelectedCategory("All");
                 setSelectedYear(currentYear);
-
-                const hasCurrentYearMonths = availableMonths.some(m => m.includes(currentYear));
-
-                if (hasCurrentYearMonths) {
-                  setSelectedMonth(null);
-                } else {
-                  setSelectedMonth(null);
-                }
+                setSelectedMonth(null);
               }}
-
             >
-              <Text style={styles.clearFilterText}>Clear Filters</Text>
+              <Text style={styles.resetFiltersText}>Reset Filters</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -845,7 +1059,7 @@ export default function AnalysisDashboard({ navigation }) {
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>{selectedCategory === "All" ? "Financial Overview" : `${selectedCategory} Analysis`}</Text>
             <Text style={styles.cardSubtitle} numberOfLines={1}>
-              {selectedCategory === "All" ? (selectedMonth === "All" ? "All Time Period" : `${selectedMonth}`) : `Deep dive into ${selectedCategory}`}
+              {selectedCategory === "All" ? `${getDisplayMonth(selectedMonth)} • ${selectedYear}` : `Deep dive into ${selectedCategory}`}
             </Text>
           </View>
 
@@ -902,7 +1116,12 @@ export default function AnalysisDashboard({ navigation }) {
         {/* Monthly Spend Analysis */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>{selectedCategory === "All" ? "Monthly Spending" : `${selectedCategory} Trend`}</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{selectedCategory === "All" ? "Monthly Spending" : `${selectedCategory} Trend`}</Text>
+              <TouchableOpacity onPress={() => showTip('expenseAnalysis', 'monthlySpending')} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.cardSubtitle}>{selectedCategory === "All" ? "Last months overview" : `${selectedCategory} monthly trend`}</Text>
           </View>
 
@@ -916,7 +1135,12 @@ export default function AnalysisDashboard({ navigation }) {
                     <Text style={styles.singleMonthLabel}>Total for {barData.labels[0]}</Text>
                     {selectedCategory === "All" && (
                       <View style={styles.categoryBreakdown}>
-                        <Text style={styles.breakdownTitle}>Spending Breakdown:</Text>
+                        <View style={styles.breakdownHeader}>
+                          <Text style={styles.breakdownTitle}>Spending Breakdown:</Text>
+                          <TouchableOpacity onPress={() => showTip('expenseAnalysis', 'spendingBreakdown')} style={styles.infoIconTouchable}>
+                            <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+                          </TouchableOpacity>
+                        </View>
                         {barData.legend.map((category, idx) => {
                           const value = barData.datasets[idx]?.data[0] || 0;
                           const color = barData.datasets[idx]?.color ? barData.datasets[idx].color(1) : generateColor(idx);
@@ -1107,6 +1331,80 @@ export default function AnalysisDashboard({ navigation }) {
           </View>
         )}
 
+        {lineTrendData && (
+          <View style={[styles.card, { paddingTop: 16 }]}>
+
+            {/* Header */}
+            <View style={styles.cardHeader}>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>Income vs Expenses</Text>
+                <TouchableOpacity onPress={() => showTip('expenseAnalysis', 'incomeVsExpenses')} style={styles.infoIconTouchable}>
+                  <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cardSubtitle}>
+                Monthly financial health overview
+              </Text>
+            </View>
+
+            {/* Chart */}
+            <View style={styles.chartScrollContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={true}
+                style={styles.chartScrollView}
+              >
+                <View
+                  style={[
+                    styles.chartInnerContainer,
+                    { minWidth: Math.max(screenWidth - 40, lineTrendData.labels.length * 80) }
+                  ]}
+                >
+                  <LineChart
+                    data={lineTrendData}
+                    width={Math.max(screenWidth - 40, lineTrendData.labels.length * 80)}
+                    height={220}
+                    fromZero
+                    withDots
+                    bezier
+                    chartConfig={{
+                      backgroundColor: "#ffffff",
+                      backgroundGradientFrom: "#ffffff",
+                      backgroundGradientTo: "#ffffff",
+                      decimalPlaces: 0,
+                      color: () => "#374151",
+                      labelColor: () => "#6B7280",
+                      propsForDots: { r: "4" },
+                    }}
+                    style={{ borderRadius: 12, marginTop: 8 }}
+                  />
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Feedback text (next section) */}
+            {(() => {
+              const insight = getFinancialHealthInsight(lineTrendData);
+              if (!insight) return null;
+
+              return (
+                <View style={{ marginTop: 14 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: insight.color }}>
+                    Financial Status: {insight.label}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: "#4B5563", marginTop: 4 }}>
+                    {insight.message}
+                  </Text>
+                </View>
+              );
+            })()}
+
+          </View>
+        )}
+
+
+
+
         {/* Recent Transactions */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -1191,8 +1489,9 @@ const styles = StyleSheet.create({
   },
   clearFilterButton: { backgroundColor: "#EF4444", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, alignSelf: 'flex-start', marginTop: 12 },
   clearFilterText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  filterTip: { fontSize: 12, color: "#6B7280", marginTop: 4, fontStyle: 'italic' },
 
-  card: { backgroundColor: "#fff", borderRadius: 16, padding: 20, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 20, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2, marginTop: 16 },
   cardHeader: { marginBottom: 16 },
   cardTitle: { fontSize: 18, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
   cardSubtitle: { color: "#6B7280", fontSize: 13, fontWeight: '500' },
@@ -1288,5 +1587,64 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+
+  expandIcon: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+
+  showMoreButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+  },
+
+  showMoreText: {
+    fontSize: 13,
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+
+  resetFiltersButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+
+  resetFiltersText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+    textDecorationLine: 'underline',
+  },
+
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
+  infoIconTouchable: {
+    padding: 4,
+  },
+
+  breakdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
 
 });

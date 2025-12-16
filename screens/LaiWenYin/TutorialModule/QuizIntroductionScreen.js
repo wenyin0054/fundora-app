@@ -1,20 +1,41 @@
 // screens/QuizIntroductionScreen.js
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function QuizIntroductionScreen({ route, navigation }) {
-  const { userId } = route.params;
+  const { userId, forceShow = false } = route.params;
+  const [isChecking, setIsChecking] = useState(true);
+
+  React.useEffect(() => {
+    const checkOnboarding = async () => {
+      const hasCompleted = await AsyncStorage.getItem(`hasCompletedOnboarding_${userId}`);
+      if (hasCompleted && !forceShow) {
+        navigation.replace("MainApp");
+        return;
+      }
+      setIsChecking(false);
+    };
+    checkOnboarding();
+  }, [userId, navigation, forceShow]);
 
   const handleGetStarted = async () => {
-    await AsyncStorage.setItem(`hasSeenQuizIntro_${userId}`, 'true');
-    navigation.replace('DailyQuiz', { userId });
+    navigation.replace('DailyQuiz', { userId, fromOnboarding: true });
   };
 
   const handleSkip = async () => {
-    await AsyncStorage.setItem(`hasSeenQuizIntro_${userId}`, 'true');
+    await AsyncStorage.setItem(`hasCompletedOnboarding_${userId}`, 'true');
     navigation.replace('MainApp');
   };
+
+  if (isChecking) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#57C0A1" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -91,6 +112,8 @@ export default function QuizIntroductionScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  loadingText: { marginTop: 10, color: '#57C0A1', fontSize: 16 },
   scrollContent: { flexGrow: 1, padding: 20, alignItems: 'center' },
   image: { width: 200, height: 200, marginTop: 20, marginBottom: 30 },
   title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 10, color: '#2c3e50' },

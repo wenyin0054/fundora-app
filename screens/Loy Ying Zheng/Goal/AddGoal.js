@@ -102,6 +102,14 @@ export default function AddGoalScreen({ navigation }) {
       Alert.alert("Error", "Failed to save goal. Please try again.");
     }
   };
+  const formatDateDMY = (date) => {
+  if (!date) return "";
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}-${m}-${y}`;
+};
+
 
   // -----------------------------------------
   // RENDER UI
@@ -151,7 +159,7 @@ export default function AddGoalScreen({ navigation }) {
             onPress={() => setShowStartPicker(true)}
           >
             <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-            <Text style={styles.dateText}>{startDate.toDateString().slice(4)}</Text>
+<Text style={styles.dateText}>{formatDateDMY(startDate)}</Text>
           </TouchableOpacity>
 
           {showStartPicker && (
@@ -173,7 +181,7 @@ export default function AddGoalScreen({ navigation }) {
             onPress={() => setShowEndPicker(true)}
           >
             <Ionicons name="calendar-outline" size={18} color="#6c757d" />
-            <Text style={styles.dateText}>{endDate.toDateString().slice(4)}</Text>
+            <Text style={styles.dateText}>{formatDateDMY(endDate)}</Text>
           </TouchableOpacity>
 
           {showEndPicker && (

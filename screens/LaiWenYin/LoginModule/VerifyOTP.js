@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import React, { useState, useRef } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import { getApiBase } from "../FaceAuthModule/apiConfig";
+import { FDSValidatedInput, FDSButton } from "../../reuseComponet/DesignSystem";
 
 const API = getApiBase();
 
@@ -12,12 +13,11 @@ export default function VerifyOTP() {
   const { email } = route.params;
 
   const [otp, setOtp] = useState("");
+  const otpRef = useRef(null);
 
   const handleVerifyOTP = async () => {
-    if (otp.length !== 6) {
-      Alert.alert("Invalid OTP", "OTP must be 6 digits");
-      return;
-    }
+    const validOtp = otpRef.current?.validate();
+    if (!validOtp) return;
 
     try {
       const res = await axios.post(`${API}/verify-otp`, {
@@ -45,18 +45,22 @@ export default function VerifyOTP() {
         <Text style={{ fontWeight: "700" }}>{email}</Text>
       </Text>
 
-      <TextInput
-        style={styles.otpInput}
+      <FDSValidatedInput
+        ref={otpRef}
+        label="OTP Code"
         value={otp}
         onChangeText={setOtp}
-        placeholder="Enter OTP"
+        placeholder="Enter 6-digit OTP"
         keyboardType="number-pad"
         maxLength={6}
+        validate={(v) => v && v.length === 6}
+        errorMessage="OTP must be 6 digits"
       />
 
-      <TouchableOpacity style={styles.verifyBtn} onPress={handleVerifyOTP}>
-        <Text style={styles.verifyText}>Verify</Text>
-      </TouchableOpacity>
+      <FDSButton
+        title="Verify"
+        onPress={handleVerifyOTP}
+      />
     </View>
   );
 }
@@ -65,21 +69,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 25, backgroundColor: "#F9FAFB" },
   title: { fontSize: 30, fontWeight: "700", color: "#111827", marginBottom: 10 },
   subtitle: { fontSize: 15, color: "#6B7280", marginBottom: 25, lineHeight: 20 },
-  otpInput: {
-    height: 55,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    fontSize: 18,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    marginBottom: 25,
-  },
-  verifyBtn: {
-    backgroundColor: "#4F46E5",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  verifyText: { color: "#fff", fontSize: 17, fontWeight: "700" },
 });

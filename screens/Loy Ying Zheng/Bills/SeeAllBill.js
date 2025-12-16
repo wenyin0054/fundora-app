@@ -9,15 +9,22 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../reuseComponet/header";
-import { getBillsLocal } from "../../../database/SQLite";
+import { getBillsLocal, checkDueBillsAndGenerateReminders } from "../../../database/SQLite";
+import { useUser } from "../../reuseComponet/UserContext";
 
 export default function SeeAllBills({ navigation }) {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { userId } = useUser();
 
   const loadBills = async () => {
+    if (!userId) return;
+    
     try {
-      const data = await getBillsLocal();
+      // Check for due bills and update statuses before loading
+      await checkDueBillsAndGenerateReminders(userId, false); // false to prevent alerts
+      
+      const data = await getBillsLocal(userId);
       setBills(data);
     } catch (error) {
       console.error("❌ loadBills error:", error);
@@ -29,14 +36,20 @@ export default function SeeAllBills({ navigation }) {
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", loadBills);
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, userId]);
 
-  const getStatusTag = (dueDate, isPaid) => {
-    const today = new Date();
-    const billDate = new Date(dueDate);
-    if (isPaid) return { label: "Paid", color: "#9cd8b3" };
-    if (billDate < today) return { label: "Overdue", color: "#FF6B6B" };
-    return { label: "Upcoming", color: "#FFC107" };
+  const getStatusTag = (status) => {
+    switch (status) {
+      case "Paid":
+        return { label: "Paid", color: "#9cd8b3" };
+      case "Overdue":
+        return { label: "Overdue", color: "#FF6B6B" };
+      case "DueSoon":
+        return { label: "Due Soon", color: "#FFA500" };
+      case "Upcoming":
+      default:
+        return { label: "Upcoming", color: "#FFC107" };
+    }
   };
 
   if (loading) {
@@ -60,7 +73,7 @@ export default function SeeAllBills({ navigation }) {
           <Text style={styles.emptyText}>No bills found.</Text>
         ) : (
           bills.map((bill) => {
-            const status = getStatusTag(bill.dueDate, bill.isPaid);
+            const status = getStatusTag(bill.status || "Upcoming");
             return (
               <TouchableOpacity
                 key={bill.id}

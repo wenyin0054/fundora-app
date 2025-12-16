@@ -16,12 +16,12 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import Slider from "@react-native-community/slider";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import AddSavingAccountModal from "./AddSavingAccountModal";
 import {
   updateExpenseLocal,
   deleteExpenseLocal,
+  deleteExpenseWithSummary,
   updateGoalAmount,
   getUserSummary,
   updateUserSummaryOnEdit,
@@ -36,7 +36,10 @@ import {
   getSavingAccounts,
   allocateFundToGoal,
   getGoalFundAllocations,
-  recalculateMonthlyIncomeSnapshot
+  recalculateMonthlyIncomeSnapshot,
+  updateUserSummaryDirect,
+  updateSavingAccountBalance,
+  deleteGoalAllocation
 } from "../../../database/SQLite";
 import AppHeader from "../../reuseComponet/header";
 import { useUser } from "../../reuseComponet/UserContext";
@@ -46,7 +49,8 @@ import {
   FDSValidatedInput,
   FDSValidatedPicker,
   FDSButton,
-  FDSColors
+  FDSColors,
+  FDSValidatedBlock
 } from "../../reuseComponet/DesignSystem";
 
 export default function ExpenseDetail({ route, navigation }) {
@@ -93,6 +97,7 @@ export default function ExpenseDetail({ route, navigation }) {
 
   const options = ["Expenses", "Income", "Transaction"];
   const [selectedOption, setSelectedOption] = useState(dbToUiType(expense.typeLabel));
+  const originalSelectedOption = dbToUiType(expense.typeLabel); // Store original type
   const periodType = ["Yearly", "Monthly"];
   const [selectedPeriodType, setSelectedPeriodType] = useState(expense.type || "null");
 
@@ -116,35 +121,19 @@ export default function ExpenseDetail({ route, navigation }) {
 
   const { userId } = useUser();
 
-  // ---------- ERROR STATES ----------
-  const [payeeError, setPayeeError] = useState(false);
-  const [amountError, setAmountError] = useState(false);
-  const [tagError, setTagError] = useState(false);
-  const [paymentTypeError, setPaymentTypeError] = useState(false);
-  const [typeError, setTypeError] = useState(false);
-  const [dateError, setDateError] = useState(false);
-  const [goalError, setGoalError] = useState(false);
-  const [savingMethodError, setSavingMethodError] = useState(false);
 
-  // ---------- ANIMATED SHAKE ----------
-  const payeeShake = useRef(new Animated.Value(0)).current;
-  const amountShake = useRef(new Animated.Value(0)).current;
-  const tagShake = useRef(new Animated.Value(0)).current;
-  const paymentTypeShake = useRef(new Animated.Value(0)).current;
-  const goalShake = useRef(new Animated.Value(0)).current;
+  // ---------- ANIMATED SHAKE ---------- (removed - using FDS validation now)
 
-  const runShake = (animRef) => {
-    if (!animRef) return;
-    animRef.setValue(0);
-    Animated.sequence([
-      Animated.timing(animRef, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: 6, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: -6, duration: 50, useNativeDriver: true }),
-      Animated.timing(animRef, { toValue: 0, duration: 50, useNativeDriver: true }),
-    ]).start();
-    Vibration.vibrate(50);
-  };
+  // FDS Component Refs
+  const payeeRef = useRef(null);
+  const amountRef = useRef(null);
+  const tagRef = useRef(null);
+  const paymentTypeRef = useRef(null);
+  const goalRef = useRef(null);
+  const savingMethodRef = useRef(null);
+  const savingAccountRef = useRef(null);
+
+  // const runShake = (animRef) => { ... } (removed - using FDS validation now)
 
   // ---------- CONSTANT TAGS ----------
   const paymentTypeData = [
@@ -259,51 +248,24 @@ export default function ExpenseDetail({ route, navigation }) {
   // ---------- TYPE CHANGE ----------
   const handleTypeChange = (option) => {
     setSelectedOption(option);
-    setTypeError(false);
     if (option !== "Transaction") {
       setAllocateToGoal(false);
       setSelectedGoal(null);
     }
   };
 
-  // ---------- AMOUNT VALIDATION ----------
-  const validateAmount = (value, fieldName = "Amount", animRef) => {
-    if (!value || value === "") {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Missing ${fieldName}`, `Please enter ${fieldName.toLowerCase()}.`);
-      return false;
-    }
+  const isGoalOverdue = (goal) => {
+    if (!goal.deadline && !goal.due) return false;
 
-    if (isNaN(value)) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be numeric.`);
-      return false;
-    }
+    const d = goal.deadline || goal.due;
+    const deadlineDate = new Date(d + "T00:00:00");
+    const today = new Date();
 
-    const num = parseFloat(value);
-    if (num <= 0) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(`Invalid ${fieldName}`, `${fieldName} must be greater than 0.`);
-      return false;
-    }
-
-    if (num > 9999999999999999) {
-      setAmountError(true);
-      runShake(animRef);
-      Alert.alert(
-        `Invalid ${fieldName}`,
-        `${fieldName} cannot exceed 9,999,999,999,999,999.`
-      );
-      return false;
-    }
-
-    setAmountError(false);
-    return true;
+    return deadlineDate < today; // true = overdue
   };
 
+  // ---------- AMOUNT VALIDATION ---------- (removed - using FDS validation now)
+  // const validateAmount = (value, fieldName = "Amount", animRef) => { ... } (removed)
   // ---------- UPDATE ----------
   const onUpdate = async () => {
     if (!dbReady) return Alert.alert("Database not ready yet!");
@@ -314,59 +276,39 @@ export default function ExpenseDetail({ route, navigation }) {
     // ----------------------------------------------
     let valid = true;
 
-    if (!payee || !payee.trim()) {
-      setPayeeError(true); runShake(payeeShake);
-      Alert.alert("Missing Payee", "Please enter a payee or project.");
-      valid = false;
-    } else setPayeeError(false);
+    const validPayee = payeeRef.current?.validate();
+    if (!validPayee) return;
 
-    if (!validateAmount(amount, "Amount", amountShake)) valid = false;
+
+    const validAmount = amountRef.current?.validate();
+    if (!validAmount) return;
 
     if (!date) {
       setDateError(true);
-      Alert.alert("Missing Date", "Please select a date.");
-      valid = false;
+      // Could add FDS validation for date if needed
+      return;
     } else setDateError(false);
 
-    if (!selectedOption) {
-      setTypeError(true);
-      Alert.alert("Missing Type", "Please choose a type.");
-      valid = false;
-    } else setTypeError(false);
-
-    if (selectedOption !== "Income" && !tag) {
-      setTagError(true); runShake(tagShake);
-      Alert.alert("Missing Tag", "Please select a tag.");
-      valid = false;
-    } else setTagError(false);
-
-    if (selectedOption !== "Income" && !paymentType) {
-      setPaymentTypeError(true); runShake(paymentTypeShake);
-      Alert.alert("Missing Payment Type", "Please select a payment type.");
-      valid = false;
-    } else setPaymentTypeError(false);
-
-    if (selectedOption === "Transaction" && allocateToGoal) {
-      if (!selectedGoal) {
-        setGoalError(true); runShake(goalShake);
-        Alert.alert("Missing Goal", "Please select a goal.");
-        valid = false;
-      } else setGoalError(false);
-
-      if (!selectedSavingMethod) {
-        setSavingMethodError(true);
-        Alert.alert("Missing Saving Method", "Please select a saving method.");
-        valid = false;
-      } else setSavingMethodError(false);
-
-      if (!selectedSavingAccount) {
-        setSavingAccountError(true);
-        Alert.alert("Missing Account", "Please select a saving account.");
-        valid = false;
-      } else setSavingAccountError(false);
+    if (selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && !tag) {
+      const validTag = tagRef.current?.validate();
+      if (!validTag) return;
     }
 
-    if (!valid) return;
+    if (selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && !paymentType) {
+      const validPayment = paymentTypeRef.current?.validate();
+      if (!validPayment) return;
+    }
+
+    if (selectedOption === "Transaction" && allocateToGoal) {
+      const validGoal = goalRef.current?.validate();
+      if (!validGoal) return;
+
+      const validMethod = savingMethodRef.current?.validate();
+      if (!validMethod) return;
+
+      const validAccount = savingAccountRef.current?.validate();
+      if (!validAccount) return;
+    }
 
     // ----------------------------------------------
     //  2. Build newData + oldData
@@ -375,9 +317,9 @@ export default function ExpenseDetail({ route, navigation }) {
       payee: payee.trim(),
       amount: parseFloat(amount),
       date: date.toISOString().split("T")[0],
-      tag: selectedOption === "Income" ? null : tag,
+      tag: selectedOption === "Income" || (selectedOption === "Transaction" && allocateToGoal) ? null : tag,
       eventTag: eventTag || null,
-      paymentType: selectedOption === "Income" ? null : paymentType,
+      paymentType: selectedOption === "Income" || (selectedOption === "Transaction" && allocateToGoal) ? null : paymentType,
       isPeriodic,
       type: isPeriodic ? selectedPeriodType : null,
       typeLabel: uiToDbType(selectedOption),
@@ -458,30 +400,14 @@ export default function ExpenseDetail({ route, navigation }) {
           rollbackGoal: existingAllocation.goalId,
           rollbackAmount: existingAllocation.allocated_amount
         });
-
-
-        await db.runAsync(
-          `DELETE FROM goal_fund_allocations WHERE id = ? AND userId = ?`,
-          [existingAllocation.id, userId]
-        );
-
+        await deleteGoalAllocation(userId, existingAllocation.id);
         await updateGoalAmount(
           userId,
           existingAllocation.goalId,
           -existingAllocation.allocated_amount
         );
-
-        await db.runAsync(
-          `UPDATE saving_accounts SET current_balance = current_balance - ?
-         WHERE id = ? AND userId = ?`,
-          [
-            existingAllocation.allocated_amount,
-            existingAllocation.account_id,
-            userId,
-          ]
-        );
+        await updateSavingAccountBalance(userId, existingAllocation.account_id, existingAllocation.allocated_amount);
       }
-
       // 🟩 B. Add new allocation (old none → new has)
       if (!existingAllocation && newData.goalId) {
 
@@ -490,7 +416,6 @@ export default function ExpenseDetail({ route, navigation }) {
           accountId: selectedSavingAccount.id,
           amount: newData.amount
         });
-
         await allocateFundToGoal(
           userId,
           newData.goalId,
@@ -502,30 +427,24 @@ export default function ExpenseDetail({ route, navigation }) {
           "Allocated via edit",
           selectedSavingMethod.id
         );
-
         await updateGoalAmount(userId, newData.goalId, newData.amount);
       }
-
       // 🟩 C. Edit existing allocation
       if (existingAllocation && newData.goalId) {
         const allocationId = existingAllocation.id;
         const oldAllocAmount = existingAllocation.allocated_amount;
         const oldAccountId = existingAllocation.account_id;
         const oldGoalId = existingAllocation.goalId;
-
         // ① Amount changed
         if (newData.amount !== oldAllocAmount) {
           const diff = newData.amount - oldAllocAmount;
-
           await db.runAsync(
             `UPDATE goal_fund_allocations 
            SET allocated_amount = ?, current_value = ?
            WHERE id = ? AND userId = ?`,
             [newData.amount, newData.amount, allocationId, userId]
           );
-
           await updateGoalAmount(userId, oldGoalId, diff);
-
           await db.runAsync(
             `UPDATE saving_accounts SET current_balance = current_balance + ?
            WHERE id = ? AND userId = ?`,
@@ -605,37 +524,70 @@ export default function ExpenseDetail({ route, navigation }) {
         newData.periodInterval
       );
 
+      const oldIsGoalAllocation = oldData.typeLabel === "transaction" && oldData.goalId;
+      const newIsGoalAllocation = newData.typeLabel === "transaction" && newData.goalId;
+
       // ----------------------------------------------
-      //  7. UPDATE USER SUMMARY（保留你原本的）
+      //  7. UPDATE USER SUMMARY
       // ----------------------------------------------
-      const oldHadGoal = oldType === "transaction" && oldData.goalId != null;
-      const newHasGoal = newType === "transaction" && newData.goalId != null;
 
-      const isIncomeInvolved =
-        oldType === "income" || newType === "income";
+      // CASE A: allocate-to-goal → allocate-to-goal
+      if (oldIsGoalAllocation && newIsGoalAllocation) {
+        const diff = newData.amount - oldAmount;
+        if (diff !== 0) {
 
-      if (!isIncomeInvolved) {
-        if (oldType === newType && oldAmount !== newData.amount)
-          await updateUserSummaryOnEdit(
+          const latestSummary = await getUserSummary(userId);
+          await updateUserSummaryDirect(
             userId,
-            oldType,
-            oldAmount,
-            newData.amount
+            latestSummary.total_income,
+            latestSummary.total_expense,
+            latestSummary.total_balance - diff
           );
-      } else {
-        if (oldType === newType)
-
-          await updateUserSummaryOnEdit(
-            userId,
-            oldType,
-            oldAmount,
-            newData.amount
-          );
-        else {
-          await updateUserSummaryOnDelete(userId, oldType, oldAmount);
-          await updateUserSummaryOnAdd(userId, newType, newData.amount);
         }
       }
+      // CASE B: allocate-to-goal → normal transaction / expense
+      else if (oldIsGoalAllocation && !newIsGoalAllocation) {
+        // add back balance, then treat as expense
+        const latestSummary = await getUserSummary(userId);
+        const balance =
+          latestSummary.total_balance + oldAmount - newData.amount;
+
+        const expense =
+          latestSummary.total_expense + newData.amount;
+        await updateUserSummaryDirect(
+          userId,
+          latestSummary.total_income,
+          expense,
+          balance
+        );
+      }
+      // CASE C: normal transaction / expense → allocate-to-goal
+      else if (!oldIsGoalAllocation && newIsGoalAllocation) {
+        const latestSummary = await getUserSummary(userId);
+        const balance =
+          latestSummary.total_balance + oldAmount - newData.amount;
+
+        const expense =
+          latestSummary.total_expense - oldAmount;
+
+        await updateUserSummaryDirect(
+          userId,
+          latestSummary.total_income,
+          expense,
+          balance
+        );
+      }
+      // CASE D: normal expense / transaction edit
+      else {
+        await updateUserSummaryOnEdit(
+          userId,
+          oldType,
+          oldAmount,
+          newType,
+          newData.amount
+        );
+      }
+
 
       if (newType === "income" || oldType === "income") {
         await recalculateMonthlyIncomeSnapshot(userId, newData.date);
@@ -664,25 +616,54 @@ export default function ExpenseDetail({ route, navigation }) {
         style: "destructive",
         onPress: async () => {
           try {
-            const oldType = expense.type;
-            const oldAmount = parseFloat(expense.amount) || 0;
-
-            await deleteExpenseLocal(userId, expense.id);
-
-            if (oldType === "income") {
-              await updateUserSummaryOnDelete(userId, "income", oldAmount);
-              await recalculateMonthlyIncomeSnapshot(userId, expense.date);
-            } else {
-              await updateUserSummaryOnDelete(userId, "expense", oldAmount);
-            }
-
-            // Update goal amount if this was allocated to a goal
+            // ----------------------------------------------
+            //  1. HANDLE ALLOCATION REMOVAL (if exists)
+            // ----------------------------------------------
             if (expense.goalId) {
-              await updateGoalAmount(userId, expense.goalId, -oldAmount);
+              const allocations = await getGoalFundAllocations(userId, expense.goalId);
+              const existingAllocation = allocations.find((a) => a.transaction_id === expense.id);
+
+              if (existingAllocation) {
+                console.log("🔴 [DELETE] Removing allocation on expense delete:", {
+                  allocationId: existingAllocation.id,
+                  goalId: existingAllocation.goalId,
+                  amount: existingAllocation.allocated_amount,
+                  accountId: existingAllocation.account_id
+                });
+
+                // Remove allocation record
+                await deleteGoalAllocation(userId, existingAllocation.id);
+
+                // Update goal amount (subtract)
+                await updateGoalAmount(userId, existingAllocation.goalId, -existingAllocation.allocated_amount);
+
+                // Update saving account balance (add back)
+                await updateSavingAccountBalance(userId, existingAllocation.account_id, existingAllocation.allocated_amount);
+              }
             }
 
-            const updatedSummary = await getUserSummary(userId);
-            console.log("✅ Updated summary after delete:", updatedSummary);
+            // ----------------------------------------------
+            //  2. DELETE EXPENSE WITH PROPER SUMMARY HANDLING
+            // ----------------------------------------------
+            if (expense.typeLabel === "transaction" && expense.goalId) {
+              // allocate-to-goal delete → balance only
+              const summary = await getUserSummary(userId);
+              await updateUserSummaryDirect(
+                userId,
+                summary.total_income,
+                summary.total_expense,
+                summary.total_balance + expense.amount
+              );
+
+              await deleteExpenseLocal(userId, expense.id);
+            } else {
+              // normal expense / transaction
+              const result = await deleteExpenseWithSummary(userId, expense.id);
+
+              if (result?.success) {
+                navigation.goBack();
+              }
+            }
 
             Alert.alert("🗑️ Deleted", "Record removed successfully!", [
               { text: "OK", onPress: () => navigation.goBack() }
@@ -739,33 +720,32 @@ export default function ExpenseDetail({ route, navigation }) {
 
             {/* PAYEE */}
             <FDSValidatedInput
+              ref={payeeRef}
               label="Payee / Project"
               value={payee}
-              onChangeText={(t) => {
-                setPayee(t);
-                if (t.trim()) setPayeeError(false);
-              }}
+              onChangeText={setPayee}
               validate={(v) => v && v.trim().length > 0}
               errorMessage="Payee is required"
               icon={<Ionicons name="person-outline" size={18} color={FDSColors.textGray} />}
             />
 
-            {/* AMOUNT 或 TOTAL BALANCE */}
-            {selectedOption === "Transaction" && allocateToGoal ? (
+            {/* AMOUNT or TOTAL BALANCE */}
+            {selectedOption !== originalSelectedOption ? (
               <View style={{ marginTop: 12 }}>
-                <FDSLabel>Total Balance</FDSLabel>
-                <Text style={{ fontSize: 16, color: "#2E5E4E", marginTop: 4 }}>
-                  RM {userSummary.total_balance?.toFixed(2)}
+                <FDSLabel>Amount (Fixed when changing type)</FDSLabel>
+                <Text style={{ fontSize: 16, color: "#2E5E4E", marginTop: 4, fontWeight: "600" }}>
+                  RM {amount}
+                </Text>
+                <Text style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                  Amount is fixed when changing transaction type
                 </Text>
               </View>
             ) : (
               <FDSValidatedInput
+                ref={amountRef}
                 label="Amount"
                 value={amount}
-                onChangeText={(t) => {
-                  setAmount(t);
-                  setAmountError(false);
-                }}
+                onChangeText={setAmount}
                 keyboardType="numeric"
                 validate={(v) => v && !isNaN(v) && parseFloat(v) > 0}
                 errorMessage="Amount must be greater than 0"
@@ -810,8 +790,9 @@ export default function ExpenseDetail({ route, navigation }) {
             )}
 
             {/* TAG */}
-            {selectedOption !== "Income" && (
+            {selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && (
               <FDSValidatedPicker
+                ref={tagRef}
                 label="Tag"
                 value={tag}
                 validate={(v) => !!v}
@@ -829,7 +810,6 @@ export default function ExpenseDetail({ route, navigation }) {
                       });
                     } else {
                       setTag(itemValue);
-                      setTagError(false);
                     }
                   }}
                   style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
@@ -844,8 +824,9 @@ export default function ExpenseDetail({ route, navigation }) {
             )}
 
             {/* PAYMENT TYPE */}
-            {selectedOption !== "Income" && (
+            {selectedOption !== "Income" && !(selectedOption === "Transaction" && allocateToGoal) && (
               <FDSValidatedPicker
+                ref={paymentTypeRef}
                 label="Payment Type"
                 value={paymentType}
                 validate={(v) => !!v}
@@ -924,86 +905,107 @@ export default function ExpenseDetail({ route, navigation }) {
 
             {/* ALLOCATE TO GOAL SWITCH */}
             {selectedOption === "Transaction" && (
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
+              <View style={[styles.rowSpace, { marginTop: 12 }]}>
                 <View>
                   <FDSLabel>Allocate to Goal?</FDSLabel>
-                  <Text style={{ fontSize: 12, color: FDSColors.textGray }}>Transfer savings into a goal</Text>
+                  <Text style={styles.hintSmall}>Use this to allocate amounts into saving goals</Text>
                 </View>
-                <Switch
-                  value={allocateToGoal}
-                  onValueChange={setAllocateToGoal}
-                  trackColor={{ false: "#ccc", true: FDSColors.primary }}
-                  thumbColor="#fff"
-                />
+                <Switch value={allocateToGoal} onValueChange={setAllocateToGoal} trackColor={{ false: "#ccc", true: "#9cd8b3" }} thumbColor={allocateToGoal ? "#fff" : "#f4f3f4"} />
               </View>
             )}
 
           </FDSCard>
           {selectedOption === "Transaction" && allocateToGoal && (
-            <FDSCard>
-
-              {/* SELECT GOAL */}
-              <FDSValidatedPicker
-                label="Target Goal"
-                value={selectedGoal ? goals.find((g) => g.id === selectedGoal)?.name : ""}
-                validate={(v) => !!selectedGoal}
-                errorMessage="Select a goal"
-              >
-                <Picker
-                  selectedValue={selectedGoal}
-                  onValueChange={(v) => setSelectedGoal(v)}
-                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
-                >
-                  <Picker.Item label="Select a Goal..." value={null} />
-                  {goals.map((g) => (
-                    <Picker.Item key={g.id} label={g.name} value={g.id} />
-                  ))}
-                </Picker>
-              </FDSValidatedPicker>
-
-              {/* SAVING METHOD */}
-              <FDSValidatedPicker
-                label="Saving Method"
-                value={selectedSavingMethod?.name}
-                validate={(v) => !!selectedSavingMethod}
-                errorMessage="Select a saving method"
-              >
-                <Picker
-                  selectedValue={selectedSavingMethod?.id}
-                  onValueChange={(id) => {
-                    const method = savingMethods.find((m) => m.id === id);
-                    setSelectedSavingMethod(method);
+            <>
+              {/* Goal list card */}
+              <FDSCard>
+                <FDSValidatedBlock
+                  ref={goalRef}
+                  label="Select Goal"
+                  validate={() => {
+                    const goalObj = goals.find(g => g.id === selectedGoal);
+                    return !!goalObj && !isGoalOverdue(goalObj);
                   }}
-                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
+                  errorMessage="Please select a valid (non-overdue) goal"
                 >
-                  <Picker.Item label="Select..." value={null} />
-                  {savingMethods.map((m) => (
-                    <Picker.Item key={m.id} label={m.name} value={m.id} />
-                  ))}
-                </Picker>
-              </FDSValidatedPicker>
-              {/* SAVING ACCOUNT */}
-              <FDSValidatedPicker
-                label="Saving Account"
-                value={selectedSavingAccount?.name}
-                validate={(v) => !!selectedSavingAccount}
-              >
-                <Picker
-                  selectedValue={selectedSavingAccount?.id}
-                  onValueChange={(id) => {
-                    const acc = savingAccounts.find((a) => a.id === id);
-                    setSelectedSavingAccount(acc);
-                  }}
-                  style={{ position: "absolute", width: "100%", height: "100%", opacity: 0 }}
-                >
-                  <Picker.Item label="Select account..." value={null} />
-                  {savingAccounts.map((a) => (
-                    <Picker.Item key={a.id} label={a.name} value={a.id} />
-                  ))}
-                </Picker>
-              </FDSValidatedPicker>
+                  <View style={styles.goalList}>
+                    {goals.length > 0 ? (
+                      goals.map((g) => {
+                        const overdue = isGoalOverdue(g);
 
-            </FDSCard>
+                        return (
+                          <TouchableOpacity
+                            key={g.id}
+                            style={[
+                              styles.goalItem,
+                              selectedGoal === g.id && !overdue && styles.goalItemActive,
+                              overdue && { opacity: 0.4 }
+                            ]}
+                            onPress={() => {
+                              if (overdue) {
+                                // This is a business rule alert, not validation
+                                Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
+                                return;
+                              }
+                              setSelectedGoal(g.id);
+                            }}
+                          >
+                            <Text style={styles.goalName}>{g.goalName}</Text>
+                            <Text style={styles.goalSmall}>RM {(g.targetAmount || 0).toFixed(2)}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.hint}>No goals found. Add one in Savings Planner.</Text>
+                    )}
+
+                  </View>
+                </FDSValidatedBlock>
+              </FDSCard>
+
+              {/* Saving method & account selection */}
+              <FDSCard>
+                <FDSValidatedBlock
+                  ref={savingMethodRef}
+                  label="Select Saving Method"
+                  validate={() => !!selectedSavingMethod}
+                  errorMessage="Please select a saving method"
+                >
+                  <View>
+                    {savingMethods.map((m) => (
+                      <TouchableOpacity key={m.id} style={[styles.methodRow, selectedSavingMethod?.id === m.id && styles.methodRowActive]} onPress={() => { setSelectedSavingMethod(m); setSelectedSavingAccount(null); }}>
+                        <Text style={styles.methodIcon}>{m.icon_name}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.methodTitle}>{m.method_name}</Text>
+                          <Text style={styles.methodSub}>Return: {m.expected_return}% • Risk: {"⭐".repeat(m.risk_level)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </FDSValidatedBlock>
+
+                {selectedSavingMethod && (
+                  <FDSValidatedBlock
+                    ref={savingAccountRef}
+                    label="Select Account"
+                    validate={() => !!selectedSavingAccount}
+                    errorMessage="Please select a saving account"
+                  >
+                    {savingAccounts.filter(a => a.method_id === selectedSavingMethod.id).map((acc) => (
+                      <TouchableOpacity key={acc.id} style={[styles.accountRow, selectedSavingAccount?.id === acc.id && styles.accountRowActive]} onPress={() => setSelectedSavingAccount(acc)}>
+                        <Text style={styles.accountName}>{acc.institution_name} - {acc.account_name}</Text>
+                        <Text style={styles.accountBal}>Balance: RM {acc.current_balance.toFixed(2)}</Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity style={styles.addAccountBtn} onPress={() => setShowAccountModal(true)}>
+                      <Ionicons name="add-circle-outline" size={18} color={FDSColors.primary} />
+                      <Text style={styles.addAccountText}>Add New Account</Text>
+                    </TouchableOpacity>
+                  </FDSValidatedBlock>
+                )}
+              </FDSCard>
+            </>
           )}
           <View style={{ paddingHorizontal: 16 }}>
             <FDSButton
@@ -1097,5 +1099,25 @@ const styles = StyleSheet.create({
     color: "#2E5E4E",
     fontWeight: "600",
   },
+
+  /* goal / method styles */
+  rowSpace: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  hintSmall: { color: "#6b7280", fontSize: 12 },
+  goalList: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
+  goalItem: { backgroundColor: "#F5F9F7", padding: 10, borderRadius: 10, margin: 6, borderWidth: 1, borderColor: "#CDE9D6" },
+  goalItemActive: { backgroundColor: "#9CD8B3", borderColor: "#7BC49E" },
+  goalName: { color: "#2E5E4E", fontWeight: "600" },
+  goalSmall: { color: "#555", fontSize: 12 },
+  methodRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: "#f3f6fa", marginBottom: 8 },
+  methodRowActive: { backgroundColor: "#9cd8b3" },
+  methodIcon: { fontSize: 20, marginRight: 12 },
+  methodTitle: { fontSize: 15, fontWeight: "600", color: "#2E5E4E" },
+  methodSub: { fontSize: 12, color: "#555" },
+  accountRow: { backgroundColor: "#f3f6fa", padding: 12, borderRadius: 10, marginTop: 8 },
+  accountRowActive: { backgroundColor: "#8ad0ab" },
+  accountName: { fontWeight: "600", color: "#2E5E4E" },
+  accountBal: { color: "#555", fontSize: 12 },
+  addAccountBtn: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  hint: { color: "#6b7280", fontStyle: "italic", marginTop: 6 },
 
 });

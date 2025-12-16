@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useEffect } from "react";
 import {
   Modal,
@@ -13,6 +13,7 @@ import {
   ScrollView
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
+import { FDSValidatedInput } from "../../reuseComponet/DesignSystem";
 import { addSavingAccount } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
 
@@ -30,15 +31,23 @@ export default function AddSavingAccountModal({
   const [interestRate, setInterestRate] = useState("");
   const [selectedMethodId, setSelectedMethodId] = useState(methodId);
 
+  const institutionRef = useRef(null);
+  const accountRef = useRef(null);
+  const interestRef = useRef(null);
+
   const { userId } = useUser();
   useEffect(() => {
     setSelectedMethodId(methodId);
   }, [methodId, visible]);
 
   const handleSave = async () => {
-    if (!selectedMethodId || !institutionName.trim() || !accountName.trim()) {
-      Alert.alert("Missing Info", "Please complete all required fields.");
-      return;
+    // Validate required fields
+    const institutionValid = institutionRef.current?.validate();
+    const accountValid = accountRef.current?.validate();
+    const interestValid = interestRef.current?.validate();
+
+    if (!selectedMethodId || !institutionValid || !accountValid || !interestValid) {
+      return; // Validation will show errors and shake
     }
 
     try {
@@ -56,7 +65,7 @@ export default function AddSavingAccountModal({
       onSaved?.();
       onClose();
 
-      // 重置表单
+      // Reset form
       setInstitutionName("");
       setAccountName("");
       setBalance("");
@@ -102,7 +111,7 @@ export default function AddSavingAccountModal({
                 enabled={!methodId}
               >
                 {methodId ? (
-                  <Picker.Item label={methodName} value={methodId} />
+                  <Picker.Item label={methodName} value={methodId} color="#c5c5c5ff"/>
                 ) : (
                   <>
                     <Picker.Item label="Select saving method" value={null} />
@@ -114,24 +123,24 @@ export default function AddSavingAccountModal({
               </Picker>
             </View>
 
-            <Text style={styles.modalLabel}>Institution Name:</Text>
-            <TextInput
-              style={styles.modalInput}
+            <FDSValidatedInput
+              ref={institutionRef}
+              label="Institution Name"
               value={institutionName}
               onChangeText={setInstitutionName}
               placeholder="e.g. Maybank"
-              placeholderTextColor={"#c5c5c5ff"}
-              returnKeyType="next"
+              validate={(v) => v && v.trim().length > 0}
+              errorMessage="Institution name is required"
             />
 
-            <Text style={styles.modalLabel}>Account Name:</Text>
-            <TextInput
-              style={styles.modalInput}
+            <FDSValidatedInput
+              ref={accountRef}
+              label="Account Name"
               value={accountName}
               onChangeText={setAccountName}
               placeholder="e.g. Savings Account"
-              placeholderTextColor={"#c5c5c5ff"}
-              returnKeyType="next"
+              validate={(v) => v && v.trim().length > 0}
+              errorMessage="Account name is required"
             />
 
             <Text style={styles.modalLabel}>Balance (Optional):</Text>
@@ -145,16 +154,15 @@ export default function AddSavingAccountModal({
               returnKeyType="next"
             />
 
-            <Text style={styles.modalLabel}>Interest Rate (%):</Text>
-            <TextInput
-              style={styles.modalInput}
+            <FDSValidatedInput
+              ref={interestRef}
+              label="Interest Rate (%)"
               value={interestRate}
               onChangeText={setInterestRate}
               keyboardType="numeric"
               placeholder="0"
-              placeholderTextColor={"#c5c5c5ff"}
-              returnKeyType="done"
-              onSubmitEditing={handleSave}
+              validate={(v) => v !== "" && !isNaN(v) && parseFloat(v) >= 0}
+              errorMessage="Please enter a valid interest rate"
             />
 
             <View style={styles.modalButtons}>

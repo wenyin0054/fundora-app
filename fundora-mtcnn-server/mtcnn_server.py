@@ -470,18 +470,25 @@ def verify_otp():
     c = conn.cursor()
     c.execute("SELECT otp, expiresAt FROM password_reset_requests WHERE email = ?", (email,))
     row = c.fetchone()
-    conn.close()
 
     if not row:
+        conn.close()
         return jsonify({"success": False, "error": "No OTP request found"})
 
     saved_otp, expires_at = row
 
     if otp != saved_otp:
+        conn.close()
         return jsonify({"success": False, "error": "Invalid OTP"})
 
     if time.time() > expires_at:
+        conn.close()
         return jsonify({"success": False, "error": "OTP expired"})
+
+    # Delete the OTP after successful verification (single-use)
+    c.execute("DELETE FROM password_reset_requests WHERE email = ?", (email,))
+    conn.commit()
+    conn.close()
 
     return jsonify({"success": True, "message": "OTP verified"})
 

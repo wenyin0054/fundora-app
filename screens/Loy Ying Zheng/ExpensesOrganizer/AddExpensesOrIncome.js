@@ -28,8 +28,6 @@ import {
   getTagsLocal,
   getGoalsLocal,
   getUserSummary,
-  updateUserSummary,
-  updateGoalAmount,
   getEventTagsLocal,
   getActiveEventTagsLocal,
   createUserSummary,
@@ -39,14 +37,15 @@ import {
   allocateFundToGoal,
   saveUserTag,
   saveMonthlyIncomeSnapshot,
-  recalculateMonthlyIncomeSnapshot,
+  updateUserSummaryDirect,
+  updateUserSummaryOnAdd
 } from "../../../database/SQLite";
 
 import { useUser } from "../../reuseComponet/UserContext";
 import { predictCategory } from "./AutoAssignTag/AIPredictionEngine";
 import { normalize } from "./AutoAssignTag/normalize";
 
-// === FDS 组件（你之前放在 screens/reuseComponet/DesignSystem.js）===
+// === FDS Components (previously located in screens/reuseComponet/DesignSystem.js) ===
 import {
   FDSCard,
   FDSInput,
@@ -55,7 +54,7 @@ import {
   FDSColors,
   FDSValidatedInput,
   FDSValidatedPicker,
-  FDSI
+  FDSValidatedBlock
 } from "../../reuseComponet/DesignSystem";
 
 export default function AddExpenseScreen({ route, navigation }) {
@@ -95,12 +94,13 @@ export default function AddExpenseScreen({ route, navigation }) {
   const [selectedSavingMethod, setSelectedSavingMethod] = useState(null);
   const [selectedSavingAccount, setSelectedSavingAccount] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [goalError, setGoalError] = useState(false);
-  const [methodError, setMethodError] = useState(false);
-  const [accountError, setAccountError] = useState(false);
   const paymentTypeRef = useRef(null);
   const tagRef = useRef(null);
   const intervalRef = useRef(null);
+  const goalRef = useRef(null);
+  const methodRef = useRef(null);
+  const accountRef = useRef(null);
+  const goalAmountRef = useRef(null);
 
 
   // for auto tag 
@@ -191,6 +191,19 @@ export default function AddExpenseScreen({ route, navigation }) {
   }, [userId]);
 
   useEffect(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const filteredEvents = activeEventTags.filter(
+      (t) => t.startDate <= todayStr && (!t.endDate || t.endDate >= todayStr)
+    );
+
+    // Auto-select first event if multiple and none selected
+    if (filteredEvents.length > 0 && !eventTag) {
+      setEventTag(filteredEvents[0].name);
+    }
+  }, [activeEventTags]);
+
+
+  useEffect(() => {
     if (!incomingScanData) return;
     const handleScanData = async () => {
       const data = incomingScanData;
@@ -211,8 +224,23 @@ export default function AddExpenseScreen({ route, navigation }) {
           }
         }
         if (data.transaction_date) {
-          const dateObj = new Date(data.transaction_date);
-          if (!isNaN(dateObj)) setDate(dateObj);
+          // Parse transaction_date defensively
+          try {
+            let dateStr = data.transaction_date;
+            // Replace "/" with "-" for consistency
+            dateStr = dateStr.replace(/\//g, '-');
+            // Ensure it's in YYYY-MM-DD format
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              const [year, month, day] = dateStr.split('-').map(Number);
+              const dateObj = new Date(year, month - 1, day);
+              // Only set date if it's valid
+              if (!isNaN(dateObj.getTime())) {
+                setDate(dateObj);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse transaction_date:', data.transaction_date, e);
+          }
         }
       } catch (e) {
         console.error("Error applying scanned data:", e);
@@ -244,12 +272,12 @@ export default function AddExpenseScreen({ route, navigation }) {
 
   //tag
   const fetchTag = React.useCallback(async () => {
-    if (!userId) return; // 添加检查
+    if (!userId) return; // Add check
     const loadedTags = await getTagsLocal(userId);
     setTags(loadedTags);
     const loadedEventTags = await getEventTagsLocal(userId);
     setEventTagData(loadedEventTags);
-  }, [userId]); // 添加 userId 依赖
+  }, [userId]); // Add userId dependency
 
   useFocusEffect(
     React.useCallback(() => {
@@ -306,7 +334,7 @@ export default function AddExpenseScreen({ route, navigation }) {
     // Save user selection to AI memory
     if (payee && selectedTag) {
       const norm = normalize(payee);
-      await saveUserTag(userId, norm, selectedTag, 1); // 注意：确保 saveUserTag 接受 normalized payee
+      await saveUserTag(userId, norm, selectedTag, 1); // Note: Ensure saveUserTag accepts normalized payee
       console.log("💾 Saved user choice (normalized):", norm, "->", selectedTag);
     }
   };
@@ -383,8 +411,21 @@ export default function AddExpenseScreen({ route, navigation }) {
     const isTransaction = selectedOption === "Transaction";
     const isGoalAllocation = isTransaction && allocateToGoal;
 
-    const currentTag = isGoalAllocation ? "Allocate to Goal" : tag;
+    // Get active event (if any)
+    const todayStr = new Date().toISOString().split("T")[0];
+    const activeEvent =
+      activeEventTags.find(
+        (e) => e.startDate <= todayStr && (!e.endDate || e.endDate >= todayStr)
+      ) || null;
 
+    // Final tag decision
+    const effectiveTag =
+      tag ||
+      (activeEvent ? activeEvent.name : null);
+
+    const currentTag = isGoalAllocation
+      ? "Allocate to Goal"
+      : effectiveTag;
     // ------------------ VALIDATION ------------------
     // VALIDATE AMOUNT (Income / Expense / Transaction without allocation)
     if (!isGoalAllocation) {
@@ -394,25 +435,30 @@ export default function AddExpenseScreen({ route, navigation }) {
     }
 
     //  VALIDATE PAYEE (Only Expense / Transaction)
-    if ((isExpense || isTransaction) && !isGoalAllocation) {
+    if (isExpense || isTransaction) {
       const validPayee = payeeRef.current?.validate();
-      if (!validPayee) {
-        return
-      }
+      if (!validPayee) return;
     }
 
     //  VALIDATE GOAL ALLOCATION AMOUNT
     if (isGoalAllocation) {
-      if (!validateAmount(sliderValue, "Goal Amount")) return;
-      if (!selectedGoal) return Alert.alert("Missing Goal", "Please select a goal.");
-      if (sliderValue <= 0) return Alert.alert("Invalid Amount", "Please select amount to allocate.");
+      if (!sliderValue || sliderValue <= 0) {
+        // Show error on the slider/goal allocation section
+        // Since slider doesn't have FDS validation, we'll handle this differently
+        return;
+      }
+      const validGoal = goalRef.current?.validate();
+      if (!validGoal) return;
     }
 
     // Tag Validation
     if ((isExpense || (isTransaction && !isGoalAllocation))) {
-      const validTag = tagRef.current?.validate();
-      if (!validTag) return;
+      if (!effectiveTag) {
+        const validTag = tagRef.current?.validate();
+        if (!validTag) return;
+      }
     }
+
 
     // Payment Type Validation
     if ((isExpense || (isTransaction && !isGoalAllocation))) {
@@ -443,17 +489,14 @@ export default function AddExpenseScreen({ route, navigation }) {
           null, periodInterval
         );
 
-        await updateUserSummary(userId, "income", finalAmount);
+        await updateUserSummaryOnAdd(userId, "income", finalAmount);
         await saveMonthlyIncomeSnapshot(userId, finalDate);
         Alert.alert("Success", "Income recorded successfully!");
       }
 
       // ==================== EXPENSE / TRANSACTION ===================
       if (isExpense || isTransaction) {
-
-        // 1️⃣ UPDATE GOAL AMOUNT
-        if (goalId) await updateGoalAmount(userId, goalId, finalAmount);
-
+        await createUserSummary(userId);
         // 2️⃣ ADD EXPENSE / TRANSACTION AND GET NEW ID
         const newTransactionId = await addExpenseLocal(
           userId, trimmedPayee, finalAmount, finalDate,
@@ -479,12 +522,29 @@ export default function AddExpenseScreen({ route, navigation }) {
         }
 
         // 4️⃣ UPDATE SUMMARY
-        await updateUserSummary(userId, "expense", finalAmount);
+        if (isGoalAllocation) {
+          // Allocate to goal = internal transfer → balance only
+          const latestSummary = await getUserSummary(userId);
+          await updateUserSummaryDirect(
+            userId,
+            latestSummary.total_income,
+            latestSummary.total_expense,
+            latestSummary.total_balance - finalAmount
+          );
+        } else {
+          // Normal expense or transaction = expense behavior
+          await updateUserSummaryOnAdd(userId, "expense", finalAmount);
+        }
 
-        Alert.alert(
-          "Success",
-          goalId ? "Amount allocated to goal & expense recorded!" : "Expense saved!"
-        );
+        const msg =
+          isGoalAllocation
+            ? "Amount allocated to goal"
+            : isTransaction
+              ? "Transaction recorded"
+              : "Expense saved";
+
+        Alert.alert("Success", msg);
+
       }
 
 
@@ -578,9 +638,23 @@ export default function AddExpenseScreen({ route, navigation }) {
               value={payee}
               onChangeText={(t) => onPayeeChange(t)}
               placeholder="Payee or purchased project"
-              validate={(v) => v && v.trim().length > 0}
-              errorMessage="Payee / Project is required"
+              validate={(v) => {
+                if (allocateToGoal) {
+                  return v && v.trim().length >= 3;
+                }
+                return v && v.trim().length > 0;
+              }}
+              errorMessage={
+                allocateToGoal
+                  ? "Please enter a short description (min 3 characters)"
+                  : "Payee / Project is required"
+              }
               icon={<Ionicons name="person-outline" size={18} color={FDSColors.textGray} />}
+              rightIcon={
+                <TouchableOpacity onPress={() => navigation.navigate('ScanReceipt', { onScanResult: (data) => setIncomingScanData(data) })}>
+                  <Ionicons name="camera-outline" size={18} color={FDSColors.textGray} />
+                </TouchableOpacity>
+              }
             />
 
             <View style={{ flexDirection: "row", gap: 10 }}>
@@ -630,7 +704,6 @@ export default function AddExpenseScreen({ route, navigation }) {
                   setShowDate(false);
                   if (selectedDate) setDate(selectedDate);
                 }}
-                maximumDate={new Date()}
               />
             )}
 
@@ -688,7 +761,9 @@ export default function AddExpenseScreen({ route, navigation }) {
                 {tag && (
                   <View style={styles.rowInline}>
                     <Text style={styles.smallLabel}>Essentiality</Text>
-                    <Switch value={essentialityLabel === 1} onValueChange={(v) => setEssentialityLabel(v)} trackColor={{ false: "#ccc", true: FDSColors.primary }} thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"} />
+                    <Switch value={essentialityLabel === 1} onValueChange={(v) => 
+                      setEssentialityLabel(v)} trackColor={{ false: "#ccc", true: FDSColors.primary }} 
+                      thumbColor={essentialityLabel ? "#fff" : "#f4f3f4"} />
                     <Text style={styles.smallLabel}>{essentialityLabel === 1 ? "Essential" : "Non-Essential"}</Text>
                   </View>
                 )}
@@ -706,15 +781,27 @@ export default function AddExpenseScreen({ route, navigation }) {
                     if (filteredEvents.length === 0) {
                       return <Text style={styles.hint}>No active event</Text>;
                     }
-                    if (filteredEvents.length === 1) {
-                      const e = filteredEvents[0];
-                      return <Text style={styles.eventText}>🎉 {e.name} ({e.startDate})</Text>;
-                    }
                     return (
-                      <Picker selectedValue={eventTag} onValueChange={(v) => setEventTag(v)} style={styles.invisiblePicker}>
-                        <Picker.Item label="-- Choose Active Event --" value={null} />
-                        {filteredEvents.map((tag) => <Picker.Item key={tag.id} label={`${tag.name} (${tag.startDate})`} value={tag.name} />)}
-                      </Picker>
+                      <View style={styles.pickerLike}>
+                        <Text style={styles.dropdownText}>
+                          {eventTag || "Choose active event"}
+                        </Text>
+
+                        <Picker
+                          selectedValue={eventTag}
+                          onValueChange={(v) => setEventTag(v)}
+                          style={styles.invisiblePicker}
+                        >
+                          {filteredEvents.map((tag) => (
+                            <Picker.Item
+                              key={tag.id}
+                              label={`${tag.name} (${tag.startDate})`}
+                              value={tag.name}
+                            />
+                          ))}
+                        </Picker>
+                      </View>
+
                     );
                   })()}
                 </View>
@@ -781,65 +868,85 @@ export default function AddExpenseScreen({ route, navigation }) {
             <>
               {/* Goal list card */}
               <FDSCard>
-                <FDSLabel>Select Goal</FDSLabel>
-                <View style={styles.goalList}>
-                  {goals.length > 0 ? (
-                    goals.map((g) => {
-                      const overdue = isGoalOverdue(g);
+                <FDSValidatedBlock
+                  ref={goalRef}
+                  label="Select Goal"
+                  validate={() => {
+                    const goalObj = goals.find(g => g.id === selectedGoal);
+                    return !!goalObj && !isGoalOverdue(goalObj);
+                  }}
+                  errorMessage="Please select a valid (non-overdue) goal"
+                >
+                  <View style={styles.goalList}>
+                    {goals.length > 0 ? (
+                      goals.map((g) => {
+                        const overdue = isGoalOverdue(g);
 
-                      return (
-                        <TouchableOpacity
-                          key={g.id}
-                          style={[
-                            styles.goalItem,
-                            selectedGoal === g.id && !overdue && styles.goalItemActive,
-                            overdue && { opacity: 0.4 }
-                          ]}
-                          onPress={() => {
-                            if (overdue) {
-                              Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
-                              return;
-                            }
-                            setSelectedGoal(g.id);
-                          }}
-                        >
-                          <Text style={styles.goalName}>{g.goalName}</Text>
-                          <Text style={styles.goalSmall}>RM {(g.targetAmount || 0).toFixed(2)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  ) : (
-                    <Text style={styles.hint}>No goals found. Add one in Savings Planner.</Text>
-                  )}
+                        return (
+                          <TouchableOpacity
+                            key={g.id}
+                            style={[
+                              styles.goalItem,
+                              selectedGoal === g.id && !overdue && styles.goalItemActive,
+                              overdue && { opacity: 0.4 }
+                            ]}
+                            onPress={() => {
+                              if (overdue) {
+                                Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
+                                return;
+                              }
+                              setSelectedGoal(g.id);
+                            }}
+                          >
+                            <Text style={styles.goalName}>{g.goalName}</Text>
+                            <Text style={styles.goalSmall}>RM {(g.targetAmount || 0).toFixed(2)}</Text>
+                          </TouchableOpacity>
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.hint}>No goals found. Add one in Savings Planner.</Text>
+                    )}
 
-                </View>
+                  </View>
+                </FDSValidatedBlock>
               </FDSCard>
 
               {/* Saving method & account selection */}
               <FDSCard>
-                <FDSLabel>Select Saving Method</FDSLabel>
-                <View>
-                  {savingMethods.map((m) => (
-                    <TouchableOpacity key={m.id} style={[styles.methodRow, selectedSavingMethod?.id === m.id && styles.methodRowActive]} onPress={() => { setSelectedSavingMethod(m); setSelectedSavingAccount(null); }}>
-                      <Text style={styles.methodIcon}>{m.icon_name}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.methodTitle}>{m.method_name}</Text>
-                        <Text style={styles.methodSub}>Return: {m.expected_return}% • Risk: {"⭐".repeat(m.risk_level)}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <FDSValidatedBlock
+                  ref={methodRef}
+                  label="Select Saving Method"
+                  validate={() => !!selectedSavingMethod}
+                  errorMessage="Please select a saving method"
+                >
+                  <View>
+                    {savingMethods.map((m) => (
+                      <TouchableOpacity key={m.id} style={[styles.methodRow, selectedSavingMethod?.id === m.id && styles.methodRowActive]} onPress={() => { setSelectedSavingMethod(m); setSelectedSavingAccount(null); }}>
+                        <Text style={styles.methodIcon}>{m.icon_name}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.methodTitle}>{m.method_name}</Text>
+                          <Text style={styles.methodSub}>Return: {m.expected_return}% • Risk: {"⭐".repeat(m.risk_level)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </FDSValidatedBlock>
 
                 {selectedSavingMethod && (
                   <>
-                    <FDSLabel style={{ marginTop: 12 }}>Select Account</FDSLabel>
-                    {savingAccounts.filter(a => a.method_id === selectedSavingMethod.id).map((acc) => (
-                      <TouchableOpacity key={acc.id} style={[styles.accountRow, selectedSavingAccount?.id === acc.id && styles.accountRowActive]} onPress={() => setSelectedSavingAccount(acc)}>
-                        <Text style={styles.accountName}>{acc.institution_name} - {acc.account_name}</Text>
-                        <Text style={styles.accountBal}>Balance: RM {acc.current_balance.toFixed(2)}</Text>
-                      </TouchableOpacity>
-                    ))}
-
+                    <FDSValidatedBlock
+                      ref={accountRef}
+                      label="Select Account"
+                      validate={() => !!selectedSavingAccount}
+                      errorMessage="Please select a saving account"
+                    >
+                      {savingAccounts.filter(a => a.method_id === selectedSavingMethod.id).map((acc) => (
+                        <TouchableOpacity key={acc.id} style={[styles.accountRow, selectedSavingAccount?.id === acc.id && styles.accountRowActive]} onPress={() => setSelectedSavingAccount(acc)}>
+                          <Text style={styles.accountName}>{acc.institution_name} - {acc.account_name}</Text>
+                          <Text style={styles.accountBal}>Balance: RM {acc.current_balance.toFixed(2)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </FDSValidatedBlock>
                     <TouchableOpacity style={styles.addAccountBtn} onPress={() => setShowAccountModal(true)}>
                       <Ionicons name="add-circle-outline" size={18} color={FDSColors.primary} />
                       <Text style={styles.addAccountText}>Add New Account</Text>
@@ -850,31 +957,30 @@ export default function AddExpenseScreen({ route, navigation }) {
 
               {/* Amount slider card */}
               <FDSCard>
-                <FDSLabel>Amount to allocate</FDSLabel>
-                <View style={styles.amountRow}>
-                  <Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />
-                  <TextInput
-                    style={styles.manualAmount}
-                    keyboardType="numeric"
-                    value={sliderValue.toString()}
-                    onChangeText={(text) => {
-                      let val = parseFloat(text);
-                      if (isNaN(val)) val = 0;
-                      if (val > userSummary.total_balance) val = userSummary.total_balance;
-                      setSliderValue(val);
-                      const percent = ((val / (userSummary.total_balance || 1)) * 100).toFixed(1);
-                      setSliderPercent(percent);
-                    }}
-                    placeholder="Enter amount"
-                    placeholderTextColor={"#c5c5c5ff"}
-                  />
-                  <Text style={styles.balanceShort}>/ {userSummary.total_balance.toFixed(2)}</Text>
-                </View>
+                <FDSValidatedInput
+                  ref={goalAmountRef}
+                  label="Amount to Allocate"
+                  value={sliderValue.toString()}
+                  keyboardType="numeric"
+                  validate={(v) => {
+                    const n = Number(v);
+                    return Number.isFinite(n) && n > 0 && n <= userSummary.total_balance;
+                  }}
+                  errorMessage="Enter a valid amount within available balance"
+                  onChangeText={(v) => {
+                    const val = Number(v);
+                    setSliderValue(Number.isFinite(val) ? val : 0);
+                    const percent = ((val / (userSummary.total_balance || 1)) * 100).toFixed(1);
+                    setSliderPercent(percent);
+                  }}
+                  icon={<Ionicons name="cash-outline" size={18} color={FDSColors.textGray} />}
+                />
+
 
                 {lastMonthExpenses && userSummary.total_balance > 0 && (
                   <View style={{ marginTop: 8 }}>
                     {sliderValue > userSummary.total_balance - lastMonthExpenses.essentialTotal ? (
-                      <Text style={{ color: "#D32F2F", fontWeight: "600" }}>❌ Allocating this will leave only {(userSummary.total_balance - sliderValue).toFixed(2)} for essential expenses!</Text>
+                      <Text style={{ color: "#D32F2F", fontWeight: "600" }}>❌ Allocating this will leave only {(userSummary.total_balance - sliderValue).toFixed(2)} for essential expenses! Your last month essential expenses amount is {(lastMonthExpenses.essentialTotal).toFixed(2)}</Text>
                     ) : sliderValue > userSummary.total_balance - lastMonthExpenses.total ? (
                       <Text style={{ color: "#F57C00", fontWeight: "600" }}>⚠️ You may not have enough for last month's total spending.</Text>
                     ) : sliderValue > userSummary.total_balance / 2 ? (
@@ -904,23 +1010,15 @@ export default function AddExpenseScreen({ route, navigation }) {
                   style={[styles.goalSaveButton, isLoading && styles.disabledBtn]}
                   disabled={isLoading}
                   onPress={() => {
-                    let hasError = false;
-                    if (!selectedGoal) {
-                      setGoalError(true);
-                      hasError = true;
-                    } else {
-                      const selectedObj = goals.find(g => g.id === selectedGoal);
-                      if (isGoalOverdue(selectedObj)) {
-                        Alert.alert("Goal Overdue", "You cannot allocate funds to an overdue goal.");
-                        hasError = true;
-                      }
-                      else setGoalError(false);
-                    }
+                    const valid =
+                      goalAmountRef.current?.validate() &
+                      goalRef.current?.validate() &
+                      methodRef.current?.validate() &
+                      accountRef.current?.validate();
 
-                    if (!selectedSavingMethod) { setMethodError(true); hasError = true; } else setMethodError(false);
-                    if (!selectedSavingAccount) { setAccountError(true); hasError = true; } else setAccountError(false);
-                    if (hasError) { triggerShake(); Alert.alert("Missing Information", "Please complete all required fields."); return; }
-                    onSave(sliderValue); // 保留原 onSave
+                    if (!valid) return;
+
+                    onSave(sliderValue);
                   }}
                 >
                   {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.goalSaveText}>Save to {selectedGoal ? goals.find(g => g.id === selectedGoal).goalName : "Goal"}</Text>}
@@ -929,7 +1027,7 @@ export default function AddExpenseScreen({ route, navigation }) {
             </>
           )}
 
-          {/* 普通 Save Button */}
+          {/* Regular Save Button */}
           {!(selectedOption === "Transaction" && allocateToGoal) && (
             <View style={{ paddingHorizontal: 16 }}>
               <TouchableOpacity style={[styles.saveButton, isLoading && styles.disabledBtn]} disabled={isLoading} onPress={() => onSave()}>
@@ -1024,16 +1122,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 12,
-    backgroundColor: "#F0F4F8",        // 更柔和的淡灰蓝
+    backgroundColor: "#F0F4F8",        // Softer light gray blue
     borderWidth: 1,
-    borderColor: "#D0D7DF",            // 细银灰边框
+    borderColor: "#D0D7DF",            // Fine silver gray border
     marginRight: 10,
     minWidth: 80,
     alignItems: "center",
   },
 
   smallPillActive: {
-    backgroundColor: "#8AD0AB",        // Fundora 主色
+    backgroundColor: "#8AD0AB",        // Fundora primary color
     borderColor: "#72BD99",
     shadowColor: "#8AD0AB",
     shadowOpacity: 0.25,

@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 const { width } = Dimensions.get("window");
 
 export default function DailyQuiz({ route, navigation }) {
-  const { userId } = route.params;
+  const { userId, fromOnboarding = false } = route.params;
   const [quiz, setQuiz] = useState(null);
   const [selectedOption, setSelectedOption] = useState(null);
   const [showResult, setShowResult] = useState(false);
@@ -39,6 +39,7 @@ export default function DailyQuiz({ route, navigation }) {
   const modalScale = useRef(new Animated.Value(0.8)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
   const confettiAnim = useRef(new Animated.Value(0)).current;
+  const [showExplanation, setShowExplanation] = useState(false);
 
   useEffect(() => {
     loadUserLevelAndQuiz();
@@ -146,11 +147,13 @@ export default function DailyQuiz({ route, navigation }) {
     try {
       setIsLoading(true);
 
-      const todayDone = await getTodayQuizStatus(userId);
-      if (todayDone) {
-        setDailyDone(true);
-        setIsLoading(false);
-        return;
+      if (!fromOnboarding) {
+        const todayDone = await getTodayQuizStatus(userId);
+        if (todayDone) {
+          setDailyDone(true);
+          setIsLoading(false);
+          return;
+        }
       }
 
       const levels = await getExperienceLevel(userId);
@@ -180,6 +183,8 @@ export default function DailyQuiz({ route, navigation }) {
     setIsCorrect(correct);
     setShowResult(true);
     setHasAnswered(true);
+    setShowExplanation(!correct); // explicitly show explanation on wrong answer
+
 
     correct ? animateCorrect() : animateWrong();
 
@@ -189,10 +194,16 @@ export default function DailyQuiz({ route, navigation }) {
       selectedOption,
       correctAnswer: quiz.correct_answer,
       isCorrect: correct ? 1 : 0,
-      date: new Date().toISOString().split("T")[0],
+      date: new Date().toLocaleDateString('sv-SE'),
     };
 
     await insertQuizResult(quizResult);
+
+    // Mark onboarding as completed
+    await AsyncStorage.setItem(`hasCompletedOnboarding_${userId}`, 'true');
+
+    // Set last quiz date
+    await AsyncStorage.setItem(`lastQuizDate_${userId}`, new Date().toDateString());
 
     // Show the beautiful result modal
     setTimeout(() => {
@@ -368,6 +379,19 @@ export default function DailyQuiz({ route, navigation }) {
           );
         })}
 
+        {hasAnswered && !isCorrect && (
+          <View style={styles.explanationBox}>
+            <Text style={styles.explanationTitle}>Correct Answer:</Text>
+            <Text style={styles.correctAnswer}>
+              {quiz.options[quiz.correct_answer - 1]}
+            </Text>
+            <Text style={styles.explanationText}>
+              {quiz.explanation}
+            </Text>
+          </View>
+        )}
+
+
         {!hasAnswered ? (
           <TouchableOpacity
             onPress={submitAnswer}
@@ -445,7 +469,7 @@ export default function DailyQuiz({ route, navigation }) {
               }
             </Text>
 
-            {!isCorrect && (
+            {showExplanation && (
               <View style={styles.explanationBox}>
                 <Text style={styles.explanationTitle}>Correct Answer:</Text>
                 <Text style={styles.correctAnswer}>

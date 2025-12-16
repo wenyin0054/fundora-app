@@ -11,7 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import VerifyOTP from "../LaiWenYin/LoginModule/VerifyOTP";
 
-// 导入所有 screens
+// Import all screens
 import DashboardScreen from "../Loy Ying Zheng/dashboard";
 import AddExpenseScreen from "../Loy Ying Zheng/ExpensesOrganizer/AddExpensesOrIncome";
 import ExpenseDetail from "../Loy Ying Zheng/ExpensesOrganizer/ExpensesDetail";
@@ -23,7 +23,6 @@ import TagManagerScreen from "../Loy Ying Zheng/Tag/tagManager";
 import AddTag from "../Loy Ying Zheng/Tag/addTag";
 import GoalDetailScreen from "../Loy Ying Zheng/Goal/GoalDetailScreen";  
 import PeriodicExpenses from "../Loy Ying Zheng/EventTag/PeriodicExpenses";
-import AddEventTag from "../Loy Ying Zheng/EventTag/AddEventTag";
 import EventTagManager from "../Loy Ying Zheng/EventTag/EventTagManager";
 import AddBill from "../Loy Ying Zheng/Bills/AddBill";
 import BillDetail from "../Loy Ying Zheng/Bills/BillDetail";
@@ -34,7 +33,7 @@ import AddSavingMethodScreen from "../Loy Ying Zheng/SavingMethod/AddSavingMetho
 import SavingMethodDetailScreen from "../Loy Ying Zheng/SavingMethod/SavingMethodDetailScreen"
 import WithdrawalManagementScreen from "../Loy Ying Zheng/Goal/withdrawalManagementScreen"
 
-// Version 1 特有的 screens
+// Version 1 specific screens
 import LoginScreen from "../LaiWenYin/LoginModule/LoginScreen";
 import FaceRegistrationScreen from "../LaiWenYin/FaceAuthModule/FaceRegistration";
 import RegisterScreen from "../LaiWenYin/LoginModule/Register";
@@ -137,7 +136,7 @@ function MainTabs() {
   );
 }
 
-// --------- UNIFIED DRAWER (添加缺失的 screens) ----------
+// --------- UNIFIED DRAWER (add missing screens) ----------
 function UnifiedDrawerNavigator() {
   return (
     <Drawer.Navigator
@@ -150,8 +149,6 @@ function UnifiedDrawerNavigator() {
     >
       <Drawer.Screen name="Home" component={MainTabs} />
       <Drawer.Screen name="TagManager" component={TagManagerScreen} />
-      <Drawer.Screen name="PeriodicExpenses" component={PeriodicExpenses} />
-      <Drawer.Screen name="SavingsPlanner" component={SavingScreen} />
       <Drawer.Screen name="SavingMethodList" component={SavingMethodListScreen} />
       <Drawer.Screen name="WithdrawalManagement" component={WithdrawalManagementScreen} />
       <Drawer.Screen name="EventTagManager" component={EventTagManager} />
@@ -255,7 +252,6 @@ export default function Navigator() {
           <Stack.Screen name="AddGoal" component={SetGoal} options={{ headerShown: false }} />
           <Stack.Screen name="GoalDetail" component={GoalDetailScreen} options={{ headerShown: false }} />
           <Stack.Screen name="AddTag" component={AddTag} options={{ headerShown: false }} />
-          <Stack.Screen name="AddEventTag" component={AddEventTag} options={{ headerShown: false }} />
           <Stack.Screen name="AddBill" component={AddBill} options={{ headerShown: false }} />
           <Stack.Screen name="BillDetail" component={BillDetail} options={{ headerShown: false }} />
           <Stack.Screen name="SeeAllBill" component={SeeAllBills} options={{ headerShown: false }} />

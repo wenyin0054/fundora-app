@@ -19,7 +19,8 @@ import {
   initDB,
   getBillsLocal,
   getRemindersLocal,
-  deleteReminderLocal
+  deleteReminderLocal,
+  checkDueBillsAndGenerateReminders
 } from "../../../database/SQLite";
 import FinancialTipBanner from "../../LaiWenYin/TutorialModule/FinancialTipBanner";
 import { useTipManager } from "../../LaiWenYin/TutorialModule/TipManager.js";
@@ -42,6 +43,35 @@ export default function BillTracker({ navigation }) {
   };
   const showRemindertips = () => {
     showTip('billTracker', 'reminders');
+  };
+
+  const showGrossIncomeTip = () => {
+    showTip('billTracker', 'dsrCalculator.grossIncome');
+  };
+  const showCommitmentsTip = () => {
+    showTip('billTracker', 'dsrCalculator.monthlyCommitments');
+  };
+  const showDSRRatioTip = () => {
+    showTip('billTracker', 'dsrCalculator.dsrRatio');
+  };
+  const showEligibilityTip = () => {
+    showTip('billTracker', 'dsrCalculator.eligibilityStatus');
+  };
+
+  const showAutoAssignTip = () => {
+    showTip('billTracker', 'autoAssignCommitments');
+  };
+  const showSeeAllTip = () => {
+    showTip('billTracker', 'seeAllBills');
+  };
+  const showBillStatusesTip = () => {
+    showTip('billTracker', 'billStatuses');
+  };
+  const showEmptyRemindersTip = () => {
+    showTip('billTracker', 'emptyReminders');
+  };
+  const showEmptyBillsTip = () => {
+    showTip('billTracker', 'emptyBills');
   };
 
   const loadCommitmentFromDB = async () => {
@@ -67,13 +97,17 @@ export default function BillTracker({ navigation }) {
   const loadAllData = async () => {
     try {
       await initDB();
+      await loadCommitmentFromDB();
+      await checkDueBillsAndGenerateReminders(userId); // Check for due bills and generate reminders
       const b = await getBillsLocal(userId);
       const r = await getRemindersLocal(userId);
 
       setBills(b);
       setReminders(r);
 
-      await loadCommitmentFromDB();
+      // Reload bills after checking due dates to update status
+      const updatedBills = await getBillsLocal(userId);
+      setBills(updatedBills);
     } catch (err) {
       console.error("❌ loadAllData error:", err);
     }
@@ -162,6 +196,11 @@ export default function BillTracker({ navigation }) {
     try {
       const r = await getRemindersLocal(userId);
       setReminders(r);
+      await checkDueBillsAndGenerateReminders(userId, false); // Also check for due bills
+
+      // Reload bills to update status
+      const updatedBills = await getBillsLocal(userId);
+      setBills(updatedBills);
     } catch (err) {
       console.error("❌ refreshReminders error:", err);
     }
@@ -179,7 +218,7 @@ export default function BillTracker({ navigation }) {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
-              await deleteReminderLocal(rem.id);
+              await deleteReminderLocal(userId, rem.id);
               await refreshReminders(); // reload after delete
             }
           }
@@ -207,7 +246,7 @@ export default function BillTracker({ navigation }) {
   // group upcoming bills (we'll show next 3)
   const upcoming = bills.slice(0, 3);
   console.log(upcoming);
-  
+
 
   return (
     <View style={styles.container}>
@@ -224,7 +263,7 @@ export default function BillTracker({ navigation }) {
         extraScrollHeight={Platform.OS === 'ios' ? 120 : 80}
         keyboardShouldPersistTaps="handled"
       >
-      
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
         >
@@ -237,7 +276,12 @@ export default function BillTracker({ navigation }) {
               </TouchableOpacity>
             </View>
             {reminders.length === 0 ? (
-              <Text style={styles.emptyHint}>No reminders. You’re all caught up! 🎉</Text>
+              <View style={styles.emptyStateRow}>
+                <Text style={styles.emptyHint}>No reminders. You're all caught up! 🎉</Text>
+                <TouchableOpacity onPress={showEmptyRemindersTip} style={styles.infoIconTouchable}>
+                  <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
             ) : (
               Object.values(
                 reminders.reduce((acc, r) => {
@@ -259,15 +303,30 @@ export default function BillTracker({ navigation }) {
 
           {/* Upcoming Bills */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming Bills</Text>
-            <TouchableOpacity onPress={() => navigation.navigate && navigation.navigate("SeeAllBill")}>
-              <Text style={styles.seeAll}>See All</Text>
-            </TouchableOpacity>
+            <View style={styles.titleRow}>
+              <Text style={styles.sectionTitle}>Upcoming Bills</Text>
+              <TouchableOpacity onPress={showBillStatusesTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={showSeeAllTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate && navigation.navigate("SeeAllBill")}>
+                <Text style={styles.seeAll}>See All</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.upcomingCard}>
             {upcoming.length === 0 ? (
-              <Text style={styles.emptyHint}>No upcoming bills — add one below.</Text>
+              <View style={styles.emptyStateRow}>
+                <Text style={styles.emptyHint}>No upcoming bills — add one below.</Text>
+                <TouchableOpacity onPress={showEmptyBillsTip} style={styles.infoIconTouchable}>
+                  <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
             ) : (
               upcoming.map((b) => {
 
@@ -326,40 +385,55 @@ export default function BillTracker({ navigation }) {
 
           <View style={styles.dsrCard}>
             {/* Income Input */}
-            <TextInput
-              style={styles.input}
-              placeholder="Monthly Gross Income (RM)"
-              placeholderTextColor={"#c5c5c5ff"}
-              keyboardType="numeric"
-              value={income}
-              onChangeText={setIncome}
-            />
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Monthly Gross Income (RM)"
+                placeholderTextColor={"#c5c5c5ff"}
+                keyboardType="numeric"
+                value={income}
+                onChangeText={setIncome}
+              />
+              <TouchableOpacity onPress={showGrossIncomeTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
 
 
             {/* Expense Input */}
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={autoCommitment > 0 ? autoCommitment.toString() : ""}
-              placeholder="Monthly Commitments (RM)"
-              placeholderTextColor={"#c5c5c5ff"}
-              onChangeText={text => {
-                const numericValue = Number(text.replace(/[^0-9]/g, ""));
-                if (!isNaN(numericValue)) setCommitment(numericValue);
-              }}
-            />
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                keyboardType="numeric"
+                value={autoCommitment > 0 ? autoCommitment.toString() : ""}
+                placeholder="Monthly Commitments (RM)"
+                placeholderTextColor={"#c5c5c5ff"}
+                onChangeText={text => {
+                  const numericValue = Number(text.replace(/[^0-9]/g, ""));
+                  if (!isNaN(numericValue)) setCommitment(numericValue);
+                }}
+              />
+              <TouchableOpacity onPress={showCommitmentsTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
 
             {/* Auto-assign Button */}
-            <TouchableOpacity
-              style={[styles.autoCalcBtn, { marginTop: 8 }]}
-              onPress={() => {
-                setAutoCommitment(commitment);
-              }}
-            >
-              <Text style={styles.calcBtnText}>
-                Auto-assign Total Commitments
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.autoCalcBtn, { flex: 1 }]}
+                onPress={() => {
+                  setAutoCommitment(commitment);
+                }}
+              >
+                <Text style={styles.calcBtnText}>
+                  Auto-assign Total Commitments
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={showAutoAssignTip} style={styles.infoIconTouchable}>
+                <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
 
 
             <TouchableOpacity style={styles.calcBtn} onPress={calculateDSR}>
@@ -369,8 +443,18 @@ export default function BillTracker({ navigation }) {
             {dsrResult && (
               <View style={styles.resultCard}>
                 {/* Main DSR Result */}
-                <Text style={styles.dsrValue}>{dsrResult.value}%</Text>
-                <Text style={styles.dsrLabel}>{dsrResult.label}</Text>
+                <View style={styles.resultHeader}>
+                  <Text style={styles.dsrValue}>{dsrResult.value}%</Text>
+                  <TouchableOpacity onPress={showDSRRatioTip} style={styles.infoIconTouchable}>
+                    <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.resultHeader}>
+                  <Text style={styles.dsrLabel}>{dsrResult.label}</Text>
+                  <TouchableOpacity onPress={showEligibilityTip} style={styles.infoIconTouchable}>
+                    <Ionicons name="information-circle-outline" size={18} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
 
                 {/* Future Simulation */}
                 <View style={styles.simulationBox}>
@@ -396,12 +480,12 @@ export default function BillTracker({ navigation }) {
 
         </ScrollView>
       </KeyboardAwareScrollView>
-        <FinancialTipBanner
-          message={currentTip}
-          isVisible={isTipVisible}
-          onClose={hideTip}
-          userLevel={userLevel}
-        />
+      <FinancialTipBanner
+        message={currentTip}
+        isVisible={isTipVisible}
+        onClose={hideTip}
+        userLevel={userLevel}
+      />
     </View>
   );
 }
@@ -577,6 +661,29 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontSize: 15,
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emptyStateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
 
   calcBtn: {
     backgroundColor: "#34D399",
@@ -624,6 +731,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: "#333",
     marginBottom: 14,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 
   simulationBox: {

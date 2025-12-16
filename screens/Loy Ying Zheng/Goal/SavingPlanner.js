@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // 在 GoalDetailScreen 的樣式中添加
+  // Add in GoalDetailScreen styles
   completedSection: {
     backgroundColor: "#E8F5E8",
     borderRadius: 10,
@@ -426,10 +426,10 @@ const styles = StyleSheet.create({
   },
 
   cardOverdue: {
-    backgroundColor: "#FEF2F2",      // 淡红底
+    backgroundColor: "#FEF2F2",      // Light red background
     borderWidth: 1.5,
-    borderColor: "#DC2626",          // 深红边框
-    shadowOpacity: 0.02,             // 阴影弱化（符合警示类 UI）
+    borderColor: "#DC2626",          // Dark red border
+    shadowOpacity: 0.02,             // Shadow weakened (fits warning UI)
   },
 
   overdueHeader: {

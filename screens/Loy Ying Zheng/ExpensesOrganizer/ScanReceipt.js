@@ -98,6 +98,8 @@ export default function ScanReceiptScreen({ route, navigation }) {
 
       const result = await processReceipt(selectedImage);
 
+      console.log("✅ Process receipt result:", result);
+
 
       console.log("✅ Enhanced processing completed:", {
         success: result.success,
@@ -118,24 +120,24 @@ export default function ScanReceiptScreen({ route, navigation }) {
           transaction_date: result.transaction_date,
           transaction_time: result.transaction_time,
           line_items: result.line_items,
-          confidence: result.confidence, // 現在是 0-100 範圍
+          confidence: result.confidence, // Now in 0-100 range
           provider: result.source,
           local_confidence: result.local_confidence,
           ocr_quality: result.ocr_quality,
           hasCurrency: result.hasCurrency,
           hasDate: result.hasDate,
           blockCount: result.blockCount,
-          wordCount: result.wordCount, // 新增字段
+          wordCount: result.wordCount, // New field
           _normalized_text: result._normalized_text,
 
-          // ✅ 新增的增強字段
+          // ✅ New enhanced fields
           quality_score: result.quality_score,
           confidence_level: result.confidence_level,
           is_receipt_like: result.is_receipt_like,
           validation_message: result.validation_message
         };
 
-        // 根據質量評分提供反饋
+        // Provide feedback based on quality score
         if (result.quality_score < 60) {
           Alert.alert(
             "Moderate Quality Scan",
@@ -146,19 +148,19 @@ export default function ScanReceiptScreen({ route, navigation }) {
 
         const onScanResult = route.params?.onScanResult;
 
-        // 传回 AddExpense
+        // Pass back to AddExpense
         if (onScanResult) {
           onScanResult(scannedData);
         }
 
         navigation.setParams({ onScanResult: undefined });
 
-        // 返回 AddExpense
+        // Return to AddExpense
         navigation.goBack();
 
 
       } else {
-        // ✅ 使用增強版的錯誤處理
+        // ✅ Use enhanced error handling
         const confidence = result.confidence || 0;
         const qualityScore = result.quality_score || 0;
 
@@ -182,7 +184,7 @@ export default function ScanReceiptScreen({ route, navigation }) {
     } catch (error) {
       console.error("❌ Enhanced receipt processing error:", error);
 
-      // ✅ 使用增強版的錯誤消息
+      // ✅ Use enhanced error message
       let errorMessage = error.userMessage || "Failed to process receipt. Please try again.";
 
       if (error.message?.includes('permission')) {

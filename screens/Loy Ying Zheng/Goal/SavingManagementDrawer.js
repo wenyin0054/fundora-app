@@ -45,7 +45,7 @@ export default function SavingManagementDrawer(props) {
       setFundAllocations(allocations);
       setGoals(goalsData);
 
-      // 計算總投資和當前價值
+      // Calculate total investment and current value
       const invested = allocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
       const current = allocations.reduce((sum, alloc) => sum + (alloc.current_value || alloc.allocated_amount), 0);
 

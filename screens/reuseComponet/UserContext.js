@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserById, getExperienceLevel, updateExperienceLevel } from '../../database/userAuth';
+import { initDB } from '../../database/SQLite';
 
 const UserContext = createContext();
 
@@ -13,6 +14,14 @@ export const UserProvider = ({ children }) => {
   // Load stored session ONCE when app starts
   useEffect(() => {
     const init = async () => {
+      try {
+        // Initialize database once at app startup
+        await initDB();
+        console.log("✅ Database initialized at app startup");
+      } catch (error) {
+        console.error("❌ Failed to initialize database:", error);
+      }
+
       const stored = await AsyncStorage.getItem('currentUser');
       if (stored) {
         const user = JSON.parse(stored);

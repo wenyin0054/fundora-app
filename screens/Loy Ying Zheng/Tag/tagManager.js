@@ -16,7 +16,12 @@ import {
   createTagTable,
 } from "../../../database/SQLite";
 import { useUser } from "../../reuseComponet/UserContext";
-import ValidatedInput from "../../reuseComponet/ValidatedInput";
+import {
+  FDSCard,
+  FDSValidatedInput,
+  FDSButton,
+  FDSColors
+} from "../../reuseComponet/DesignSystem";
 
 export default function TagManager({ route, navigation }) {
   const [tags, setTags] = useState([]);
@@ -94,9 +99,23 @@ export default function TagManager({ route, navigation }) {
       setEditingTag(null);
       loadTags();
     } catch (err) {
-      Alert.alert("Error", "Failed to save tag.");
-      console.error("handleSaveTag error:", err);
+      console.error("AddTag error:", err);
+
+      let message = "Unable to add tag. Please try again.";
+
+      if (!userId) {
+        message = "User session expired. Please log in again.";
+      } else if (err?.message?.includes("UNIQUE")) {
+        message = "This tag already exists.";
+      } else if (err?.message?.includes("database")) {
+        message = "Database error occurred while saving the tag.";
+      } else if (err?.message) {
+        message = err.message; // fallback for known errors
+      }
+
+      Alert.alert("Add Tag Failed", message);
     }
+
   };
 
   const handleDeleteTag = (id) => {
@@ -129,13 +148,12 @@ export default function TagManager({ route, navigation }) {
 
       {/* Input Section */}
       <View style={styles.inputSection}>
-        <ValidatedInput
+        <FDSValidatedInput
           ref={tagInputRef}
           label={editingTag ? "Edit Tag Name" : "New Tag Name"}
           value={newTag}
           onChangeText={setNewTag}
           placeholder="Enter tag name"
-          placeholderTextColor={"#c5c5c5ff"}
           validate={(v) => v.trim().length > 0}
           errorMessage="Tag name cannot be empty"
           icon={<Ionicons name="pricetag-outline" size={20} color="#6c757d" />}

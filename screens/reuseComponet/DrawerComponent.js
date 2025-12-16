@@ -20,7 +20,8 @@ import {
   clearAllActiveEventTagsLocal,
   resetUserSummary,
   deleteAllGoals,
-  resetIncomeSnapshots
+  resetIncomeSnapshots,
+  resetAllDatabaseData
 } from "../../database/SQLite";
 import { Picker } from "@react-native-picker/picker";
 import { DeviceEventEmitter } from "react-native";
@@ -144,7 +145,7 @@ export default function CustomDrawerContent(props) {
 
   // ❌ Remove one active tag
   const removeActiveTag = async (id) => {
-    await deleteActiveEventTagLocal(id);
+    await deleteActiveEventTagLocal(userId, id);
     const updated = await getActiveEventTagsLocal(userId);
     setActiveEventTags(updated);
   };
@@ -228,7 +229,7 @@ export default function CustomDrawerContent(props) {
             try {
               await resetUserSummary(userId);
 
-              // ⭐ 同时清空所有 snapshot（防止 dashboard 继续显示旧 growth）
+              // ⭐ Also clear all snapshots (prevent dashboard from continuing to show old growth)
               await resetIncomeSnapshots(userId);
 
               Alert.alert("✅ Success", "User summary and snapshots have been reset to 0.");
@@ -263,6 +264,39 @@ export default function CustomDrawerContent(props) {
     return marks;
   };
 
+  const resetAllDatabaseHandler = async () => {
+    Alert.alert(
+      "⚠️ Danger Zone",
+      "This will permanently delete ALL app data.\n\nThis action cannot be undone.\n\nAre you absolutely sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "YES, DELETE EVERYTHING",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await resetAllDatabaseData();
+
+              Alert.alert(
+                "🧨 Database Reset",
+                "All data has been deleted. The app will now behave like a fresh install."
+              );
+
+              // 🔔 Notify entire app to refresh
+              DeviceEventEmitter.emit("expensesUpdated");
+              DeviceEventEmitter.emit("eventTagsUpdated");
+              DeviceEventEmitter.emit("goalsUpdated");
+
+            } catch (err) {
+              Alert.alert("Error", "Failed to reset database.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+
   return (
     <DrawerContentScrollView {...props} contentContainerStyle={styles.drawerContainer}>
       <DrawerItemList {...props} />
@@ -291,7 +325,7 @@ export default function CustomDrawerContent(props) {
                     selectedValue={selectedEventTag}
                     onValueChange={(itemValue) => {
                       if (itemValue === '__add_new_event_tag__') {
-                        props.navigation.navigate('AddEventTag');
+                        props.navigation.navigate('EventTagManager');
                       } else {
                         setSelectedEventTag(itemValue);
                       }
@@ -302,7 +336,7 @@ export default function CustomDrawerContent(props) {
                       <Picker.Item key={tag.id} label={tag.name} value={tag.name} />
                     ))}
 
-                    {/* 添加新事件標籤的選項 */}
+                    {/* Add new event tag option */}
                     <Picker.Item label="➕ Add new event tag" value="__add_new_event_tag__" />
                   </Picker>
                 </View>
@@ -458,13 +492,31 @@ export default function CustomDrawerContent(props) {
           <Text style={{ color: "#fff", fontWeight: "700" }}>Reset User Goal</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={{
+            marginTop: 30,
+            padding: 14,
+            borderRadius: 10,
+            backgroundColor: "#000",
+            alignItems: "center",
+            borderWidth: 2,
+            borderColor: "#d9534f",
+          }}
+          onPress={resetAllDatabaseHandler}
+        >
+          <Text style={{ color: "#d9534f", fontWeight: "800" }}>
+            🧨 Reset ALL App Data (Danger Zone)
+          </Text>
+        </TouchableOpacity>
+
+
       </View>
     </DrawerContentScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  drawerContainer: { flex: 1, paddingBottom: 20 },
+  drawerContainer: { paddingBottom: 40 },
   eventTagContainer: {
     borderTopWidth: 1,
     borderTopColor: "#d6e8de",
